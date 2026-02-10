@@ -67,7 +67,8 @@ def create_article(
     author: str = None,
     published_at: datetime = None,
     raw_content: str = None,
-    cleaned_content: str = None
+    cleaned_content: str = None,
+    status: str = "pending"
 ) -> models.Article:
     """Create a new article."""
     article = models.Article(
@@ -77,7 +78,8 @@ def create_article(
         author=author,
         published_at=published_at,
         raw_content=raw_content,
-        cleaned_content=cleaned_content
+        cleaned_content=cleaned_content,
+        status=status
     )
     db.add(article)
     db.commit()

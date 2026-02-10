@@ -6,6 +6,7 @@ from app.agents.graph import get_workflow
 from app.db.database import SessionLocal
 from app.db import crud
 from datetime import datetime
+from app.services import summary_service
 
 logger = logging.getLogger(__name__)
 
@@ -85,3 +86,13 @@ async def process_feed_task(feed_id: int):
         await process_feed_async(feed_id)
     except Exception as e:
         logger.error(f"Background task failed: {e}", exc_info=True)
+
+
+async def process_single_article_task(article_id: int):
+    """
+    Background task wrapper to process a single article by ID.
+    """
+    try:
+        await summary_service.process_article_by_id(article_id)
+    except Exception as e:
+        logger.error(f"Failed to process article {article_id}: {e}", exc_info=True)

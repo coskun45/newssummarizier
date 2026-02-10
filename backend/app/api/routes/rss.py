@@ -8,6 +8,8 @@ from pydantic import BaseModel, HttpUrl
 from app.db.database import get_db
 from app.db import crud
 from datetime import datetime
+from dateutil import parser as date_parser
+from app.tasks.background import process_single_article_task
 
 router = APIRouter()
 
@@ -134,6 +136,54 @@ async def refresh_feed(
     background_tasks.add_task(process_feed_task, feed_id)
     
     return {"status": "queued", "feed_id": feed_id}
+
+
+class AddArticlesRequest(BaseModel):
+    articles: List[dict]
+
+
+@router.post("/{feed_id}/add-articles")
+async def add_articles_to_feed(
+    feed_id: int,
+    payload: AddArticlesRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Add selected new articles to the feed and queue them for processing.
+    """
+    feed = crud.get_feed(db, feed_id)
+    if not feed:
+        raise HTTPException(status_code=404, detail="Feed not found")
+
+    created = 0
+    skipped = 0
+    created_list = []
+    for item in payload.articles:
+        url = item.get("url")
+        title = item.get("title") or "Untitled"
+        published_at = item.get("published_at")
+        # Ensure published_at is a Python datetime for SQLite
+        if published_at and isinstance(published_at, str):
+            try:
+                published_at = date_parser.parse(published_at)
+            except Exception:
+                published_at = None
+
+        existing = crud.get_article_by_url(db, url)
+        if existing:
+            skipped += 1
+            continue
+
+        # Create article with queued status
+        article = crud.create_article(db=db, feed_id=feed_id, url=url, title=title, published_at=published_at, raw_content=item.get("raw_content"), status="queued")
+        created += 1
+        created_list.append(article.url)
+
+        # Queue background task to process this article
+        background_tasks.add_task(process_single_article_task, article.id)
+
+    return {"feed_id": feed_id, "created": created, "skipped": skipped, "created_list": created_list}
 
 
 @router.delete("/{feed_id}")

@@ -57,6 +57,11 @@ export const feedsApi = {
         return response.data;
     },
 
+    addArticles: async (feedId: number, articles: Array<{ title: string; url: string; published_at?: string }>): Promise<{ feed_id: number; created: number; skipped: number; created_list?: string[] }> => {
+        const response = await api.post(`/feeds/${feedId}/add-articles`, { articles });
+        return response.data;
+    },
+
     delete: async (feedId: number): Promise<{ status: string; feed_id: number }> => {
         const response = await api.delete(`/feeds/${feedId}`);
         return response.data;

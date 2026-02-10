@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useArticles, useTopics, useFeeds, useRefreshFeed, useCheckNewArticles } from '../../hooks/useApi';
+import { useArticles, useTopics, useFeeds, useRefreshFeed, useCheckNewArticles, useAddArticlesToFeed } from '../../hooks/useApi';
 import ArticleList from '../ArticleList/ArticleList';
 import TopicFilter from '../TopicFilter/TopicFilter';
 import SearchBar from '../SearchBar/SearchBar';
@@ -14,6 +14,7 @@ function Dashboard() {
   const [notification, setNotification] = useState<string | null>(null);
   const [expectedNewArticles, setExpectedNewArticles] = useState<number | null>(null);
   const [showNewArticlesList, setShowNewArticlesList] = useState(false);
+  const [selectedNewIndexes, setSelectedNewIndexes] = useState<number[]>([]);
   const [showSettings, setShowSettings] = useState(false);
 
   const { data: topicsData } = useTopics();
@@ -22,6 +23,7 @@ function Dashboard() {
   const { data: newArticlesData, refetch: checkNewArticles, isFetching: isChecking } = useCheckNewArticles(
     feedsData && feedsData.length > 0 ? feedsData[0].id : null
   );
+  const addArticlesMutation = useAddArticlesToFeed();
 
   // Debounce search
   useEffect(() => {
@@ -72,7 +74,9 @@ function Dashboard() {
   const handleCheckNewArticles = async () => {
     if (feedsData && feedsData.length > 0) {
       await checkNewArticles();
+      // default to selecting all returned items
       setShowNewArticlesList(true);
+      setSelectedNewIndexes(newArticlesData?.new_articles_list ? newArticlesData.new_articles_list.map((_: any, i: number) => i) : []);
     }
   };
 
@@ -103,22 +107,53 @@ function Dashboard() {
               <h3><ChartBarIcon /> {newArticlesData.new_articles} Neue Artikel</h3>
               <button className="close-button" onClick={() => setShowNewArticlesList(false)}><XMarkIcon /></button>
             </div>
-            <div className="modal-content">
+              <div className="modal-content">
+              <div style={{ marginBottom: 8 }}>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                  <input
+                    type="checkbox"
+                    checked={
+                      !!newArticlesData?.new_articles_list && selectedNewIndexes.length === newArticlesData.new_articles_list.length
+                    }
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedNewIndexes(newArticlesData?.new_articles_list ? newArticlesData.new_articles_list.map((_: any, i: number) => i) : []);
+                      } else {
+                        setSelectedNewIndexes([]);
+                      }
+                    }}
+                  />
+                  Alle auswählen
+                </label>
+              </div>
               <ul className="new-articles-list">
                 {newArticlesData.new_articles_list?.map((article: any, index: number) => (
-                  <li key={index}>
-                    <div className="article-title">{article.title}</div>
-                    {article.published_at && (
-                      <div className="article-date">
-                        {new Date(article.published_at).toLocaleDateString('de-DE', { 
-                          day: '2-digit', 
-                          month: '2-digit', 
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                      </div>
-                    )}
+                  <li key={index} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedNewIndexes.includes(index)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedNewIndexes((prev) => Array.from(new Set([...prev, index])));
+                        } else {
+                          setSelectedNewIndexes((prev) => prev.filter((i) => i !== index));
+                        }
+                      }}
+                    />
+                    <div>
+                      <div className="article-title">{article.title}</div>
+                      {article.published_at && (
+                        <div className="article-date">
+                          {new Date(article.published_at).toLocaleDateString('de-DE', { 
+                            day: '2-digit', 
+                            month: '2-digit', 
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -129,6 +164,37 @@ function Dashboard() {
             <div className="modal-footer">
               <button className="cancel-button" onClick={() => setShowNewArticlesList(false)}>
                 Abbrechen
+              </button>
+              <button
+                className="load-button"
+                onClick={() => {
+                  // Add selected articles to feed
+                  if (!feedsData || feedsData.length === 0) return;
+                  const feedId = feedsData[0].id;
+                  const selected = (newArticlesData?.new_articles_list || []).filter((_: any, i: number) => selectedNewIndexes.includes(i));
+                  if (selected.length === 0) {
+                    setNotification('Keine Artikel ausgewählt.');
+                    setTimeout(() => setNotification(null), 3000);
+                    return;
+                  }
+
+                  addArticlesMutation.mutate(
+                    { feedId, articles: selected },
+                    {
+                      onSuccess: (res) => {
+                        setNotification(`${res.created} Artikel hinzugefügt, ${res.skipped} übersprungen.`);
+                        setShowNewArticlesList(false);
+                        setTimeout(() => setNotification(null), 5000);
+                      },
+                      onError: () => {
+                        setNotification('Fehler beim Hinzufügen der Artikel.');
+                        setTimeout(() => setNotification(null), 5000);
+                      }
+                    }
+                  );
+                }}
+              >
+                Ausgewählte hinzufügen
               </button>
               <button 
                 className="load-button" 

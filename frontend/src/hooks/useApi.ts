@@ -153,3 +153,16 @@ export const useRefreshFeed = () => {
         },
     });
 };
+
+
+export const useAddArticlesToFeed = () => {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: ({ feedId, articles }: { feedId: number; articles: Array<{ title: string; url: string; published_at?: string }> }) =>
+            feedsApi.addArticles(feedId, articles),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['articles'] });
+        },
+    });
+};

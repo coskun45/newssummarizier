@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.core.exceptions import SummarizationError, TopicCategorizationError, CostLimitExceededError
 from app.db.database import SessionLocal
 from app.db import crud
+from app.agents.tools import extract_article_content, truncate_content
 
 logger = logging.getLogger(__name__)
 
@@ -135,16 +136,16 @@ async def categorize_article_topics(title: str, content: str) -> List[Dict[str, 
             return []
         
         # Create prompt
-        prompt = f"""Analyze the following German news article and categorize it into one or more of these topics: {', '.join(topic_names)}.
+        prompt = f"""Analyze the following news article and categorize it into one or more of these topics: {', '.join(topic_names)}.
 
-Title: {title}
+    Title: {title}
 
-Content: {content[:1000]}
+    Content: {content[:1000]}
 
-Return ONLY a JSON array with objects containing "name" (topic name) and "confidence" (0.0-1.0).
-Example: [{{"name": "Politik", "confidence": 0.9}}, {{"name": "Wirtschaft", "confidence": 0.5}}]
+    Return ONLY a JSON array with objects containing "name" (topic name) and "confidence" (0.0-1.0).
+    Example: [{{"name": "Politik", "confidence": 0.9}}, {{"name": "Wirtschaft", "confidence": 0.5}}]
 
-Include only topics with confidence >= 0.5. Return at least one topic."""
+    Include only topics with confidence >= 0.5. Return at least one topic."""
         
         model = settings.default_model
         input_tokens = count_tokens(prompt, model)
@@ -237,16 +238,16 @@ async def generate_summary(
             raise ValueError(f"Invalid summary type: {summary_type}")
         
         # Create prompt
-        prompt = f"""Summarize the following German news article.
+        prompt = f"""Summarize the following news article.
 
-Title: {title}
+    Title: {title}
 
-Content:
-{content}
+    Content:
+    {content}
 
-Instructions: {instructions}
+    Instructions: {instructions}
 
-Write the summary in German."""
+    Write the summary in Turkish."""
         
         input_tokens = count_tokens(prompt, model)
         
@@ -364,3 +365,75 @@ That part is never BOLD: 
     except Exception as e:
         logger.error(f"Summary generation failed: {e}")
         raise SummarizationError(f"Failed to generate summary: {str(e)}")
+
+
+async def process_article_by_id(article_id: int) -> dict:
+    """
+    Process a single article by ID: extract content (if needed), categorize topics, generate summaries.
+    Returns a dict with result metadata.
+    """
+    db = SessionLocal()
+    try:
+        article = crud.get_article(db, article_id)
+        if not article:
+            raise SummarizationError(f"Article not found: {article_id}")
+
+        # Extract content if missing
+        content = article.cleaned_content or article.raw_content or ""
+        if not article.cleaned_content:
+            try:
+                extracted = await extract_article_content(article.url)
+                if extracted:
+                    content = extracted
+                    crud.update_article_content(db=db, article_id=article.id, cleaned_content=content)
+                    crud.update_article_status(db=db, article_id=article.id, status="scraped")
+                    crud.create_log(db=db, article_id=article.id, agent_name="web_scraper", status="success", message=f"Extracted {len(content)} characters")
+                else:
+                    crud.create_log(db=db, article_id=article.id, agent_name="web_scraper", status="skipped", message="Using RSS content as fallback")
+            except Exception as e:
+                crud.create_log(db=db, article_id=article.id, agent_name="web_scraper", status="error", message="Extraction failed, using RSS fallback", error_details=str(e))
+
+        total_cost = 0.0
+
+        # Categorize topics
+        try:
+            topics = await categorize_article_topics(title=article.title, content=truncate_content(content, 2000))
+            for topic in topics:
+                topic_db = crud.get_topic_by_name(db, topic["name"]) if isinstance(topic, dict) else None
+                if topic_db:
+                    crud.add_article_topic(db=db, article_id=article.id, topic_id=topic_db.id, confidence=topic.get("confidence", 1.0))
+
+            crud.create_log(db=db, article_id=article.id, agent_name="topic_categorizer", status="success", message=f"Categorized into {len(topics)} topics")
+        except Exception as e:
+            crud.create_log(db=db, article_id=article.id, agent_name="topic_categorizer", status="error", message="Topic categorization failed", error_details=str(e))
+
+        # Generate summaries
+        try:
+            enabled_summary_types = crud.get_setting(db, "enabled_summary_types") or "brief,standard,detailed"
+            enabled_types = [x.strip() for x in enabled_summary_types.split(",") if x.strip()]
+            summary_types_map = {
+                "brief": ("brief", "brief"),
+                "standard": ("standard", "standard"),
+                "detailed": ("detailed", "detailed")
+            }
+            summary_types = [summary_types_map[st] for st in enabled_types if st in summary_types_map]
+
+            for summary_type, _ in summary_types:
+                try:
+                    result = await generate_summary(title=article.title, content=truncate_content(content), summary_type=summary_type)
+                    total_cost += result.get("cost", 0.0)
+                    crud.create_summary(db=db, article_id=article.id, summary_text=result["summary_text"], summary_type=summary_type, model_used=result.get("model_used"), tokens_used=result.get("tokens_used", 0), cost=result.get("cost", 0.0))
+                except Exception as e:
+                    crud.create_log(db=db, article_id=article.id, agent_name="summarizer", status="error", message=f"Failed to generate {summary_type} summary", error_details=str(e))
+
+        except Exception as e:
+            logger.error(f"Summary generation loop failed: {e}")
+
+        # Mark as summarized
+        crud.update_article_status(db=db, article_id=article.id, status="summarized")
+        crud.create_log(db=db, article_id=article.id, agent_name="article_processor", status="success", message=f"Article processing completed. Cost: ${total_cost:.4f}")
+
+        return {"article_id": article.id, "status": "summarized", "cost": total_cost}
+
+    finally:
+        db.close()
