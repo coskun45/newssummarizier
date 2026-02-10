@@ -10,10 +10,12 @@ interface ArticleCardProps {
   article: Article;
 }
 
+
 function ArticleCard({ article }: ArticleCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [showContent, setShowContent] = useState(false);
   const [summaryType, setSummaryType] = useState<'brief' | 'standard' | 'detailed'>('standard');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const deleteArticleMutation = useDeleteArticle();
 
@@ -35,7 +37,7 @@ function ArticleCard({ article }: ArticleCardProps) {
       <button
         className="delete-icon-btn"
         title="Sil"
-        onClick={() => deleteArticleMutation.mutate(article.id)}
+        onClick={() => setShowDeleteConfirm(true)}
         disabled={deleteArticleMutation.isLoading}
       >
         <svg
@@ -56,6 +58,30 @@ function ArticleCard({ article }: ArticleCardProps) {
           <line x1="14" y1="11" x2="14" y2="17" />
         </svg>
       </button>
+
+      {showDeleteConfirm && (
+        <div className="delete-confirm-popup" style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: '#fff', padding: 24, borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.2)', minWidth: 280, textAlign: 'center' }}>
+            <p>Bu makaleyi silmek istediğinize emin misiniz?</p>
+            <button
+              onClick={() => {
+                deleteArticleMutation.mutate(article.id);
+                setShowDeleteConfirm(false);
+              }}
+              style={{ marginRight: 12, background: '#e53935', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 4, cursor: 'pointer' }}
+              disabled={deleteArticleMutation.isLoading}
+            >
+              Sil
+            </button>
+            <button
+              onClick={() => setShowDeleteConfirm(false)}
+              style={{ background: '#ccc', color: '#333', border: 'none', padding: '8px 16px', borderRadius: 4, cursor: 'pointer' }}
+            >
+              Vazgeç
+            </button>
+          </div>
+        </div>
+      )}
       <div className="article-header">
         <h2 className="article-title">{article.title}</h2>
         {article.author && <p className="article-author">von {article.author}</p>}

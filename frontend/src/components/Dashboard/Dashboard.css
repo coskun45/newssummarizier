@@ -50,24 +50,27 @@ button svg {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(30, 41, 59, 0.75); /* much darker, less transparent */
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1001;
   animation: fadeIn 0.3s ease;
+  backdrop-filter: blur(4px); /* subtle blur for modern look */
 }
 
 .new-articles-modal {
-  background: white;
-  border-radius: 12px;
+  background: #fff;
+  border-radius: 16px;
   max-width: 600px;
   width: 90%;
   max-height: 70vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 8px 40px 0 rgba(0,0,0,0.35);
   animation: scaleIn 0.3s ease;
+  border: 1.5px solid #e2e8f0;
+  overflow: hidden;
 }
 
 .modal-header {
@@ -109,6 +112,7 @@ button svg {
   padding: 1.5rem;
   overflow-y: auto;
   flex: 1;
+  background-color: #444242;
 }
 
 .new-articles-list {
