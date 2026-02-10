@@ -3,7 +3,7 @@ Summary and categorization service using OpenAI.
 """
 import tiktoken
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from openai import AsyncOpenAI
 from app.core.config import settings
 from app.core.exceptions import SummarizationError, TopicCategorizationError, CostLimitExceededError
@@ -12,8 +12,19 @@ from app.db import crud
 
 logger = logging.getLogger(__name__)
 
-# Initialize OpenAI client
-client = AsyncOpenAI(api_key=settings.openai_api_key)
+# Initialize OpenAI client lazily
+_client: Optional[AsyncOpenAI] = None
+
+
+def get_openai_client() -> AsyncOpenAI:
+    """Get or create OpenAI client instance."""
+    global _client
+    if _client is None:
+        _client = AsyncOpenAI(
+            api_key=settings.openai_api_key,
+            max_retries=2,
+        )
+    return _client
 
 # Pricing per 1K tokens (as of early 2024 - verify current pricing)
 PRICING = {
@@ -151,14 +162,14 @@ Include only topics with confidence >= 0.5. Return at least one topic."""
             db.close()
         
         # Call OpenAI
-        response = await client.chat.completions.create(
+        response = await get_openai_client().chat.completions.create(
             model=model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3,
-            max_tokens=200
+            max_completion_tokens=200
         )
         
         output_tokens = response.usage.completion_tokens
@@ -324,14 +335,14 @@ That part is never BOLD: 
             db.close()
         
         # Call OpenAI  
-        response = await client.chat.completions.create(
+        response = await get_openai_client().chat.completions.create(
             model=model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.5,
-            max_tokens=max_tokens
+            max_completion_tokens=max_tokens
         )
         
         summary_text = response.choices[0].message.content.strip()

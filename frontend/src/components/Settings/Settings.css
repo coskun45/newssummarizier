@@ -35,7 +35,8 @@
 .settings-header h2 {
   margin: 0;
   font-size: 1.75rem;
-  color: #2d3748;
+  color: #1a202c;
+  font-weight: 700;
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -72,18 +73,19 @@ button svg {
   cursor: pointer;
   user-select: none;
   padding: 1rem 1.5rem;
-  background: #f7fafc;
+  background: #e2e8f0;
   transition: background-color 0.2s;
 }
 
 .section-header:hover {
-  background: #edf2f7;
+  background: #cbd5e0;
 }
 
 .section-header h3 {
   margin: 0;
   font-size: 1.25rem;
-  color: #2d3748;
+  color: #1a202c;
+  font-weight: 700;
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -107,7 +109,7 @@ button svg {
 
 .section-content {
   padding: 1rem 1.5rem;
-  background: white;
+  background: #f9fafb;
   border-top: 1px solid #e2e8f0;
   animation: slideDown 0.2s ease-in-out;
 }
@@ -130,10 +132,11 @@ button svg {
 }
 
 .section-description {
-  color: #718096;
+  color: #4a5568;
   font-size: 0.875rem;
   margin: 0 0 1rem 0;
   line-height: 1.5;
+  font-weight: 500;
 }
 
 .section-content .section-description {
@@ -174,8 +177,9 @@ button svg {
 }
 
 .checkbox-text {
-  color: #2d3748;
+  color: #1a202c;
   font-size: 0.95rem;
+  font-weight: 500;
   flex: 1;
 }
 
@@ -352,6 +356,26 @@ button svg {
   cursor: not-allowed;
 }
 
+/* Autocomplete dropdown styling */
+.topic-input:-webkit-autofill,
+.topic-input:-webkit-autofill:hover,
+.topic-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #2d3748;
+  -webkit-box-shadow: 0 0 0px 1000px #f7fafc inset;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+/* Browser autocomplete/datalist dropdown options */
+.topic-input::-webkit-calendar-picker-indicator {
+  filter: invert(0.5);
+}
+
+option {
+  background: white;
+  color: #2d3748;
+  padding: 0.5rem;
+}
+
 .add-topic-buttons {
   display: flex;
   gap: 0.75rem;
@@ -442,26 +466,73 @@ button svg {
   cursor: not-allowed;
 }
 
+.close-button {
+  background: transparent;
+  border: none;
+  font-size: 1.5rem;
+  color: #4a5568;
+  cursor: pointer;
+  padding: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  border-radius: 6px;
+}
+
+.close-button:hover {
+  background: #e2e8f0;
+  transform: scale(1.1);
+}
+
 /* Dark mode */
 @media (prefers-color-scheme: dark) {
   .settings-modal {
     background: #2d3748;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
   }
 
   .settings-header {
     border-bottom-color: #4a5568;
   }
 
-  .settings-header h2,
-  .settings-section h3,
+  .settings-header h2 {
+    color: #f7fafc;
+  }
+
+  .settings-section h3 {
+    color: #f7fafc;
+    font-weight: 700;
+  }
+
   .checkbox-text {
     color: #e2e8f0;
   }
 
-  .section-description {
-    color: #a0aec0;
+  .section-header {
+    background: #374151;
   }
 
+  .section-header:hover {
+    background: #4a5568;
+  }
+
+  .section-description {
+    color: #cbd5e0;
+  }
+
+  .section-content {
+    background: #1a202c;
+    border-top-color: #4a5568;
+  }
+
+  .settings-section {
+    border-color: #4a5568;
+  }
+
+  .section-header h3 {
+    color: #f7fafc;
+  }
   .checkbox-label:hover {
     background: #374151;
   }
@@ -479,6 +550,16 @@ button svg {
     border-color: #4a5568;
   }
 
+  .edit-topic-form input {
+    background: #2d3748;
+    color: #e2e8f0;
+    border-color: #4a5568;
+  }
+
+  .edit-topic-form input::placeholder {
+    color: #a0aec0;
+  }
+
   .cancel-edit-button {
     background: #4a5568;
     color: #e2e8f0;
@@ -486,6 +567,10 @@ button svg {
 
   .cancel-edit-button:hover:not(:disabled) {
     background: #5a6778;
+  }
+
+  .save-edit-button {
+    box-shadow: 0 2px 8px rgba(72, 187, 120, 0.3);
   }
 
   .settings-footer {
@@ -516,14 +601,35 @@ button svg {
     border-color: #4a5568;
   }
 
+  .add-topic-button {
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+  }
+
   .topic-input {
     background: #2d3748;
     border-color: #4a5568;
     color: #e2e8f0;
   }
 
+  .topic-input::placeholder {
+    color: #a0aec0;
+  }
+
   .topic-input:focus {
     border-color: #667eea;
+  }
+
+  /* Dark mode autocomplete styling */
+  .topic-input:-webkit-autofill,
+  .topic-input:-webkit-autofill:hover,
+  .topic-input:-webkit-autofill:focus {
+    -webkit-text-fill-color: #e2e8f0;
+    -webkit-box-shadow: 0 0 0px 1000px #374151 inset;
+  }
+
+  option {
+    background: #2d3748;
+    color: #e2e8f0;
   }
 
   .cancel-add-button {
@@ -537,6 +643,14 @@ button svg {
 
   .loading {
     color: #a0aec0;
+  }
+
+  .close-button {
+    color: #e2e8f0;
+  }
+
+  .close-button:hover {
+    background: #374151;
   }
 }
 

@@ -2,7 +2,6 @@
 Background tasks for feed processing.
 """
 import logging
-import asyncio
 from app.agents.graph import get_workflow
 from app.db.database import SessionLocal
 from app.db import crud
@@ -74,15 +73,15 @@ async def process_feed_async(feed_id: int):
         db.close()
 
 
-def process_feed_task(feed_id: int):
+async def process_feed_task(feed_id: int):
     """
-    Synchronous wrapper for background task.
+    Async wrapper for background task.
     
     Args:
         feed_id: ID of the feed to process
     """
     try:
-        # Run async function in event loop
-        asyncio.run(process_feed_async(feed_id))
+        # Run async function directly (no asyncio.run needed)
+        await process_feed_async(feed_id)
     except Exception as e:
         logger.error(f"Background task failed: {e}", exc_info=True)

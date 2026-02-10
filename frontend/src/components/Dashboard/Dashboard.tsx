@@ -168,19 +168,7 @@ function Dashboard() {
                   <><MagnifyingGlassIcon /> Neue Artikel prüfen</>
                 )}
               </button>
-              <button 
-                className="refresh-button"
-                onClick={handleRefreshNews}
-                disabled={isRefreshing || isChecking}
-              >
-                {isRefreshing 
-                  ? (expectedNewArticles && expectedNewArticles > 0 
-                      ? <><ArrowPathIcon className="spin-icon" /> {expectedNewArticles} Artikel werden verarbeitet...</> 
-                      : <><ArrowPathIcon className="spin-icon" /> Verarbeite...</>) 
-                  : (newArticlesData && newArticlesData.new_articles > 0 
-                      ? <><ArrowPathIcon /> {newArticlesData.new_articles} Artikel laden</> 
-                      : <><ArrowPathIcon /> Nachrichten zusammenfassen</>)}
-              </button>
+              
               <button 
                 className="settings-button"
                 onClick={() => setShowSettings(true)}

@@ -1,3 +1,12 @@
+export const useDeleteArticle = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (articleId: number) => articlesApi.delete(articleId),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['articles'] });
+        },
+    });
+};
 /**
  * React Query hooks for data fetching and caching.
  */

@@ -1,7 +1,7 @@
 """
 Article endpoints.
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from pydantic import BaseModel
@@ -9,7 +9,20 @@ from datetime import datetime
 from app.db.database import get_db
 from app.db import crud
 
+
 router = APIRouter()
+
+@router.delete("/{article_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_article(article_id: int, db: Session = Depends(get_db)):
+    """
+    Delete an article by ID.
+    """
+    article = crud.get_article(db, article_id)
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+    db.delete(article)
+    db.commit()
+    return None
 
 
 class TopicInfo(BaseModel):

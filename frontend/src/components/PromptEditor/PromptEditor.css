@@ -1,9 +1,10 @@
 .prompt-editor {
-    background: white;
+    background: #f9fafb;
     border-radius: 8px;
     padding: 20px;
     margin-bottom: 20px;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    border: 1px solid #e2e8f0;
 }
 
 .prompt-editor.loading {
@@ -25,14 +26,16 @@
 
 .prompt-title h3 {
     margin: 0 0 5px 0;
-    color: #333;
+    color: #1a202c;
     font-size: 1.3rem;
+    font-weight: 700;
 }
 
 .prompt-description {
     margin: 0;
-    color: #666;
+    color: #4a5568;
     font-size: 0.9rem;
+    font-weight: 500;
 }
 
 .prompt-actions {
@@ -129,8 +132,8 @@
 .form-group label {
     display: block;
     margin-bottom: 8px;
-    color: #555;
-    font-weight: 500;
+    color: #1a202c;
+    font-weight: 600;
 }
 
 .checkbox-label {
@@ -148,6 +151,8 @@
 }
 
 .checkbox-label span {
+    color: #1a202c;
+    font-weight: 500;
     font-size: 1rem;
 }
 
@@ -161,12 +166,23 @@
     line-height: 1.5;
     resize: vertical;
     min-height: 300px;
+    background-color: white;
+    color: #2d3748;
 }
 
 .prompt-textarea:focus {
     outline: none;
     border-color: #2196F3;
     box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
+}
+
+/* Prevent browser autocomplete styling issues */
+.prompt-textarea:-webkit-autofill,
+.prompt-textarea:-webkit-autofill:hover,
+.prompt-textarea:-webkit-autofill:focus {
+    -webkit-text-fill-color: #2d3748;
+    -webkit-box-shadow: 0 0 0px 1000px white inset;
+    transition: background-color 5000s ease-in-out 0s;
 }
 
 .char-count {
@@ -222,7 +238,8 @@
     font-family: 'Courier New', monospace;
     font-size: 0.9rem;
     line-height: 1.6;
-    color: #333;
+    color: #1a202c;
+    font-weight: 500;
     max-height: 400px;
     overflow-y: auto;
 }
@@ -236,4 +253,81 @@
 .prompt-meta small {
     color: #999;
     font-size: 0.85rem;
+}
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+    .prompt-editor {
+        background: #2d3748;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        border-color: #4a5568;
+    }
+
+    .prompt-header {
+        border-bottom-color: #4a5568;
+    }
+
+    .prompt-title h3 {
+        color: #e2e8f0;
+    }
+
+    .prompt-description {
+        color: #a0aec0;
+    }
+
+    .form-group label {
+        color: #cbd5e0;
+    }
+
+    .checkbox-label span {
+        color: #e2e8f0;
+    }
+
+    .prompt-textarea {
+        background-color: #374151;
+        border-color: #4a5568;
+        color: #e2e8f0;
+    }
+
+    .prompt-textarea:focus {
+        border-color: #2196F3;
+        box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.2);
+    }
+
+    .prompt-textarea:-webkit-autofill,
+    .prompt-textarea:-webkit-autofill:hover,
+    .prompt-textarea:-webkit-autofill:focus {
+        -webkit-text-fill-color: #e2e8f0;
+        -webkit-box-shadow: 0 0 0px 1000px #374151 inset;
+    }
+
+    .char-count {
+        color: #718096;
+    }
+
+    .prompt-display {
+        background: #374151;
+        border-color: #4a5568;
+    }
+
+    .prompt-text {
+        background: #2d3748;
+        border-color: #4a5568;
+        color: #e2e8f0;
+    }
+
+    .prompt-meta small {
+        color: #718096;
+    }
+
+    .error-message {
+        background: #7f1d1d;
+        color: #fecaca;
+        border-left-color: #ef4444;
+    }
+
+    .success-message {
+        background: #14532d;
+        color: #bbf7d0;
+        border-left-color: #4CAF50;
+    }
 }

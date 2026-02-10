@@ -65,6 +65,9 @@ export const feedsApi = {
 
 // Article endpoints
 export const articlesApi = {
+    delete: async (articleId: number): Promise<void> => {
+        await api.delete(`/articles/${articleId}`);
+    },
     list: async (filters: ArticleFilters = {}): Promise<ArticleListResponse> => {
         const response = await api.get('/articles/', { params: filters });
         return response.data;

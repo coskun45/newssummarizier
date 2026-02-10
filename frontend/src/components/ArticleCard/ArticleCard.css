@@ -1,3 +1,42 @@
+.delete-icon-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  z-index: 2;
+  color: #e74c3c;
+  transition: color 0.2s;
+}
+
+.delete-icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.delete-icon-btn:hover:not(:disabled) {
+  color: #c0392b;
+}
+
+.article-card {
+  position: relative;
+}
+.btn-danger {
+  background-color: #e74c3c;
+  color: #fff;
+  border: none;
+  padding: 0.5em 1em;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-left: 0.5em;
+  transition: background 0.2s;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background-color: #c0392b;
+}
 .article-card {
   background: white;
   border-radius: 8px;
