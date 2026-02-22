@@ -110,7 +110,7 @@ async def check_new_articles(feed_id: int, db: Session = Depends(get_db)):
             "total_articles": len(articles),
             "new_articles": new_count,
             "existing_articles": len(articles) - new_count,
-            "new_articles_list": new_articles_info[:10]  # Limit to first 10
+            "new_articles_list": new_articles_info
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to check feed: {str(e)}")

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useArticles, useTopics, useFeeds, useRefreshFeed, useCheckNewArticles, useAddArticlesToFeed } from '../../hooks/useApi';
 import ArticleList from '../ArticleList/ArticleList';
 import TopicFilter from '../TopicFilter/TopicFilter';
@@ -16,6 +17,8 @@ function Dashboard() {
   const [showNewArticlesList, setShowNewArticlesList] = useState(false);
   const [selectedNewIndexes, setSelectedNewIndexes] = useState<number[]>([]);
   const [showSettings, setShowSettings] = useState(false);
+  const [processingUrls, setProcessingUrls] = useState<string[]>([]);
+  const queryClient = useQueryClient();
 
   const { data: topicsData } = useTopics();
   const { data: feedsData } = useFeeds();
@@ -74,11 +77,19 @@ function Dashboard() {
   const handleCheckNewArticles = async () => {
     if (feedsData && feedsData.length > 0) {
       await checkNewArticles();
-      // default to selecting all returned items
       setShowNewArticlesList(true);
-      setSelectedNewIndexes(newArticlesData?.new_articles_list ? newArticlesData.new_articles_list.map((_: any, i: number) => i) : []);
+      // selectedNewIndexes is set via useEffect when newArticlesData updates
     }
   };
+
+  // Auto-select all articles when newArticlesData updates (fixes timing bug)
+  useEffect(() => {
+    if (newArticlesData?.new_articles_list) {
+      setSelectedNewIndexes(
+        newArticlesData.new_articles_list.map((_: any, i: number) => i)
+      );
+    }
+  }, [newArticlesData]);
 
   // Auto-hide notification
   useEffect(() => {
@@ -87,6 +98,34 @@ function Dashboard() {
       return () => clearTimeout(timer);
     }
   }, [notification]);
+
+  // Poll every 5 seconds while articles are being processed
+  useEffect(() => {
+    if (processingUrls.length === 0) return;
+    const interval = setInterval(() => {
+      queryClient.invalidateQueries({ queryKey: ['articles'] });
+    }, 5000);
+    const timeout = setTimeout(() => {
+      clearInterval(interval);
+      setProcessingUrls([]);
+      setNotification(null);
+    }, 180000); // 3 min safety limit
+    return () => { clearInterval(interval); clearTimeout(timeout); };
+  }, [processingUrls]);
+
+  // Check processing completion when articlesData updates
+  useEffect(() => {
+    if (processingUrls.length === 0 || !articlesData?.articles) return;
+    const allDone = processingUrls.every(url => {
+      const article = articlesData.articles.find((a) => a.url === url);
+      return article && article.status !== 'queued';
+    });
+    if (allDone) {
+      setProcessingUrls([]);
+      setNotification('Artikel erfolgreich verarbeitet!');
+      setTimeout(() => setNotification(null), 5000);
+    }
+  }, [articlesData]);
 
   return (
     <div className="dashboard">
@@ -157,9 +196,6 @@ function Dashboard() {
                   </li>
                 ))}
               </ul>
-              {newArticlesData.new_articles > 10 && (
-                <p className="more-articles">...und {newArticlesData.new_articles - 10} weitere</p>
-              )}
             </div>
             <div className="modal-footer">
               <button className="cancel-button" onClick={() => setShowNewArticlesList(false)}>
@@ -167,8 +203,8 @@ function Dashboard() {
               </button>
               <button
                 className="load-button"
+                disabled={addArticlesMutation.isPending}
                 onClick={() => {
-                  // Add selected articles to feed
                   if (!feedsData || feedsData.length === 0) return;
                   const feedId = feedsData[0].id;
                   const selected = (newArticlesData?.new_articles_list || []).filter((_: any, i: number) => selectedNewIndexes.includes(i));
@@ -182,9 +218,15 @@ function Dashboard() {
                     { feedId, articles: selected },
                     {
                       onSuccess: (res) => {
-                        setNotification(`${res.created} Artikel hinzugefügt, ${res.skipped} übersprungen.`);
                         setShowNewArticlesList(false);
-                        setTimeout(() => setNotification(null), 5000);
+                        if (res.created > 0) {
+                          setProcessingUrls(res.created_list);
+                          setNotification(`${res.created} Artikel werden verarbeitet...`);
+                          queryClient.invalidateQueries({ queryKey: ['articles'] });
+                        } else {
+                          setNotification(`Keine neuen Artikel. ${res.skipped} bereits vorhanden.`);
+                          setTimeout(() => setNotification(null), 5000);
+                        }
                       },
                       onError: () => {
                         setNotification('Fehler beim Hinzufügen der Artikel.');
@@ -194,16 +236,7 @@ function Dashboard() {
                   );
                 }}
               >
-                Ausgewählte hinzufügen
-              </button>
-              <button 
-                className="load-button" 
-                onClick={() => {
-                  setShowNewArticlesList(false);
-                  handleRefreshNews();
-                }}
-              >
-                Alle {newArticlesData.new_articles} Artikel laden
+                {addArticlesMutation.isPending ? 'Wird hinzugefügt...' : `${selectedNewIndexes.length} Artikel verarbeiten`}
               </button>
             </div>
           </div>
