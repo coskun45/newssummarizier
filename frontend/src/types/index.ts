@@ -62,6 +62,7 @@ export interface ArticleFilters {
     topic_ids?: string;
     search?: string;
     status?: string;
+    feed_id?: number;
 }
 
 export interface UserSettings {

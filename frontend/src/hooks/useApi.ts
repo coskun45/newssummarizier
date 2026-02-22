@@ -131,6 +131,28 @@ export const useFeeds = () => {
     });
 };
 
+export const useCreateFeed = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: ({ url, title }: { url: string; title?: string }) =>
+            feedsApi.create(url, title),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['feeds'] });
+        },
+    });
+};
+
+export const useDeleteFeed = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (feedId: number) => feedsApi.delete(feedId),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['feeds'] });
+            queryClient.invalidateQueries({ queryKey: ['articles'] });
+        },
+    });
+};
+
 export const useCheckNewArticles = (feedId: number | null) => {
     return useQuery({
         queryKey: ['checkNewArticles', feedId],

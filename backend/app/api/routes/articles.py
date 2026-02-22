@@ -70,6 +70,7 @@ async def list_articles(
     topic_ids: Optional[str] = Query(None, description="Comma-separated topic IDs"),
     search: Optional[str] = None,
     status: Optional[str] = None,
+    feed_id: Optional[int] = Query(None),
     db: Session = Depends(get_db)
 ):
     """
@@ -82,7 +83,7 @@ async def list_articles(
             topic_id_list = [int(tid) for tid in topic_ids.split(",")]
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid topic IDs format")
-    
+
     # Get articles
     articles = crud.get_articles(
         db=db,
@@ -90,15 +91,17 @@ async def list_articles(
         limit=limit,
         topic_ids=topic_id_list,
         search_query=search,
-        status=status
+        status=status,
+        feed_id=feed_id
     )
-    
+
     # Get total count
     total = crud.count_articles(
         db=db,
         topic_ids=topic_id_list,
         search_query=search,
-        status=status
+        status=status,
+        feed_id=feed_id
     )
     
     # Transform to response model

@@ -108,14 +108,19 @@ def get_articles(
     search_query: str = None,
     status: str = None,
     start_date: datetime = None,
-    end_date: datetime = None
+    end_date: datetime = None,
+    feed_id: int = None
 ) -> List[models.Article]:
     """Get articles with optional filtering."""
     query = db.query(models.Article).options(
         joinedload(models.Article.summaries),
         joinedload(models.Article.topics).joinedload(models.ArticleTopic.topic)
     )
-    
+
+    # Filter by feed
+    if feed_id:
+        query = query.filter(models.Article.feed_id == feed_id)
+
     # Filter by topic
     if topic_ids:
         query = query.join(models.ArticleTopic).filter(
@@ -150,11 +155,15 @@ def count_articles(
     db: Session,
     topic_ids: List[int] = None,
     search_query: str = None,
-    status: str = None
+    status: str = None,
+    feed_id: int = None
 ) -> int:
     """Count articles with optional filtering."""
     query = db.query(func.count(models.Article.id))
-    
+
+    if feed_id:
+        query = query.filter(models.Article.feed_id == feed_id)
+
     if topic_ids:
         query = query.join(models.ArticleTopic).filter(
             models.ArticleTopic.topic_id.in_(topic_ids)

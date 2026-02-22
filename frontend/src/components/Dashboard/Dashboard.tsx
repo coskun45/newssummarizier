@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useArticles, useTopics, useFeeds, useRefreshFeed, useCheckNewArticles, useAddArticlesToFeed } from '../../hooks/useApi';
+import { useArticles, useTopics, useFeeds, useRefreshFeed, useCheckNewArticles, useAddArticlesToFeed, useCreateFeed, useDeleteFeed } from '../../hooks/useApi';
 import ArticleList from '../ArticleList/ArticleList';
 import TopicFilter from '../TopicFilter/TopicFilter';
+import FeedSidebar from '../FeedSidebar/FeedSidebar';
 import SearchBar from '../SearchBar/SearchBar';
 import Settings from '../Settings/Settings';
 import { Cog6ToothIcon, MagnifyingGlassIcon, ChartBarIcon, ArrowPathIcon, CheckCircleIcon, XMarkIcon } from '@heroicons/react/24/outline';
@@ -18,14 +19,19 @@ function Dashboard() {
   const [selectedNewIndexes, setSelectedNewIndexes] = useState<number[]>([]);
   const [showSettings, setShowSettings] = useState(false);
   const [processingUrls, setProcessingUrls] = useState<string[]>([]);
+  const [selectedFeedId, setSelectedFeedId] = useState<number | null>(null);
   const queryClient = useQueryClient();
 
   const { data: topicsData } = useTopics();
   const { data: feedsData } = useFeeds();
   const { mutate: refreshFeed, isPending: isRefreshing } = useRefreshFeed();
-  const { data: newArticlesData, refetch: checkNewArticles, isFetching: isChecking } = useCheckNewArticles(
-    feedsData && feedsData.length > 0 ? feedsData[0].id : null
-  );
+  const createFeedMutation = useCreateFeed();
+  const deleteFeedMutation = useDeleteFeed();
+
+  // Use selected feed for "check new" or fall back to the first feed
+  const activeFeedId = selectedFeedId ?? (feedsData && feedsData.length > 0 ? feedsData[0].id : null);
+
+  const { data: newArticlesData, refetch: checkNewArticles, isFetching: isChecking } = useCheckNewArticles(activeFeedId);
   const addArticlesMutation = useAddArticlesToFeed();
 
   // Debounce search
@@ -40,17 +46,22 @@ function Dashboard() {
     topic_ids: selectedTopics.length > 0 ? selectedTopics.join(',') : undefined,
     search: debouncedSearch || undefined,
     limit: 50,
+    feed_id: selectedFeedId ?? undefined,
   };
 
   const { data: articlesData, isLoading, error } = useArticles(filters);
 
+  const handleDeleteFeed = (feedId: number) => {
+    deleteFeedMutation.mutate(feedId);
+    if (selectedFeedId === feedId) setSelectedFeedId(null);
+  };
+
   const handleRefreshNews = () => {
-    if (feedsData && feedsData.length > 0) {
+    if (activeFeedId) {
       const newCount = newArticlesData?.new_articles || 0;
       setExpectedNewArticles(newCount);
-      
-      // Refresh the first active feed
-      refreshFeed(feedsData[0].id, {
+
+      refreshFeed(activeFeedId, {
         onSuccess: () => {
           if (newCount > 0) {
             setNotification(`${newCount} neue Artikel werden verarbeitet (kategorisiert & zusammengefasst)...`);
@@ -75,7 +86,7 @@ function Dashboard() {
   };
 
   const handleCheckNewArticles = async () => {
-    if (feedsData && feedsData.length > 0) {
+    if (activeFeedId) {
       await checkNewArticles();
       setShowNewArticlesList(true);
       // selectedNewIndexes is set via useEffect when newArticlesData updates
@@ -205,8 +216,8 @@ function Dashboard() {
                 className="load-button"
                 disabled={addArticlesMutation.isPending}
                 onClick={() => {
-                  if (!feedsData || feedsData.length === 0) return;
-                  const feedId = feedsData[0].id;
+                  if (!activeFeedId) return;
+                  const feedId = activeFeedId;
                   const selected = (newArticlesData?.new_articles_list || []).filter((_: any, i: number) => selectedNewIndexes.includes(i));
                   if (selected.length === 0) {
                     setNotification('Keine Artikel ausgewählt.');
@@ -284,7 +295,19 @@ function Dashboard() {
       <div className="dashboard-content">
         <div className="container">
           <div className="dashboard-grid">
-            {/* Sidebar */}
+            {/* Feed Sidebar */}
+            <aside className="dashboard-feed-sidebar">
+              <FeedSidebar
+                feeds={feedsData || []}
+                selectedFeedId={selectedFeedId}
+                onSelectFeed={setSelectedFeedId}
+                onCreateFeed={(url, title) => createFeedMutation.mutate({ url, title })}
+                onDeleteFeed={handleDeleteFeed}
+                isCreating={createFeedMutation.isPending}
+              />
+            </aside>
+
+            {/* Topic Sidebar */}
             <aside className="dashboard-sidebar">
               <TopicFilter
                 topics={topicsData || []}
