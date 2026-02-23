@@ -1,0 +1,38 @@
+services:
+
+  backend:
+    build:
+      context: ./backend
+    env_file:
+      - ./backend/.env
+    environment:
+      # ── Database (bind-mounted from host) ────────────────────────────────
+      DATABASE_URL: sqlite:////app/data/news_summary.db
+      CHECKPOINTS_DB: /app/data/checkpoints.db
+
+      # ── App ───────────────────────────────────────────────────────────────
+      DEBUG: "false"
+      CORS_ORIGINS: "http://localhost,http://localhost:80"
+
+      # ── JWT (override with a strong secret in production) ─────────────────
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-use-a-strong-secret-in-production}
+    volumes:
+      - ./backend/news_summary.db:/app/data/news_summary.db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+

@@ -20,7 +20,6 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [notification, setNotification] = useState<string | null>(null);
-  const [expectedNewArticles, setExpectedNewArticles] = useState<number | null>(null);
   const [showNewArticlesList, setShowNewArticlesList] = useState(false);
   const [selectedNewIndexes, setSelectedNewIndexes] = useState<number[]>([]);
   const [showSettings, setShowSettings] = useState(false);
@@ -30,7 +29,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
 
   const { data: topicsData } = useTopics();
   const { data: feedsData } = useFeeds();
-  const { mutate: refreshFeed, isPending: isRefreshing } = useRefreshFeed();
+  const { isPending: isRefreshing } = useRefreshFeed();
   const createFeedMutation = useCreateFeed();
   const deleteFeedMutation = useDeleteFeed();
 
@@ -60,35 +59,6 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
   const handleDeleteFeed = (feedId: number) => {
     deleteFeedMutation.mutate(feedId);
     if (selectedFeedId === feedId) setSelectedFeedId(null);
-  };
-
-  const handleRefreshNews = () => {
-    if (activeFeedId) {
-      const newCount = newArticlesData?.new_articles || 0;
-      setExpectedNewArticles(newCount);
-
-      refreshFeed(activeFeedId, {
-        onSuccess: () => {
-          if (newCount > 0) {
-            setNotification(`${newCount} neue Artikel werden verarbeitet (kategorisiert & zusammengefasst)...`);
-          } else {
-            setNotification('Nachrichten werden verarbeitet...');
-          }
-          setTimeout(() => {
-            if (newCount > 0) {
-              setNotification(`${newCount} neue Artikel erfolgreich verarbeitet!`);
-            } else {
-              setNotification('Verarbeitung abgeschlossen. Keine neuen Artikel gefunden.');
-            }
-            setTimeout(() => setNotification(null), 5000);
-          }, 5000);
-        },
-        onError: () => {
-          setNotification('Fehler beim Laden der Nachrichten');
-          setTimeout(() => setNotification(null), 5000);
-        }
-      });
-    }
   };
 
   const handleCheckNewArticles = async () => {
@@ -237,7 +207,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                       onSuccess: (res) => {
                         setShowNewArticlesList(false);
                         if (res.created > 0) {
-                          setProcessingUrls(res.created_list);
+                          setProcessingUrls(res.created_list ?? []);
                           setNotification(`${res.created} Artikel werden verarbeitet...`);
                           queryClient.invalidateQueries({ queryKey: ['articles'] });
                         } else {

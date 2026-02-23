@@ -4,5 +4,6 @@ backend/.venv
 .github
 frontend/node_modules
 backend/app/__pycache__
+.env
 
 
