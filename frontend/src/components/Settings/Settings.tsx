@@ -1,21 +1,26 @@
 import { useState, useEffect } from 'react';
-import { useSettings, useUpdateSettings, useTopics, useCreateTopic, useUpdateTopic, useDeleteTopic } from '../../hooks/useApi';
+import { useSettings, useUpdateSettings, useTopics, useCreateTopic, useUpdateTopic, useDeleteTopic, useUsers, useCreateUser, useDeleteUser } from '../../hooks/useApi';
 import PromptEditor from '../PromptEditor/PromptEditor';
-import { Cog6ToothIcon, FolderIcon, DocumentTextIcon, SparklesIcon, PencilIcon, TrashIcon, CheckIcon, XMarkIcon, PlusIcon, ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
+import { Cog6ToothIcon, FolderIcon, DocumentTextIcon, SparklesIcon, PencilIcon, TrashIcon, CheckIcon, XMarkIcon, PlusIcon, ChevronDownIcon, ChevronRightIcon, UsersIcon } from '@heroicons/react/24/outline';
+import type { AuthUser } from '../../types';
 import './Settings.css';
 
 interface SettingsProps {
   isOpen: boolean;
   onClose: () => void;
+  currentUser: AuthUser;
 }
 
-function Settings({ isOpen, onClose }: SettingsProps) {
+function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
   const { data: settings, isLoading: settingsLoading } = useSettings();
   const { data: topics } = useTopics();
   const { mutate: updateSettings, isPending: isSaving } = useUpdateSettings();
   const { mutate: createTopic, isPending: isCreatingTopic } = useCreateTopic();
   const { mutate: updateTopic, isPending: isUpdatingTopic } = useUpdateTopic();
   const { mutate: deleteTopic, isPending: isDeletingTopic } = useDeleteTopic();
+  const { data: users } = useUsers();
+  const { mutate: createUser, isPending: isCreatingUser } = useCreateUser();
+  const { mutate: deleteUser, isPending: isDeletingUser } = useDeleteUser();
 
   const [enabledTopicIds, setEnabledTopicIds] = useState<number[]>([]);
   const [enabledSummaryTypes, setEnabledSummaryTypes] = useState<string[]>([]);
@@ -26,11 +31,18 @@ function Settings({ isOpen, onClose }: SettingsProps) {
   const [editTopicName, setEditTopicName] = useState('');
   const [editTopicDescription, setEditTopicDescription] = useState('');
   
+  // User management form state
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserPassword, setNewUserPassword] = useState('');
+  const [newUserRole, setNewUserRole] = useState<'admin' | 'user'>('user');
+  const [userError, setUserError] = useState('');
+
   // Accordion state for sections
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     topics: true,
     summaryTypes: false,
-    prompts: false
+    prompts: false,
+    users: false,
   });
 
   const toggleSection = (section: string) => {
@@ -58,11 +70,16 @@ function Settings({ isOpen, onClose }: SettingsProps) {
   }, [settings]);
 
   const handleTopicToggle = (topicId: number) => {
-    setEnabledTopicIds(prev => 
-      prev.includes(topicId)
-        ? prev.filter(id => id !== topicId)
-        : [...prev, topicId]
-    );
+    if (enabledTopicIds.length === 0) {
+      // Empty = all topics selected. Deselect one → select all others explicitly.
+      setEnabledTopicIds((topics || []).map(t => t.id).filter(id => id !== topicId));
+    } else {
+      setEnabledTopicIds(prev =>
+        prev.includes(topicId)
+          ? prev.filter(id => id !== topicId)
+          : [...prev, topicId]
+      );
+    }
   };
 
   const handleSummaryTypeToggle = (type: string) => {
@@ -119,6 +136,31 @@ function Settings({ isOpen, onClose }: SettingsProps) {
   const handleDeleteTopic = (topicId: number, topicName: string) => {
     if (confirm(`Möchten Sie die Kategorie "${topicName}" wirklich löschen? Alle Zuordnungen zu Artikeln werden entfernt.`)) {
       deleteTopic(topicId);
+    }
+  };
+
+  const handleAddUser = () => {
+    setUserError('');
+    if (!newUserEmail.trim() || !newUserPassword.trim()) return;
+    createUser(
+      { email: newUserEmail.trim(), password: newUserPassword, role: newUserRole },
+      {
+        onSuccess: () => {
+          setNewUserEmail('');
+          setNewUserPassword('');
+          setNewUserRole('user');
+        },
+        onError: (err: unknown) => {
+          const axiosErr = err as { response?: { data?: { detail?: string } } };
+          setUserError(axiosErr.response?.data?.detail ?? 'Fehler beim Erstellen des Benutzers.');
+        },
+      }
+    );
+  };
+
+  const handleDeleteUser = (userId: number, userEmail: string) => {
+    if (confirm(`Möchten Sie den Benutzer "${userEmail}" wirklich löschen?`)) {
+      deleteUser(userId);
     }
   };
 
@@ -360,8 +402,8 @@ function Settings({ isOpen, onClose }: SettingsProps) {
 
               {/* System Prompts Section */}
               <div className="settings-section">
-                <div 
-                  className="section-header" 
+                <div
+                  className="section-header"
                   onClick={() => toggleSection('prompts')}
                 >
                   <h3>
@@ -374,13 +416,13 @@ function Settings({ isOpen, onClose }: SettingsProps) {
                 <p className="section-description">
                   Bearbeiten Sie die System-Prompts, die für die KI-Klassifizierung und Zusammenfassung verwendet werden.
                 </p>
-                
+
                 <PromptEditor
                   promptType="classification"
                   label="Klassifizierungs-Prompt"
                   description="Dieser Prompt wird verwendet, um Artikel automatisch in Kategorien einzuordnen."
                 />
-                
+
                 <PromptEditor
                   promptType="summarization"
                   label="Zusammenfassungs-Prompt"
@@ -389,6 +431,88 @@ function Settings({ isOpen, onClose }: SettingsProps) {
                 </div>
                 )}
               </div>
+
+              {/* User Management Section - Admin Only */}
+              {currentUser.role === 'admin' && (
+                <div className="settings-section">
+                  <div
+                    className="section-header"
+                    onClick={() => toggleSection('users')}
+                  >
+                    <h3>
+                      {expandedSections.users ? <ChevronDownIcon className="collapse-icon" /> : <ChevronRightIcon className="collapse-icon" />}
+                      <UsersIcon className="section-icon" /> Benutzerverwaltung
+                    </h3>
+                  </div>
+                  {expandedSections.users && (
+                    <div className="section-content">
+                      <p className="section-description">
+                        Verwalten Sie Benutzerkonten. Nur Administratoren können diese Einstellungen sehen.
+                      </p>
+
+                      {/* Existing users list */}
+                      <div className="user-list">
+                        {users?.map(user => (
+                          <div key={user.id} className="user-list-item">
+                            <div className="user-list-info">
+                              <span className="user-list-email">{user.email}</span>
+                              <span className={`user-role-badge user-role-${user.role}`}>{user.role}</span>
+                            </div>
+                            {user.id !== currentUser.id && (
+                              <button
+                                className="delete-topic-button"
+                                onClick={() => handleDeleteUser(user.id, user.email)}
+                                disabled={isDeletingUser}
+                                title="Benutzer löschen"
+                              >
+                                <TrashIcon />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Add new user form */}
+                      <div className="add-user-form">
+                        <h4 className="add-user-title"><PlusIcon className="inline-icon" /> Neuer Benutzer</h4>
+                        <input
+                          type="email"
+                          className="topic-input"
+                          placeholder="E-Mail-Adresse"
+                          value={newUserEmail}
+                          onChange={(e) => setNewUserEmail(e.target.value)}
+                          disabled={isCreatingUser}
+                        />
+                        <input
+                          type="password"
+                          className="topic-input"
+                          placeholder="Passwort"
+                          value={newUserPassword}
+                          onChange={(e) => setNewUserPassword(e.target.value)}
+                          disabled={isCreatingUser}
+                        />
+                        <select
+                          className="topic-input"
+                          value={newUserRole}
+                          onChange={(e) => setNewUserRole(e.target.value as 'admin' | 'user')}
+                          disabled={isCreatingUser}
+                        >
+                          <option value="user">user</option>
+                          <option value="admin">admin</option>
+                        </select>
+                        {userError && <p className="warning-text">⚠️ {userError}</p>}
+                        <button
+                          className="confirm-add-button"
+                          onClick={handleAddUser}
+                          disabled={isCreatingUser || !newUserEmail.trim() || !newUserPassword.trim()}
+                        >
+                          {isCreatingUser ? 'Erstellen...' : 'Benutzer erstellen'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>

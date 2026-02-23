@@ -6,10 +6,16 @@ import TopicFilter from '../TopicFilter/TopicFilter';
 import FeedSidebar from '../FeedSidebar/FeedSidebar';
 import SearchBar from '../SearchBar/SearchBar';
 import Settings from '../Settings/Settings';
-import { Cog6ToothIcon, MagnifyingGlassIcon, ChartBarIcon, ArrowPathIcon, CheckCircleIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { Cog6ToothIcon, MagnifyingGlassIcon, ChartBarIcon, ArrowPathIcon, XMarkIcon, ArrowRightStartOnRectangleIcon } from '@heroicons/react/24/outline';
+import type { AuthUser } from '../../types';
 import './Dashboard.css';
 
-function Dashboard() {
+interface DashboardProps {
+  currentUser: AuthUser;
+  onLogout: () => void;
+}
+
+function Dashboard({ currentUser, onLogout }: DashboardProps) {
   const [selectedTopics, setSelectedTopics] = useState<number[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -140,7 +146,7 @@ function Dashboard() {
 
   return (
     <div className="dashboard">
-      <Settings isOpen={showSettings} onClose={() => setShowSettings(false)} />
+      <Settings isOpen={showSettings} onClose={() => setShowSettings(false)} currentUser={currentUser} />
 
       {/* Notification */}
       {notification && (
@@ -254,7 +260,6 @@ function Dashboard() {
         </div>
       )}
 
-      {/* 
       {/* Header */}
       <header className="dashboard-header">
         <div className="container">
@@ -264,8 +269,8 @@ function Dashboard() {
               <p className="text-muted">Deutsche Welle - Intelligente Nachrichtenzusammenfassungen</p>
             </div>
             <div className="header-buttons">
-              
-              <button 
+
+              <button
                 className="check-button"
                 onClick={handleCheckNewArticles}
                 disabled={isChecking || isRefreshing}
@@ -278,14 +283,25 @@ function Dashboard() {
                   <><MagnifyingGlassIcon /> Neue Artikel prüfen</>
                 )}
               </button>
-              
-              <button 
+
+              <button
                 className="settings-button"
                 onClick={() => setShowSettings(true)}
                 title="Einstellungen"
               >
                 <Cog6ToothIcon />
               </button>
+
+              <div className="user-info">
+                <span className="user-email" title={currentUser.email}>{currentUser.email}</span>
+                <button
+                  className="logout-button"
+                  onClick={onLogout}
+                  title="Abmelden"
+                >
+                  <ArrowRightStartOnRectangleIcon />
+                </button>
+              </div>
             </div>
           </div>
         </div>

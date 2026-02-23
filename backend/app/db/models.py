@@ -120,7 +120,19 @@ class SystemPrompt(Base):
 class Settings(Base):
     """Application settings storage."""
     __tablename__ = "settings"
-    
+
     key = Column(String, primary_key=True)
     value = Column(Text)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class User(Base):
+    """Application user model."""
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    email = Column(String, unique=True, nullable=False, index=True)
+    hashed_password = Column(String, nullable=False)
+    role = Column(String, nullable=False, default="user")  # "admin" or "user"
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

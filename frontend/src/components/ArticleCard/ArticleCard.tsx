@@ -38,7 +38,7 @@ function ArticleCard({ article }: ArticleCardProps) {
         className="delete-icon-btn"
         title="Sil"
         onClick={() => setShowDeleteConfirm(true)}
-        disabled={deleteArticleMutation.isLoading}
+        disabled={deleteArticleMutation.isPending}
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -69,7 +69,7 @@ function ArticleCard({ article }: ArticleCardProps) {
                 setShowDeleteConfirm(false);
               }}
               style={{ marginRight: 12, background: '#e53935', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 4, cursor: 'pointer' }}
-              disabled={deleteArticleMutation.isLoading}
+              disabled={deleteArticleMutation.isPending}
             >
               Sil
             </button>

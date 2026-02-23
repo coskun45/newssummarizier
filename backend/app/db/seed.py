@@ -75,19 +75,44 @@ def seed_feed():
         db.close()
 
 
+def seed_admin_user():
+    """Seed the default admin user if it does not exist."""
+    db = SessionLocal()
+    try:
+        existing = crud.get_user_by_email(db, "admin@gmail.com")
+        if not existing:
+            from app.core.security import hash_password
+            crud.create_user(
+                db=db,
+                email="admin@gmail.com",
+                hashed_password=hash_password("T9$kL7!qZ4@vR2#x"),
+                role="admin",
+            )
+            logger.info("Created default admin user: admin@gmail.com")
+        else:
+            logger.info("Default admin user already exists.")
+    except Exception as e:
+        logger.error(f"Error seeding admin user: {e}")
+    finally:
+        db.close()
+
+
 def seed_database():
     """Seed all initial data."""
     logger.info("Starting database seeding...")
-    
+
     # Seed topics
     seed_topics()
-    
+
     # Seed feed
     feed_id = seed_feed()
-    
+
     # Seed default system prompts
     seed_system_prompts()
-    
+
+    # Seed default admin user
+    seed_admin_user()
+
     logger.info("Database seeding completed.")
     return feed_id
 

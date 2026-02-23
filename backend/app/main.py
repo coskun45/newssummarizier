@@ -2,10 +2,11 @@
 FastAPI main application with CORS and lifespan management.
 """
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.db.database import init_db
+from app.api.deps import get_current_user
 import logging
 
 # Configure logging
@@ -21,22 +22,22 @@ async def lifespan(app: FastAPI):
     """Application lifespan events."""
     # Startup
     logger.info("Starting News Summarizer application...")
-    
+
     # Initialize database
     init_db()
     logger.info("Database initialized")
-    
+
     # Seed database with initial data (only creates feed and topics if missing)
     from app.db.seed import seed_database
     feed_id = seed_database()
-    
+
     # Note: Initial feed fetch is NOT triggered automatically
     # Use the "Neue Nachrichten laden" button in the frontend to fetch news
     if feed_id:
         logger.info(f"Feed ID {feed_id} ready. Use manual refresh button to fetch news.")
-    
+
     yield
-    
+
     # Shutdown
     logger.info("Shutting down News Summarizer application...")
 
@@ -76,10 +77,17 @@ async def health_check():
 
 # Import and include routers
 from app.api.routes import rss, articles, summaries, settings as settings_routes, topics, prompts
+from app.api.routes import auth as auth_routes
 
-app.include_router(rss.router, prefix="/api/feeds", tags=["feeds"])
-app.include_router(articles.router, prefix="/api/articles", tags=["articles"])
-app.include_router(summaries.router, prefix="/api", tags=["summaries"])
-app.include_router(settings_routes.router, prefix="/api/settings", tags=["settings"])
-app.include_router(topics.router, prefix="/api/topics", tags=["topics"])
-app.include_router(prompts.router, prefix="/api/prompts", tags=["prompts"])
+# Public auth routes (no JWT required)
+app.include_router(auth_routes.router, prefix="/api/auth", tags=["auth"])
+
+# Protected routes (JWT required for all endpoints in these routers)
+auth_dep = [Depends(get_current_user)]
+
+app.include_router(rss.router, prefix="/api/feeds", tags=["feeds"], dependencies=auth_dep)
+app.include_router(articles.router, prefix="/api/articles", tags=["articles"], dependencies=auth_dep)
+app.include_router(summaries.router, prefix="/api", tags=["summaries"], dependencies=auth_dep)
+app.include_router(settings_routes.router, prefix="/api/settings", tags=["settings"], dependencies=auth_dep)
+app.include_router(topics.router, prefix="/api/topics", tags=["topics"], dependencies=auth_dep)
+app.include_router(prompts.router, prefix="/api/prompts", tags=["prompts"], dependencies=auth_dep)

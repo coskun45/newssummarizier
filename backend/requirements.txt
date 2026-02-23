@@ -30,3 +30,8 @@ pydantic-settings==2.1.0
 
 # Rate limiting
 aiolimiter==1.1.0
+
+# Authentication
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==3.2.2

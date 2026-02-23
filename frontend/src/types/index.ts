@@ -86,3 +86,23 @@ export interface SystemPrompt {
     created_at: string;
     updated_at: string;
 }
+
+export interface AuthUser {
+    id: number;
+    email: string;
+    role: 'admin' | 'user';
+}
+
+export interface AppUser {
+    id: number;
+    email: string;
+    role: string;
+    is_active: boolean;
+    created_at: string;
+}
+
+export interface LoginResponse {
+    access_token: string;
+    token_type: string;
+    user: AppUser;
+}

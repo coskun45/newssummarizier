@@ -515,3 +515,44 @@ def upsert_system_prompt(
     db.refresh(prompt)
     return prompt
 
+
+# ==================== User Operations ====================
+
+def get_user(db: Session, user_id: int) -> Optional[models.User]:
+    """Get a user by ID."""
+    return db.query(models.User).filter(models.User.id == user_id).first()
+
+
+def get_user_by_email(db: Session, email: str) -> Optional[models.User]:
+    """Get a user by email address."""
+    return db.query(models.User).filter(models.User.email == email).first()
+
+
+def get_users(db: Session) -> List[models.User]:
+    """Get all users ordered by creation date."""
+    return db.query(models.User).order_by(models.User.created_at).all()
+
+
+def create_user(
+    db: Session,
+    email: str,
+    hashed_password: str,
+    role: str = "user"
+) -> models.User:
+    """Create a new user with a hashed password."""
+    user = models.User(email=email, hashed_password=hashed_password, role=role)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def delete_user(db: Session, user_id: int) -> bool:
+    """Delete a user by ID. Returns True if deleted, False if not found."""
+    user = get_user(db, user_id)
+    if user:
+        db.delete(user)
+        db.commit()
+        return True
+    return False
+

@@ -48,7 +48,12 @@ class Settings(BaseSettings):
     monthly_cost_limit: float = 100.0  # USD
     
     # CORS
-    cors_origins: str = "http://localhost:5173,http://localhost:3000"
+    cors_origins: str = "http://localhost:5174,http://localhost:3000"
+
+    # JWT Authentication
+    jwt_secret_key: str = "change-me-in-production-use-32-char-minimum-secret-key"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 480  # 8 hours
     
     @property
     def cors_origins_list(self) -> List[str]:

@@ -61,18 +61,7 @@ async def list_topics(db: Session = Depends(get_db)):
     List all topics with article counts.
     """
     topics_with_counts = crud.get_topics_with_counts(db)
-    
-    topics_response = []
-    for topic, count in topics_with_counts:
-        topics_response.append(TopicResponse(
-            id=topic.id,
-            name=topic.name,
-            description=topic.description,
-            color=topic.color,
-            article_count=count
-        ))
-    
-    return topics_response
+    return [TopicResponse(**topic_dict) for topic_dict in topics_with_counts]
 
 
 @router.post("/", response_model=TopicResponse)

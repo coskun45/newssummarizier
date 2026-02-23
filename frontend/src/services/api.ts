@@ -4,7 +4,6 @@
 import axios from 'axios';
 import type {
     Feed,
-    Article,
     ArticleDetail,
     ArticleListResponse,
     ArticleFilters,
@@ -13,6 +12,8 @@ import type {
     UserSettings,
     CostStats,
     SystemPrompt,
+    AppUser,
+    LoginResponse,
 } from '../types';
 
 const API_BASE_URL = '/api';
@@ -24,10 +25,59 @@ const api = axios.create({
     },
 });
 
+// Attach JWT token to every request
+api.interceptors.request.use((config) => {
+    const token = localStorage.getItem('auth_token');
+    if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+});
+
+// Handle 401 responses: clear session and dispatch logout event
+api.interceptors.response.use(
+    (response) => response,
+    (error) => {
+        if (error.response?.status === 401) {
+            localStorage.removeItem('auth_token');
+            localStorage.removeItem('auth_user');
+            window.dispatchEvent(new Event('auth:logout'));
+        }
+        return Promise.reject(error);
+    }
+);
+
+// Auth endpoints
+export const authApi = {
+    login: async (email: string, password: string): Promise<LoginResponse> => {
+        const response = await api.post('/auth/login', { email, password });
+        return response.data;
+    },
+
+    me: async (): Promise<AppUser> => {
+        const response = await api.get('/auth/me');
+        return response.data;
+    },
+
+    listUsers: async (): Promise<AppUser[]> => {
+        const response = await api.get('/auth/users');
+        return response.data;
+    },
+
+    createUser: async (data: { email: string; password: string; role: string }): Promise<AppUser> => {
+        const response = await api.post('/auth/users', data);
+        return response.data;
+    },
+
+    deleteUser: async (userId: number): Promise<void> => {
+        await api.delete(`/auth/users/${userId}`);
+    },
+};
+
 // Feed endpoints
 export const feedsApi = {
     list: async (activeOnly: boolean = true): Promise<Feed[]> => {
-        const response = await api.get('/feeds', { params: { active_only: activeOnly } });
+        const response = await api.get('/feeds/', { params: { active_only: activeOnly } });
         return response.data;
     },
 
@@ -116,7 +166,7 @@ export const summariesApi = {
 // Topic endpoints
 export const topicsApi = {
     list: async (): Promise<Topic[]> => {
-        const response = await api.get('/topics');
+        const response = await api.get('/topics/');
         return response.data;
     },
 

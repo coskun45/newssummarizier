@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { promptsApi } from '../../services/api';
 import type { SystemPrompt } from '../../types';
 import { PencilIcon, CheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
@@ -18,9 +18,13 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ promptType, label, descript
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
+    const successTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
         loadPrompt();
+        return () => {
+            if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current);
+        };
     }, [promptType]);
 
     const loadPrompt = async () => {
@@ -31,9 +35,14 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ promptType, label, descript
             setPrompt(data);
             setEditedText(data.prompt_text);
             setIsActive(data.is_active);
-        } catch (err) {
-            console.error('Error loading prompt:', err);
-            setError('Prompt konnte nicht geladen werden');
+        } catch (err: any) {
+            if (err?.response?.status === 404) {
+                // Prompt does not exist yet — allow creation without showing an error
+                setPrompt(null);
+            } else {
+                console.error('Error loading prompt:', err);
+                setError('Prompt konnte nicht geladen werden');
+            }
         } finally {
             setLoading(false);
         }
@@ -58,7 +67,8 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ promptType, label, descript
             await loadPrompt();
 
             // Clear success message after 3 seconds
-            setTimeout(() => setSuccessMessage(null), 3000);
+            if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current);
+            successTimeoutRef.current = setTimeout(() => setSuccessMessage(null), 3000);
         } catch (err) {
             console.error('Error saving prompt:', err);
             setError('Fehler beim Speichern des Prompts');

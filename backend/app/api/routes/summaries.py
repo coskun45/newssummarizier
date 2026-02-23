@@ -3,7 +3,7 @@ Summary and topic endpoints.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List
 from pydantic import BaseModel
 from datetime import datetime
 from app.db.database import get_db
@@ -22,18 +22,6 @@ class SummaryResponse(BaseModel):
     tokens_used: int
     cost: float
     created_at: datetime
-    
-    class Config:
-        from_attributes = True
-
-
-class TopicResponse(BaseModel):
-    """Topic response model."""
-    id: int
-    name: str
-    description: Optional[str] = None
-    color: Optional[str] = None
-    article_count: int = 0
     
     class Config:
         from_attributes = True
@@ -92,15 +80,6 @@ async def get_article_summary_by_type(
     
     # Return most recent summary of this type
     return summaries[-1]
-
-
-@router.get("/topics", response_model=List[TopicResponse])
-async def list_topics(db: Session = Depends(get_db)):
-    """
-    List all topics with article counts.
-    """
-    topics = crud.get_topics_with_counts(db)
-    return topics
 
 
 @router.get("/stats/costs", response_model=CostStatsResponse)

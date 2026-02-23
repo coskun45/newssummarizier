@@ -1,17 +1,8 @@
-export const useDeleteArticle = () => {
-    const queryClient = useQueryClient();
-    return useMutation({
-        mutationFn: (articleId: number) => articlesApi.delete(articleId),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['articles'] });
-        },
-    });
-};
 /**
  * React Query hooks for data fetching and caching.
  */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { articlesApi, summariesApi, topicsApi, settingsApi, statsApi, feedsApi } from '../services/api';
+import { articlesApi, summariesApi, topicsApi, settingsApi, statsApi, feedsApi, authApi } from '../services/api';
 import type { ArticleFilters, UserSettings } from '../types';
 
 // Articles hooks
@@ -28,6 +19,16 @@ export const useArticle = (articleId: number | null) => {
         queryKey: ['article', articleId],
         queryFn: () => articlesApi.get(articleId!),
         enabled: articleId !== null,
+    });
+};
+
+export const useDeleteArticle = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (articleId: number) => articlesApi.delete(articleId),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['articles'] });
+        },
     });
 };
 
@@ -185,6 +186,36 @@ export const useAddArticlesToFeed = () => {
             feedsApi.addArticles(feedId, articles),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['articles'] });
+        },
+    });
+};
+
+
+// User management hooks (admin only)
+export const useUsers = () => {
+    return useQuery({
+        queryKey: ['users'],
+        queryFn: () => authApi.listUsers(),
+    });
+};
+
+export const useCreateUser = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (data: { email: string; password: string; role: string }) =>
+            authApi.createUser(data),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['users'] });
+        },
+    });
+};
+
+export const useDeleteUser = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (userId: number) => authApi.deleteUser(userId),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['users'] });
         },
     });
 };
