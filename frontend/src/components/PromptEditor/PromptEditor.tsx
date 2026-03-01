@@ -41,7 +41,7 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ promptType, label, descript
                 setPrompt(null);
             } else {
                 console.error('Error loading prompt:', err);
-                setError('Prompt konnte nicht geladen werden');
+                setError('Prompt yüklenemedi');
             }
         } finally {
             setLoading(false);
@@ -62,7 +62,7 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ promptType, label, descript
                 await promptsApi.create(promptType, editedText, isActive);
             }
 
-            setSuccessMessage('Prompt erfolgreich gespeichert!');
+            setSuccessMessage('Prompt başarıyla kaydedildi!');
             setIsEditing(false);
             await loadPrompt();
 
@@ -71,7 +71,7 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ promptType, label, descript
             successTimeoutRef.current = setTimeout(() => setSuccessMessage(null), 3000);
         } catch (err) {
             console.error('Error saving prompt:', err);
-            setError('Fehler beim Speichern des Prompts');
+            setError('Prompt kaydedilirken hata oluştu');
         } finally {
             setLoading(false);
         }
@@ -87,7 +87,7 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ promptType, label, descript
     };
 
     if (loading && !prompt) {
-        return <div className="prompt-editor loading">Lädt...</div>;
+        return <div className="prompt-editor loading">Yükleniyor...</div>;
     }
 
     return (
@@ -104,7 +104,7 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ promptType, label, descript
                             onClick={() => setIsEditing(true)}
                             disabled={loading}
                         >
-                            <PencilIcon /> Bearbeiten
+                            <PencilIcon /> Düzenle
                         </button>
                     ) : (
                         <>
@@ -113,14 +113,14 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ promptType, label, descript
                                 onClick={handleSave}
                                 disabled={loading || !editedText.trim()}
                             >
-                                <CheckIcon /> Speichern
+                                <CheckIcon /> Kaydet
                             </button>
                             <button
                                 className="btn btn-cancel"
                                 onClick={handleCancel}
                                 disabled={loading}
                             >
-                                <XMarkIcon /> Abbrechen
+                                <XMarkIcon /> İptal
                             </button>
                         </>
                     )}
@@ -140,20 +140,20 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ promptType, label, descript
                                     checked={isActive}
                                     onChange={(e) => setIsActive(e.target.checked)}
                                 />
-                                <span>Aktiv</span>
+                                <span>Aktif</span>
                             </label>
                         </div>
                         <div className="form-group">
-                            <label>Prompt Text:</label>
+                            <label>Prompt Metni:</label>
                             <textarea
                                 className="prompt-textarea"
                                 value={editedText}
                                 onChange={(e) => setEditedText(e.target.value)}
                                 rows={15}
-                                placeholder="Geben Sie den System-Prompt ein..."
+                                placeholder="Sistem promptunu girin..."
                             />
                             <div className="char-count">
-                                {editedText.length} Zeichen
+                                {editedText.length} karakter
                             </div>
                         </div>
                     </>
@@ -161,14 +161,14 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ promptType, label, descript
                     <div className="prompt-display">
                         <div className="status-badge">
                             <span className={`badge ${isActive ? 'active' : 'inactive'}`}>
-                                {isActive ? <><CheckIcon /> Aktiv</> : <><XMarkIcon /> Inaktiv</>}
+                                {isActive ? <><CheckIcon /> Aktif</> : <><XMarkIcon /> Pasif</>}
                             </span>
                         </div>
-                        <pre className="prompt-text">{prompt?.prompt_text || 'Kein Prompt gesetzt'}</pre>
+                        <pre className="prompt-text">{prompt?.prompt_text || 'Prompt belirlenmemiş'}</pre>
                         {prompt && (
                             <div className="prompt-meta">
                                 <small>
-                                    Zuletzt aktualisiert: {new Date(prompt.updated_at).toLocaleString('de-DE')}
+                                    Son güncelleme: {new Date(prompt.updated_at).toLocaleString('tr-TR')}
                                 </small>
                             </div>
                         )}

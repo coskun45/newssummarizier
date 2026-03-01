@@ -28,7 +28,7 @@ function ContentModal({ isOpen, onClose, title, content }: ContentModalProps) {
               ))}
             </div>
           ) : (
-            <p className="text-muted">Kein Inhalt verfügbar</p>
+            <p className="text-muted">İçerik mevcut değil</p>
           )}
         </div>
       </div>

@@ -41,12 +41,12 @@ function FeedSidebar({ feeds, selectedFeedId, onSelectFeed, onCreateFeed, onDele
       <div className="feed-sidebar-header">
         <h2 className="feed-sidebar-title">
           <RssIcon className="feed-sidebar-icon" />
-          RSS Feeds
+          RSS Beslemeleri
         </h2>
         <button
           className="feed-add-btn"
           onClick={() => setShowAddForm((v) => !v)}
-          title="Feed hinzufügen"
+          title="Besleme ekle"
         >
           <PlusIcon />
         </button>
@@ -66,16 +66,16 @@ function FeedSidebar({ feeds, selectedFeedId, onSelectFeed, onCreateFeed, onDele
           <input
             className="feed-input"
             type="text"
-            placeholder="Name (optional)"
+            placeholder="Ad (isteğe bağlı)"
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
           />
           <div className="feed-add-actions">
             <button type="submit" className="feed-submit-btn" disabled={isCreating}>
-              {isCreating ? 'Wird hinzugefügt...' : 'Hinzufügen'}
+              {isCreating ? 'Ekleniyor...' : 'Ekle'}
             </button>
             <button type="button" className="feed-cancel-btn" onClick={() => setShowAddForm(false)}>
-              Abbrechen
+              İptal
             </button>
           </div>
         </form>
@@ -86,7 +86,7 @@ function FeedSidebar({ feeds, selectedFeedId, onSelectFeed, onCreateFeed, onDele
           className={`feed-item ${selectedFeedId === null ? 'feed-item--active' : ''}`}
           onClick={() => onSelectFeed(null)}
         >
-          <span className="feed-item-label">Alle Feeds</span>
+          <span className="feed-item-label">Tüm Beslemeler</span>
           <span className="feed-item-count">{feeds.length}</span>
         </li>
 
@@ -105,20 +105,20 @@ function FeedSidebar({ feeds, selectedFeedId, onSelectFeed, onCreateFeed, onDele
                   className="feed-delete-yes"
                   onClick={(e) => { e.stopPropagation(); onDeleteFeed(feed.id); setDeleteConfirmId(null); }}
                 >
-                  Löschen
+                  Sil
                 </button>
                 <button
                   className="feed-delete-no"
                   onClick={(e) => { e.stopPropagation(); setDeleteConfirmId(null); }}
                 >
-                  Nein
+                  Hayır
                 </button>
               </span>
             ) : (
               <button
                 className="feed-delete-btn"
                 onClick={(e) => { e.stopPropagation(); setDeleteConfirmId(feed.id); }}
-                title="Feed löschen"
+                title="Beslemeyi sil"
               >
                 <TrashIcon />
               </button>

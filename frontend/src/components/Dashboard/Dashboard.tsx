@@ -114,7 +114,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
     });
     if (allDone) {
       setProcessingUrls([]);
-      setNotification('Artikel erfolgreich verarbeitet!');
+      setNotification('Makaleler başarıyla işlendi!');
       setTimeout(() => setNotification(null), 5000);
     }
   }, [articlesData]);
@@ -135,7 +135,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
         <div className="new-articles-overlay" onClick={() => setShowNewArticlesList(false)}>
           <div className="new-articles-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3><ChartBarIcon /> {newArticlesData.new_articles} Neue Artikel</h3>
+              <h3><ChartBarIcon /> {newArticlesData.new_articles} Yeni Makale</h3>
               <button className="close-button" onClick={() => setShowNewArticlesList(false)}><XMarkIcon /></button>
             </div>
               <div className="modal-content">
@@ -154,7 +154,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                       }
                     }}
                   />
-                  Alle auswählen
+                  Tümünü seç
                 </label>
               </div>
               <ul className="new-articles-list">
@@ -175,7 +175,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                       <div className="article-title">{article.title}</div>
                       {article.published_at && (
                         <div className="article-date">
-                          {new Date(article.published_at).toLocaleDateString('de-DE', { 
+                          {new Date(article.published_at).toLocaleDateString('tr-TR', {
                             day: '2-digit', 
                             month: '2-digit', 
                             year: 'numeric',
@@ -191,7 +191,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
             </div>
             <div className="modal-footer">
               <button className="cancel-button" onClick={() => setShowNewArticlesList(false)}>
-                Abbrechen
+                İptal
               </button>
               <button
                 className="load-button"
@@ -201,7 +201,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                   const feedId = activeFeedId;
                   const selected = (newArticlesData?.new_articles_list || []).filter((_: any, i: number) => selectedNewIndexes.includes(i));
                   if (selected.length === 0) {
-                    setNotification('Keine Artikel ausgewählt.');
+                    setNotification('Makale seçilmedi.');
                     setTimeout(() => setNotification(null), 3000);
                     return;
                   }
@@ -213,22 +213,22 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                         setShowNewArticlesList(false);
                         if (res.created > 0) {
                           setProcessingUrls(res.created_list ?? []);
-                          setNotification(`${res.created} Artikel werden verarbeitet...`);
+                          setNotification(`${res.created} makale işleniyor...`);
                           queryClient.invalidateQueries({ queryKey: ['articles'] });
                         } else {
-                          setNotification(`Keine neuen Artikel. ${res.skipped} bereits vorhanden.`);
+                          setNotification(`Yeni makale yok. ${res.skipped} zaten mevcut.`);
                           setTimeout(() => setNotification(null), 5000);
                         }
                       },
                       onError: () => {
-                        setNotification('Fehler beim Hinzufügen der Artikel.');
+                        setNotification('Makaleler eklenirken hata oluştu.');
                         setTimeout(() => setNotification(null), 5000);
                       }
                     }
                   );
                 }}
               >
-                {addArticlesMutation.isPending ? 'Wird hinzugefügt...' : `${selectedNewIndexes.length} Artikel verarbeiten`}
+                {addArticlesMutation.isPending ? 'Ekleniyor...' : `${selectedNewIndexes.length} makaleyi işle`}
               </button>
             </div>
           </div>
@@ -240,8 +240,8 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
         <div className="container">
           <div className="header-content">
             <div className="header-text">
-              <h1><ChartBarIcon className="header-icon" /> News Summarizer</h1>
-              <p className="text-muted">Deutsche Welle - Intelligente Nachrichtenzusammenfassungen</p>
+              <h1><ChartBarIcon className="header-icon" /> Haber Özetleyici</h1>
+              <p className="text-muted">Deutsche Welle - Akıllı Haber Özetleri</p>
             </div>
             <div className="header-buttons">
 
@@ -251,18 +251,18 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                 disabled={isChecking || isRefreshing}
               >
                 {isChecking ? (
-                  <><ArrowPathIcon className="spin-icon" /> Prüfe...</>
+                  <><ArrowPathIcon className="spin-icon" /> Kontrol ediliyor...</>
                 ) : newArticlesData ? (
-                  <><ChartBarIcon /> {newArticlesData.new_articles} neue Artikel verfügbar</>
+                  <><ChartBarIcon /> {newArticlesData.new_articles} yeni makale mevcut</>
                 ) : (
-                  <><MagnifyingGlassIcon /> Neue Artikel prüfen</>
+                  <><MagnifyingGlassIcon /> Yeni makaleleri kontrol et</>
                 )}
               </button>
 
               <button
                 className="settings-button"
                 onClick={() => setShowSettings(true)}
-                title="Einstellungen"
+                title="Ayarlar"
               >
                 <Cog6ToothIcon />
               </button>
@@ -272,7 +272,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                 <button
                   className="logout-button"
                   onClick={onLogout}
-                  title="Abmelden"
+                  title="Çıkış Yap"
                 >
                   <ArrowRightStartOnRectangleIcon />
                 </button>
@@ -319,21 +319,21 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
 
               {error && (
                 <div className="error-message">
-                  <p>⚠️ Fehler beim Laden der Artikel</p>
+                  <p>⚠️ Makaleler yüklenirken hata oluştu</p>
                 </div>
               )}
 
               {isLoading ? (
                 <div className="loading-state">
-                  <p>⏳ Lade Artikel...</p>
+                  <p>⏳ Makaleler yükleniyor...</p>
                 </div>
               ) : articlesData && articlesData.articles.length === 0 ? (
                 <div className="empty-state">
-                  <p>📭 Keine Artikel gefunden</p>
+                  <p>📭 Makale bulunamadı</p>
                   <p className="text-small text-muted">
                     {selectedTopics.length > 0 || searchQuery
-                      ? 'Versuchen Sie andere Filter'
-                      : 'Artikel werden gerade geladen...'}
+                      ? 'Farklı filtreler deneyin'
+                      : 'Makaleler yükleniyor...'}
                   </p>
                 </div>
               ) : (
@@ -341,7 +341,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                   <>
                     <div className="results-count">
                       <p className="text-small text-muted">
-                        {articlesData.total} Artikel gefunden
+                        {articlesData.total} makale bulundu
                       </p>
                     </div>
                     <ArticleList articles={articlesData.articles} />
