@@ -10,7 +10,7 @@ interface TopicFilterProps {
 function TopicFilter({ topics, selectedTopics, onTopicToggle }: TopicFilterProps) {
   return (
     <div className="topic-filter">
-      <h3 className="filter-title">Themen</h3>
+      <h3 className="filter-title">Konular</h3>
       <div className="topic-list">
         {topics.map((topic) => (
           <label key={topic.id} className="topic-item">

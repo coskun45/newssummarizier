@@ -11,7 +11,7 @@ function SearchBar({ value, onChange }: SearchBarProps) {
     <div className="search-bar">
       <input
         type="text"
-        placeholder="Artikel durchsuchen..."
+        placeholder="Makalelerde ara..."
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="search-input"
@@ -20,7 +20,7 @@ function SearchBar({ value, onChange }: SearchBarProps) {
         <button
           className="search-clear"
           onClick={() => onChange('')}
-          aria-label="Clear search"
+          aria-label="Aramayı temizle"
         >
           <XMarkIcon />
         </button>

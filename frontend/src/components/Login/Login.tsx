@@ -29,7 +29,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
             onLoginSuccess(authUser);
         } catch (err: unknown) {
             const axiosErr = err as { response?: { data?: { detail?: string } } };
-            setError(axiosErr.response?.data?.detail ?? 'Anmeldung fehlgeschlagen. Bitte erneut versuchen.');
+            setError(axiosErr.response?.data?.detail ?? 'Giriş başarısız. Lütfen tekrar deneyin.');
         } finally {
             setLoading(false);
         }
@@ -40,24 +40,24 @@ export default function Login({ onLoginSuccess }: LoginProps) {
             <div className="login-card">
                 <div className="login-header">
                     <h1>News Summarizer</h1>
-                    <p>Bitte melden Sie sich an</p>
+                    <p>Lütfen giriş yapın</p>
                 </div>
                 <form className="login-form" onSubmit={handleSubmit}>
                     <div className="form-group">
-                        <label htmlFor="email">E-Mail</label>
+                        <label htmlFor="email">E-Posta</label>
                         <input
                             id="email"
                             type="email"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
-                            placeholder="ihre@email.com"
+                            placeholder="ornek@email.com"
                             required
                             autoFocus
                             autoComplete="email"
                         />
                     </div>
                     <div className="form-group">
-                        <label htmlFor="password">Passwort</label>
+                        <label htmlFor="password">Şifre</label>
                         <input
                             id="password"
                             type="password"
@@ -70,7 +70,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
                     </div>
                     {error && <div className="login-error">{error}</div>}
                     <button type="submit" className="login-btn" disabled={loading}>
-                        {loading ? 'Anmelden...' : 'Anmelden'}
+                        {loading ? 'Giriş yapılıyor...' : 'Giriş Yap'}
                     </button>
                 </form>
             </div>

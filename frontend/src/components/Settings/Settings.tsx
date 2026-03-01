@@ -134,7 +134,7 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
   };
 
   const handleDeleteTopic = (topicId: number, topicName: string) => {
-    if (confirm(`Möchten Sie die Kategorie "${topicName}" wirklich löschen? Alle Zuordnungen zu Artikeln werden entfernt.`)) {
+    if (confirm(`"${topicName}" kategorisini silmek istediğinizden emin misiniz? Tüm makale atamaları kaldırılacak.`)) {
       deleteTopic(topicId);
     }
   };
@@ -152,14 +152,14 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
         },
         onError: (err: unknown) => {
           const axiosErr = err as { response?: { data?: { detail?: string } } };
-          setUserError(axiosErr.response?.data?.detail ?? 'Fehler beim Erstellen des Benutzers.');
+          setUserError(axiosErr.response?.data?.detail ?? 'Kullanıcı oluşturulurken hata oluştu.');
         },
       }
     );
   };
 
   const handleDeleteUser = (userId: number, userEmail: string) => {
-    if (confirm(`Möchten Sie den Benutzer "${userEmail}" wirklich löschen?`)) {
+    if (confirm(`"${userEmail}" kullanıcısını silmek istediğinizden emin misiniz?`)) {
       deleteUser(userId);
     }
   };
@@ -182,13 +182,13 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
     <div className="settings-overlay" onClick={onClose}>
       <div className="settings-modal" onClick={(e) => e.stopPropagation()}>
         <div className="settings-header">
-          <h2><Cog6ToothIcon className="header-icon" /> Einstellungen</h2>
+          <h2><Cog6ToothIcon className="header-icon" /> Ayarlar</h2>
           <button className="close-button" onClick={onClose}><XMarkIcon /></button>
         </div>
 
         <div className="settings-content">
           {settingsLoading ? (
-            <div className="loading">Lade Einstellungen...</div>
+            <div className="loading">Ayarlar yükleniyor...</div>
           ) : (
             <>
               {/* Topics Section */}
@@ -199,14 +199,14 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
                 >
                   <h3>
                     {expandedSections.topics ? <ChevronDownIcon className="collapse-icon" /> : <ChevronRightIcon className="collapse-icon" />}
-                    <FolderIcon className="section-icon" /> Kategorien
+                    <FolderIcon className="section-icon" /> Kategoriler
                   </h3>
                 </div>
                 {expandedSections.topics && (
                 <div className="section-content">
                 <p className="section-description">
-                  Wählen Sie die Kategorien aus, die für die Klassifizierung verwendet werden sollen.
-                  Leere Auswahl = alle Kategorien.
+                  Sınıflandırma için kullanılacak kategorileri seçin.
+                  Boş seçim = tüm kategoriler.
                 </p>
                 <div className="checkbox-group">
                   {topics?.map(topic => (
@@ -223,7 +223,7 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
                           <input
                             type="text"
                             className="topic-input"
-                            placeholder="Beschreibung (optional)"
+                            placeholder="Açıklama (isteğe bağlı)"
                             value={editTopicDescription}
                             onChange={(e) => setEditTopicDescription(e.target.value)}
                             disabled={isUpdatingTopic}
@@ -262,7 +262,7 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
                                 e.preventDefault();
                                 handleEditTopic(topic.id, topic.name, topic.description || '');
                               }}
-                              title="Bearbeiten"
+                              title="Düzenle"
                             >
                               <PencilIcon />
                             </button>
@@ -273,7 +273,7 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
                                 handleDeleteTopic(topic.id, topic.name);
                               }}
                               disabled={isDeletingTopic}
-                              title="Löschen"
+                              title="Sil"
                             >
                               <TrashIcon />
                             </button>
@@ -288,7 +288,7 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
                     className="clear-selection-button"
                     onClick={() => setEnabledTopicIds([])}
                   >
-                    Alle auswählen
+                    Tümünü seç
                   </button>
                 )}
                 
@@ -298,14 +298,14 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
                     className="add-topic-button"
                     onClick={() => setShowAddTopic(true)}
                   >
-                    <PlusIcon /> Neue Kategorie hinzufügen
+                    <PlusIcon /> Yeni kategori ekle
                   </button>
                 ) : (
                   <div className="add-topic-form">
                     <input
                       type="text"
                       className="topic-input"
-                      placeholder="Kategoriename (z.B. Technologie)"
+                      placeholder="Kategori adı (ör. Teknoloji)"
                       value={newTopicName}
                       onChange={(e) => setNewTopicName(e.target.value)}
                       disabled={isCreatingTopic}
@@ -313,7 +313,7 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
                     <input
                       type="text"
                       className="topic-input"
-                      placeholder="Beschreibung (optional)"
+                      placeholder="Açıklama (isteğe bağlı)"
                       value={newTopicDescription}
                       onChange={(e) => setNewTopicDescription(e.target.value)}
                       disabled={isCreatingTopic}
@@ -328,14 +328,14 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
                         }}
                         disabled={isCreatingTopic}
                       >
-                        Abbrechen
+                        İptal
                       </button>
-                      <button 
+                      <button
                         className="confirm-add-button"
                         onClick={handleAddTopic}
                         disabled={isCreatingTopic || !newTopicName.trim()}
                       >
-                        {isCreatingTopic ? 'Erstellen...' : 'Erstellen'}
+                        {isCreatingTopic ? 'Oluşturuluyor...' : 'Oluştur'}
                       </button>
                     </div>
                   </div>
@@ -352,14 +352,14 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
                 >
                   <h3>
                     {expandedSections.summaryTypes ? <ChevronDownIcon className="collapse-icon" /> : <ChevronRightIcon className="collapse-icon" />}
-                    <DocumentTextIcon className="section-icon" /> Zusammenfassungstypen
+                    <DocumentTextIcon className="section-icon" /> Özet Türleri
                   </h3>
                 </div>
                 {expandedSections.summaryTypes && (
                 <div className="section-content">
                 <p className="section-description">
-                  Wählen Sie, welche Zusammenfassungstypen generiert werden sollen.
-                  Mehrfachauswahl möglich.
+                  Hangi özet türlerinin oluşturulacağını seçin.
+                  Birden fazla seçim mümkün.
                 </p>
                 <div className="checkbox-group">
                   <label className="checkbox-label">
@@ -369,7 +369,7 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
                       onChange={() => handleSummaryTypeToggle('brief')}
                     />
                     <span className="checkbox-text">
-                      <strong>Kurz (Brief)</strong> - 2-3 Sätze
+                      <strong>Kısa</strong> - 2-3 cümle
                     </span>
                   </label>
                   <label className="checkbox-label">
@@ -379,7 +379,7 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
                       onChange={() => handleSummaryTypeToggle('standard')}
                     />
                     <span className="checkbox-text">
-                      <strong>Standard</strong> - Ein Absatz
+                      <strong>Standart</strong> - Bir paragraf
                     </span>
                   </label>
                   <label className="checkbox-label">
@@ -389,12 +389,12 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
                       onChange={() => handleSummaryTypeToggle('detailed')}
                     />
                     <span className="checkbox-text">
-                      <strong>Detailliert (Detailed)</strong> - Mehrere Absätze (höhere Kosten)
+                      <strong>Detaylı</strong> - Birden fazla paragraf (daha yüksek maliyet)
                     </span>
                   </label>
                 </div>
                 {enabledSummaryTypes.length === 0 && (
-                  <p className="warning-text">⚠️ Mindestens ein Typ muss ausgewählt werden</p>
+                  <p className="warning-text">⚠️ En az bir tür seçilmelidir</p>
                 )}
                 </div>
                 )}
@@ -408,25 +408,25 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
                 >
                   <h3>
                     {expandedSections.prompts ? <ChevronDownIcon className="collapse-icon" /> : <ChevronRightIcon className="collapse-icon" />}
-                    <SparklesIcon className="section-icon" /> System Prompts
+                    <SparklesIcon className="section-icon" /> Sistem Promptları
                   </h3>
                 </div>
                 {expandedSections.prompts && (
                 <div className="section-content">
                 <p className="section-description">
-                  Bearbeiten Sie die System-Prompts, die für die KI-Klassifizierung und Zusammenfassung verwendet werden.
+                  Yapay zeka sınıflandırma ve özetleme için kullanılan sistem promptlarını düzenleyin.
                 </p>
 
                 <PromptEditor
                   promptType="classification"
-                  label="Klassifizierungs-Prompt"
-                  description="Dieser Prompt wird verwendet, um Artikel automatisch in Kategorien einzuordnen."
+                  label="Sınıflandırma Promptu"
+                  description="Bu prompt makaleleri otomatik olarak kategorilere ayırmak için kullanılır."
                 />
 
                 <PromptEditor
                   promptType="summarization"
-                  label="Zusammenfassungs-Prompt"
-                  description="Dieser Prompt wird verwendet, um Artikel-Zusammenfassungen zu erstellen."
+                  label="Özetleme Promptu"
+                  description="Bu prompt makale özetleri oluşturmak için kullanılır."
                 />
                 </div>
                 )}
@@ -441,13 +441,13 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
                   >
                     <h3>
                       {expandedSections.users ? <ChevronDownIcon className="collapse-icon" /> : <ChevronRightIcon className="collapse-icon" />}
-                      <UsersIcon className="section-icon" /> Benutzerverwaltung
+                      <UsersIcon className="section-icon" /> Kullanıcı Yönetimi
                     </h3>
                   </div>
                   {expandedSections.users && (
                     <div className="section-content">
                       <p className="section-description">
-                        Verwalten Sie Benutzerkonten. Nur Administratoren können diese Einstellungen sehen.
+                        Kullanıcı hesaplarını yönetin. Yalnızca yöneticiler bu ayarları görebilir.
                       </p>
 
                       {/* Existing users list */}
@@ -463,7 +463,7 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
                                 className="delete-topic-button"
                                 onClick={() => handleDeleteUser(user.id, user.email)}
                                 disabled={isDeletingUser}
-                                title="Benutzer löschen"
+                                title="Kullanıcıyı sil"
                               >
                                 <TrashIcon />
                               </button>
@@ -474,11 +474,11 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
 
                       {/* Add new user form */}
                       <div className="add-user-form">
-                        <h4 className="add-user-title"><PlusIcon className="inline-icon" /> Neuer Benutzer</h4>
+                        <h4 className="add-user-title"><PlusIcon className="inline-icon" /> Yeni Kullanıcı</h4>
                         <input
                           type="email"
                           className="topic-input"
-                          placeholder="E-Mail-Adresse"
+                          placeholder="E-Posta Adresi"
                           value={newUserEmail}
                           onChange={(e) => setNewUserEmail(e.target.value)}
                           disabled={isCreatingUser}
@@ -486,7 +486,7 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
                         <input
                           type="password"
                           className="topic-input"
-                          placeholder="Passwort"
+                          placeholder="Şifre"
                           value={newUserPassword}
                           onChange={(e) => setNewUserPassword(e.target.value)}
                           disabled={isCreatingUser}
@@ -506,7 +506,7 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
                           onClick={handleAddUser}
                           disabled={isCreatingUser || !newUserEmail.trim() || !newUserPassword.trim()}
                         >
-                          {isCreatingUser ? 'Erstellen...' : 'Benutzer erstellen'}
+                          {isCreatingUser ? 'Oluşturuluyor...' : 'Kullanıcı oluştur'}
                         </button>
                       </div>
                     </div>
@@ -519,14 +519,14 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
 
         <div className="settings-footer">
           <button className="cancel-button" onClick={onClose}>
-            Abbrechen
+            İptal
           </button>
-          <button 
-            className="save-button" 
+          <button
+            className="save-button"
             onClick={handleSave}
             disabled={isSaving || enabledSummaryTypes.length === 0}
           >
-            {isSaving ? 'Speichern...' : 'Einstellungen speichern'}
+            {isSaving ? 'Kaydediliyor...' : 'Ayarları kaydet'}
           </button>
         </div>
       </div>
