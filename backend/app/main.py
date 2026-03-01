@@ -59,16 +59,6 @@ app.add_middleware(
 )
 
 
-@app.get("/")
-async def root():
-    """Root endpoint."""
-    return {
-        "app": settings.app_name,
-        "version": settings.app_version,
-        "status": "running"
-    }
-
-
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
@@ -91,3 +81,11 @@ app.include_router(summaries.router, prefix="/api", tags=["summaries"], dependen
 app.include_router(settings_routes.router, prefix="/api/settings", tags=["settings"], dependencies=auth_dep)
 app.include_router(topics.router, prefix="/api/topics", tags=["topics"], dependencies=auth_dep)
 app.include_router(prompts.router, prefix="/api/prompts", tags=["prompts"], dependencies=auth_dep)
+
+# Serve React SPA (must be last — after all API routes)
+from fastapi.staticfiles import StaticFiles
+import os
+
+static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+if os.path.exists(static_dir):
+    app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
