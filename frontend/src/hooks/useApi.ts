@@ -52,11 +52,11 @@ export const useSummaries = (articleId: number | null) => {
 };
 
 // Topics hooks
-export const useTopics = () => {
+export const useTopics = (feedId?: number | null) => {
     return useQuery({
-        queryKey: ['topics'],
-        queryFn: topicsApi.list,
-        staleTime: Infinity, // Topics rarely change
+        queryKey: ['topics', feedId ?? null],
+        queryFn: () => topicsApi.list(feedId ?? undefined),
+        staleTime: 30000,
     });
 };
 

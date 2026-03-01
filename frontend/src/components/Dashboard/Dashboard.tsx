@@ -27,7 +27,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
   const [selectedFeedId, setSelectedFeedId] = useState<number | null>(null);
   const queryClient = useQueryClient();
 
-  const { data: topicsData } = useTopics();
+  const { data: topicsData } = useTopics(selectedFeedId);
   const { data: feedsData } = useFeeds();
   const { isPending: isRefreshing } = useRefreshFeed();
   const createFeedMutation = useCreateFeed();
@@ -55,6 +55,11 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
   };
 
   const { data: articlesData, isLoading, error } = useArticles(filters);
+
+  // Reset selected topics when feed changes
+  useEffect(() => {
+    setSelectedTopics([]);
+  }, [selectedFeedId]);
 
   const handleDeleteFeed = (feedId: number) => {
     deleteFeedMutation.mutate(feedId);

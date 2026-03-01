@@ -165,8 +165,8 @@ export const summariesApi = {
 
 // Topic endpoints
 export const topicsApi = {
-    list: async (): Promise<Topic[]> => {
-        const response = await api.get('/topics/');
+    list: async (feedId?: number): Promise<Topic[]> => {
+        const response = await api.get('/topics/', { params: feedId != null ? { feed_id: feedId } : {} });
         return response.data;
     },
 

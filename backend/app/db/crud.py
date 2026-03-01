@@ -305,13 +305,23 @@ def get_topics(db: Session) -> List[models.Topic]:
     return db.query(models.Topic).all()
 
 
-def get_topics_with_counts(db: Session) -> List[Dict[str, Any]]:
-    """Get all topics with article counts."""
-    results = db.query(
+def get_topics_with_counts(db: Session, feed_id: int = None) -> List[Dict[str, Any]]:
+    """Get all topics with article counts, optionally filtered by feed."""
+    query = db.query(
         models.Topic,
         func.count(models.ArticleTopic.article_id).label('article_count')
-    ).outerjoin(models.ArticleTopic).group_by(models.Topic.id).all()
-    
+    ).outerjoin(models.ArticleTopic)
+
+    if feed_id is not None:
+        query = query.outerjoin(
+            models.Article,
+            models.Article.id == models.ArticleTopic.article_id
+        ).filter(models.Article.feed_id == feed_id)
+
+    results = query.group_by(models.Topic.id).having(
+        func.count(models.ArticleTopic.article_id) > 0
+    ).all() if feed_id is not None else query.group_by(models.Topic.id).all()
+
     return [
         {
             "id": topic.id,

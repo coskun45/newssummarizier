@@ -56,11 +56,11 @@ def generate_random_color() -> str:
 
 
 @router.get("/", response_model=List[TopicResponse])
-async def list_topics(db: Session = Depends(get_db)):
+async def list_topics(feed_id: Optional[int] = None, db: Session = Depends(get_db)):
     """
-    List all topics with article counts.
+    List all topics with article counts, optionally filtered by feed.
     """
-    topics_with_counts = crud.get_topics_with_counts(db)
+    topics_with_counts = crud.get_topics_with_counts(db, feed_id=feed_id)
     return [TopicResponse(**topic_dict) for topic_dict in topics_with_counts]
 
 
