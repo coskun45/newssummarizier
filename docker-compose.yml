@@ -11,8 +11,12 @@ services:
       CHECKPOINTS_DB: /app/data/checkpoints.db
 
       # ── App ───────────────────────────────────────────────────────────────
-      DEBUG: "false"
+      DEBUG: "true"
       CORS_ORIGINS: "http://localhost,http://localhost:80"
+
+      # ── OpenAI Models (explicitly override env_file defaults) ─────────────
+      DEFAULT_MODEL: gpt-4o-mini
+      DETAILED_MODEL: gpt-4o
 
       # ── JWT (override with a strong secret in production) ─────────────────
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-use-a-strong-secret-in-production}

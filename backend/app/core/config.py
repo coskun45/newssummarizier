@@ -36,8 +36,8 @@ class Settings(BaseSettings):
     max_retries: int = 3
     
     # OpenAI Configuration
-    default_model: str = "gpt-5-mini-2025-08-07"
-    detailed_model: str = "gpt-5-mini-2025-08-07"
+    default_model: str = "gpt-4o-mini"
+    detailed_model: str = "gpt-4o"
     max_tokens_input: int = 4000
     max_tokens_output_brief: int = 150
     max_tokens_output_standard: int = 300

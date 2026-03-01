@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(test -f /c/Users/ecoskun/Desktop/newsSummary/backend/.env)"
+    ]
+  }
+}
