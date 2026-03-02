@@ -1,0 +1,117 @@
+name: Docker Compose CI
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'docker-compose.yml'
+      - '.github/workflows/docker-ci.yml'
+  pull_request:
+    branches: [master]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'docker-compose.yml'
+      - '.github/workflows/docker-ci.yml'
+
+concurrency:
+  group: docker-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docker-smoke-test:
+    name: Docker Compose Smoke Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up dummy environment
+        run: |
+          # Create backend/.env with dummy values for CI
+          mkdir -p backend
+          cat > backend/.env <<EOF
+          OPENAI_API_KEY=sk-test-key-for-ci-only-not-real
+          JWT_SECRET_KEY=ci-test-secret-do-not-use-in-production
+          DATABASE_URL=sqlite:////app/data/news_summary.db
+          DEBUG=true
+          EOF
+          
+          # Mask the dummy API key in logs
+          echo "::add-mask::sk-test-key-for-ci-only-not-real"
+
+      - name: Build Docker images
+        run: docker compose build
+
+      - name: Start services
+        run: |
+          docker compose up -d
+          echo "⏳ Waiting for services to start..."
+          sleep 10
+
+      - name: Check service health
+        run: |
+          # Retry health check 3 times with 5s delay
+          MAX_RETRIES=3
+          RETRY_DELAY=5
+          
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "Health check attempt $i/$MAX_RETRIES..."
+            
+            if curl -f -s http://localhost/api/health; then
+              echo "✅ Backend health check passed!"
+              break
+            else
+              if [ $i -eq $MAX_RETRIES ]; then
+                echo "❌ Health check failed after $MAX_RETRIES attempts"
+                exit 1
+              fi
+              echo "⏳ Waiting ${RETRY_DELAY}s before retry..."
+              sleep $RETRY_DELAY
+            fi
+          done
+
+      - name: Check backend logs for API key leaks
+        run: |
+          echo "🔍 Checking backend logs for sensitive data..."
+          LOGS=$(docker compose logs backend)
+          
+          # Check for API key patterns (sk-...)
+          if echo "$LOGS" | grep -i "sk-" | grep -v "sk-test-key-for-ci-only"; then
+            echo "❌ WARNING: Potential API key leak detected in logs!"
+            echo "Found 'sk-' pattern in backend logs (excluding test key)"
+          else
+            echo "✅ No API key leaks detected in backend logs"
+          fi
+
+      - name: Verify Nginx routing (frontend → backend)
+        run: |
+          # Test that Nginx correctly proxies /api requests to backend
+          RESPONSE=$(curl -s -w "\n%{http_code}" http://localhost/api/health)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Nginx API proxy working correctly"
+          else
+            echo "❌ Nginx proxy failed with HTTP $HTTP_CODE"
+            exit 1
+          fi
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          echo "=== Backend Logs ==="
+          docker compose logs backend
+          echo ""
+          echo "=== Frontend Logs ==="
+          docker compose logs frontend
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker compose down -v
+          rm -f backend/.env
+          echo "✅ Cleanup completed"

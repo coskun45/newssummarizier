@@ -1,0 +1,80 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+  pull_request:
+    branches: [master]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-ci:
+    name: Backend CI
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run linters
+        run: |
+          # TODO: No linters found in requirements.txt
+          # Consider adding: ruff, black, flake8, isort, or mypy
+          echo "⚠️  No linters configured - skipping lint checks"
+          echo "To add linting, install tools like ruff or flake8 in requirements.txt"
+
+      - name: Run tests
+        run: |
+          # TODO: No tests/ directory found
+          # Create backend/tests/ and add pytest to requirements.txt
+          echo "⚠️  No tests found - skipping test execution"
+          echo "To add tests, create backend/tests/ and install pytest"
+
+      - name: Check for database files (PR only)
+        if: github.event_name == 'pull_request'
+        run: |
+          git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -E '\.db$' && \
+          echo "❌ ERROR: Database files (*.db) should not be committed!" && exit 1 || \
+          echo "✅ No database files in this PR"
+
+      - name: Check for exposed API keys (PR only)
+        if: github.event_name == 'pull_request'
+        run: |
+          # Exclude .env.example from the check
+          FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -v '.env.example' || true)
+          if [ -n "$FILES" ]; then
+            if echo "$FILES" | xargs grep -l "OPENAI_API_KEY=" 2>/dev/null; then
+              echo "❌ ERROR: Found OPENAI_API_KEY= literal in committed files!"
+              echo "This may expose secrets. Use environment variables instead."
+              exit 1
+            fi
+          fi
+          echo "✅ No exposed API keys found"
+
+      - name: Verify FastAPI app structure
+        run: |
+          python -c "from app.main import app; print('✅ FastAPI app imports successfully')"

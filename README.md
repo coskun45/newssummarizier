@@ -1,4 +1,4 @@
-# News Summarizer - DW Deutsche Welle
+# Bülten
 
 Ein intelligentes News-Aggregations- und Zusammenfassungssystem, das automatisch Nachrichten von Deutsche Welle (DW) RSS-Feeds verarbeitet, kategorisiert und mit KI zusammenfasst.
 

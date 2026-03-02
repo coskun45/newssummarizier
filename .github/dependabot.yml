@@ -1,0 +1,128 @@
+version: 2
+
+updates:
+  # Backend Python dependencies
+  - package-ecosystem: pip
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 5
+    reviewers:
+      - ${{ github.repository_owner }}
+    labels:
+      - dependencies
+      - python
+      - backend
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    # Group minor and patch updates
+    groups:
+      fastapi-ecosystem:
+        patterns:
+          - "fastapi*"
+          - "uvicorn*"
+          - "pydantic*"
+      langchain-ecosystem:
+        patterns:
+          - "langchain*"
+          - "langgraph*"
+          - "openai*"
+      security-updates:
+        patterns:
+          - "python-jose*"
+          - "passlib*"
+          - "bcrypt*"
+
+  # Frontend npm dependencies
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 5
+    reviewers:
+      - ${{ github.repository_owner }}
+    labels:
+      - dependencies
+      - npm
+      - frontend
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    # Ignore major version updates for React (requires manual review)
+    ignore:
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+    # Group related updates
+    groups:
+      react-ecosystem:
+        patterns:
+          - "react*"
+          - "@types/react*"
+      typescript-eslint:
+        patterns:
+          - "@typescript-eslint/*"
+      vite-ecosystem:
+        patterns:
+          - "vite*"
+          - "@vitejs/*"
+
+  # GitHub Actions
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 3
+    reviewers:
+      - ${{ github.repository_owner }}
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: "chore(ci)"
+
+  # Docker
+  - package-ecosystem: docker
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 3
+    reviewers:
+      - ${{ github.repository_owner }}
+    labels:
+      - dependencies
+      - docker
+      - backend
+    commit-message:
+      prefix: "chore(docker)"
+
+  - package-ecosystem: docker
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 3
+    reviewers:
+      - ${{ github.repository_owner }}
+    labels:
+      - dependencies
+      - docker
+      - frontend
+    commit-message:
+      prefix: "chore(docker)"
