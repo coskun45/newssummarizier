@@ -1,94 +1,95 @@
 # Bülten
 
-Ein intelligentes News-Aggregations- und Zusammenfassungssystem, das automatisch Nachrichten von Deutsche Welle (DW) RSS-Feeds verarbeitet, kategorisiert und mit KI zusammenfasst.
+Deutsche Welle (DW) RSS beslemelerinden haber toplayan, kategorize eden ve yapay zeka ile özetleyen akıllı haber toplama ve özet sistemi.
 
-## 🎯 Features
+## 🎯 Özellikler
 
-- **Automatische RSS-Verarbeitung**: Fetcht und verarbeitet DW-Nachrichten automatisch
-- **KI-basierte Kategorisierung**: Ordnet Artikel automatisch Themen zu (Politik, Wirtschaft, Technologie, etc.)
-- **Multi-Format Zusammenfassungen**: Generiert kurze, standard und detaillierte Zusammenfassungen
-- **Web-Scraping**: Extrahiert vollständigen Artikelinhalt von Webseiten (mit robots.txt Compliance)
-- **Interaktives Dashboard**: React-basierte Benutzeroberfläche mit Suche und Filterung
-- **Cost Tracking**: Überwacht OpenAI API-Kosten mit konfigurierbaren Limits
-- **LangGraph Workflow**: Robuste Agent-Orchestrierung für komplexe Verarbeitungspipelines
+- **Otomatik RSS İşleme**: DW haberlerini otomatik olarak çeker ve işler
+- **Yapay Zeka Tabanlı Kategorizasyon**: Makaleleri otomatik olarak konulara ayırır (Politika, Ekonomi, Teknoloji vb.)
+- **Çoklu Format Özetler**: Kısa, standart ve detaylı özetler oluşturur
+- **Web Scraping**: Web sitelerinden tam makale içeriğini çıkarır (robots.txt uyumlu)
+- **İnteraktif Dashboard**: Arama ve filtreleme ile React tabanlı kullanıcı arayüzü
+- **Maliyet Takibi**: Yapılandırılabilir limitlerle OpenAI API maliyetlerini izler
+- **LangGraph Workflow**: Karmaşık işleme hatları için sağlam agent orkestrasyon
 
-## 🏗️ Architektur
+## 🏗️ Mimari
 
 ### Backend
 
-- **FastAPI**: Moderne, schnelle API mit automatischer OpenAPI-Dokumentation
-- **LangGraph**: Multi-Agent Workflow-Orchestrierung
-- **SQLite**: Leichtgewichtige Datenbank für Artikel, Zusammenfassungen und Metadaten
-- **OpenAI**: GPT-3.5-turbo und GPT-4 für Kategorisierung und Zusammenfassung
+- **FastAPI**: Otomatik OpenAPI dokümantasyonu ile modern, hızlı API
+- **LangGraph**: Çok-ajanlı iş akışı orkestrasyon
+- **SQLite**: Makaleler, özetler ve meta veriler için hafif veritabanı
+- **OpenAI**: Kategorizasyon ve özetleme için GPT-3.5-turbo ve GPT-4
 
 ### Frontend
 
-- **React 18**: Moderne UI mit TypeScript
-- **Vite**: Schneller Build-Tool und Dev-Server
-- **TanStack Query**: Effizientes Data Fetching und Caching
-- **Responsive Design**: Funktioniert auf Desktop, Tablet und Mobile
+- **React 18**: TypeScript ile modern kullanıcı arayüzü
+- **Vite**: Hızlı build aracı ve geliştirme sunucusu
+- **TanStack Query**: Verimli veri çekme ve önbellekleme
+- **Responsive Tasarım**: Masaüstü, tablet ve mobilde çalışır
 
-## 📋 Voraussetzungen
+## 📋 Gereksinimler
 
-### Manueller Betrieb
+### Manuel Çalıştırma
 - **Python 3.9+**
-- **Node.js 18+** und npm
-- **OpenAI API Key** ([hier erhalten](https://platform.openai.com/api-keys))
+- **Node.js 18+** ve npm
+- **OpenAI API Key** ([buradan edinin](https://platform.openai.com/api-keys))
 
-### Docker-Betrieb (empfohlen)
+### Docker ile Çalıştırma (önerilen)
 - **Docker** 24+
 - **Docker Compose** v2+
 - **OpenAI API Key**
 
-## 🚀 Installation
+## 🚀 Kurulum
 
-### 1. Repository klonen
+### 1. Repository'yi klonlayın
 
 ```bash
-cd c:\Users\ecoskun\Desktop\newsSummary
+git clone https://github.com/Hid49/Bulten.git
+cd Bulten
 ```
 
-### 2. Backend einrichten
+### 2. Backend kurulumu
 
 ```bash
 cd backend
 
-# Virtuelle Umgebung erstellen
+# Sanal ortam oluştur
 python -m venv venv
 
-# Virtuelle Umgebung aktivieren
+# Sanal ortamı aktifleştir
 # Windows:
 venv\Scripts\activate
 # Linux/Mac:
 # source venv/bin/activate
 
-# Dependencies installieren
+# Bağımlılıkları yükle
 pip install -r requirements.txt
 
-# .env Datei erstellen
+# .env dosyası oluştur
 copy .env.example .env
-# Oder auf Linux/Mac:
+# veya Linux/Mac'te:
 # cp .env.example .env
 ```
 
-**Wichtig**: Öffnen Sie `.env` und fügen Sie Ihren OpenAI API Key ein:
+**Önemli**: `.env` dosyasını açın ve OpenAI API Key'inizi ekleyin:
 
 ```env
 OPENAI_API_KEY=sk-your-actual-api-key-here
 ```
 
-### 3. Frontend einrichten
+### 3. Frontend kurulumu
 
 ```bash
 cd ../frontend
 
-# Dependencies installieren
+# Bağımlılıkları yükle
 npm install
 ```
 
-## 🎮 Anwendung starten
+## 🎮 Uygulamayı Başlatma
 
-### Backend starten (Terminal 1)
+### Backend'i başlat (Terminal 1)
 
 ```bash
 cd backend
@@ -98,190 +99,190 @@ venv\Scripts\activate  # Windows
 uvicorn app.main:app --reload
 ```
 
-Backend läuft auf: **http://localhost:8000**
+Backend şu adreste çalışır: **http://localhost:8000**
 
-- API Dokumentation: **http://localhost:8000/docs**
+- API Dokümantasyon: **http://localhost:8000/docs**
 - Health Check: **http://localhost:8000/health**
 
-### Frontend starten (Terminal 2)
+### Frontend'i başlat (Terminal 2)
 
 ```bash
 cd frontend
 npm run dev
 ```
 
-Frontend läuft auf: **http://localhost:5173**
+Frontend şu adreste çalışır: **http://localhost:5173**
 
 ## 🐳 Docker
 
-Die einfachste Art, die Anwendung zu starten, ist mit Docker Compose. Damit werden Backend und Frontend automatisch gebaut und gestartet – kein manuelles Einrichten von Python-Umgebungen oder Node.js erforderlich.
+Uygulamayı başlatmanın en kolay yolu Docker Compose kullanmaktır. Backend ve frontend otomatik olarak build edilir ve başlatılır – Python ortamları veya Node.js kurulumu gerekmez.
 
-### Voraussetzungen
+### Gereksinimler
 
 - **Docker** 24+
-- **Docker Compose** v2+ (wird mit Docker Desktop mitgeliefert)
+- **Docker Compose** v2+ (Docker Desktop ile birlikte gelir)
 
-### Schnellstart
+### Hızlı Başlangıç
 
-**1. `.env` Datei im Backend-Verzeichnis erstellen:**
+**1. Backend dizininde `.env` dosyası oluşturun:**
 
 ```bash
 cp backend/.env.example backend/.env
 ```
 
-Öffnen Sie `backend/.env` und tragen Sie Ihren OpenAI API Key ein:
+`backend/.env` dosyasını açın ve OpenAI API Key'inizi girin:
 
 ```env
 OPENAI_API_KEY=sk-your-actual-api-key-here
 ```
 
-**2. Optional: JWT Secret setzen (empfohlen für Produktion):**
+**2. İsteğe bağlı: JWT Secret ayarlayın (production için önerilir):**
 
 ```bash
-# In der Shell als Umgebungsvariable setzen
+# Shell'de ortam değişkeni olarak ayarla
 export JWT_SECRET_KEY="your-very-strong-random-secret"
 ```
 
-Oder eine `.env`-Datei im Projektstamm anlegen:
+Ya da proje kök dizininde `.env` dosyası oluşturun:
 
 ```env
 JWT_SECRET_KEY=your-very-strong-random-secret
 ```
 
-**3. Container bauen und starten:**
+**3. Container'ları build edin ve başlatın:**
 
 ```bash
 docker compose up --build
 ```
 
-Beim ersten Start werden die Images gebaut (ca. 2–3 Minuten). Danach:
+İlk başlatmada image'lar build edilir (yaklaşık 2-3 dakika). Sonrasında:
 
-| Dienst   | URL                         |
+| Servis   | URL                         |
 | -------- | --------------------------- |
 | Frontend | http://localhost            |
 | Backend API | http://localhost/api     |
 | API Docs | http://localhost/api/docs   |
 
-> Das Frontend läuft auf Port **80**. Der Nginx-Reverse-Proxy leitet `/api`-Anfragen automatisch an das Backend weiter.
+> Frontend **80** portunda çalışır. Nginx reverse proxy `/api` isteklerini otomatik olarak backend'e yönlendirir.
 
-### Nützliche Docker-Befehle
+### Yararlı Docker Komutları
 
 ```bash
-# Container im Hintergrund starten
+# Container'ları arka planda başlat
 docker compose up -d --build
 
-# Logs anzeigen
+# Logları göster
 docker compose logs -f
 
-# Nur Backend-Logs
+# Sadece Backend logları
 docker compose logs -f backend
 
-# Container stoppen
+# Container'ları durdur
 docker compose down
 
-# Container stoppen und Volumes löschen (Datenbank wird zurückgesetzt!)
+# Container'ları durdur ve Volume'leri sil (Veritabanı sıfırlanır!)
 docker compose down -v
 
-# Images neu bauen (nach Code-Änderungen)
+# Image'ları yeniden build et (kod değişikliklerinden sonra)
 docker compose build --no-cache
 
-# Status der Container prüfen
+# Container durumunu kontrol et
 docker compose ps
 ```
 
-### Umgebungsvariablen (docker-compose.yml)
+### Ortam Değişkenleri (docker-compose.yml)
 
-| Variable | Standard | Beschreibung |
+| Değişken | Varsayılan | Açıklama |
 |---|---|---|
-| `OPENAI_API_KEY` | – | **(Pflicht)** OpenAI API Key |
-| `JWT_SECRET_KEY` | `change-me-use-a-strong-secret-in-production` | JWT-Signaturschlüssel |
-| `DATABASE_URL` | `sqlite:////app/data/news_summary.db` | Datenbankpfad im Container |
-| `DEBUG` | `false` | Debug-Modus |
-| `CORS_ORIGINS` | `http://localhost,http://localhost:80` | Erlaubte CORS-Origins |
+| `OPENAI_API_KEY` | – | **(Zorunlu)** OpenAI API Key |
+| `JWT_SECRET_KEY` | `change-me-use-a-strong-secret-in-production` | JWT imza anahtarı |
+| `DATABASE_URL` | `sqlite:////app/data/news_summary.db` | Container içinde veritabanı yolu |
+| `DEBUG` | `false` | Debug modu |
+| `CORS_ORIGINS` | `http://localhost,http://localhost:80` | İzin verilen CORS origin'leri |
 
-### Datenbank-Persistenz
+### Veritabanı Kalıcılığı
 
-Die SQLite-Datenbank wird als Volume auf den Host gemountet:
+SQLite veritabanı host'a volume olarak mount edilir:
 
 ```yaml
 volumes:
   - ./backend/news_summary.db:/app/data/news_summary.db
 ```
 
-Das bedeutet: Daten bleiben auch nach `docker compose down` erhalten. Nur `docker compose down -v` löscht die Datenbank.
+Bu şu anlama gelir: Veriler `docker compose down` sonrasında bile korunur. Sadece `docker compose down -v` veritabanını siler.
 
-### Projektstruktur (mit Docker)
+### Proje Yapısı (Docker ile)
 
 ```
-newsSummary/
+Bulten/
 ├── backend/
 │   ├── Dockerfile          # Python 3.12-slim Image
-│   ├── .env                # Umgebungsvariablen (nicht ins Git!)
+│   ├── .env                # Ortam değişkenleri (Git'e eklemeyin!)
 │   └── ...
 ├── frontend/
 │   ├── Dockerfile          # Multi-Stage: Node build → Nginx serve
-│   ├── nginx.conf          # Nginx Konfiguration (API-Proxy + SPA-Fallback)
+│   ├── nginx.conf          # Nginx Konfigürasyonu (API-Proxy + SPA-Fallback)
 │   └── ...
-├── docker-compose.yml      # Service-Orchestrierung
+├── docker-compose.yml      # Servis orkestrasyon
 └── README.md
 ```
 
 ---
 
-## 📖 Verwendung
+## 📖 Kullanım
 
-### Erste Schritte
+### İlk Adımlar
 
-1. **Backend starten**: Das System initialisiert automatisch:
-   - Erstellt SQLite-Datenbank
-   - Seed Topics (Politik, Wirtschaft, Technologie, etc.)
-   - Fügt DW RSS Feed hinzu
-   - Startet initiales Fetching im Hintergrund
+1. **Backend'i başlat**: Sistem otomatik olarak:
+   - SQLite veritabanını oluşturur
+   - Kategorileri ekler (Politika, Ekonomi, Teknoloji vb.)
+   - DW RSS Feed'ini ekler
+   - Arka planda ilk veri çekmeyi başlatır
 
-2. **Frontend öffnen**: Navigieren Sie zu http://localhost:5173
+2. **Frontend'i aç**: http://localhost:5173 adresine gidin
 
-3. **Artikel erscheinen**: Nach 1-2 Minuten beginnen Artikel zu erscheinen
+3. **Makaleler belirir**: 1-2 dakika sonra makaleler görünmeye başlar
 
-### Dashboard Features
+### Dashboard Özellikleri
 
-- **Themenfilter**: Klicken Sie auf Themen in der Sidebar zum Filtern
-- **Suche**: Suchen Sie in Titel und Inhalt der Artikel
-- **Zusammenfassungen anzeigen**:
-  - Klicken Sie auf "Zusammenfassung anzeigen"
-  - Wählen Sie zwischen Kurz, Standard, Detailliert
-- **Original öffnen**: Klicken Sie auf "Original öffnen" für den vollständigen Artikel
+- **Konu Filtresi**: Filtrelemek için sidebar'daki konulara tıklayın
+- **Arama**: Makale başlığı ve içeriğinde arama yapın
+- **Özetleri Göster**:
+  - "Özeti Göster"e tıklayın
+  - Kısa, Standart, Detaylı arasından seçin
+- **Orijinali Aç**: Tam makale için "Orijinali Aç"a tıklayın
 
 ### API Endpoints
 
-#### Feeds
+#### Beslemeler (Feeds)
 
-- `GET /api/feeds` - Liste aller RSS-Feeds
-- `POST /api/feeds` - Neuen Feed hinzufügen
-- `POST /api/feeds/{id}/refresh` - Feed manuell aktualisieren
+- `GET /api/feeds` - Tüm RSS beslemelerini listele
+- `POST /api/feeds` - Yeni besleme ekle
+- `POST /api/feeds/{id}/refresh` - Beslemeyi manuel olarak yenile
 
-#### Artikel
+#### Makaleler
 
-- `GET /api/articles` - Artikel auflisten (mit Filtern)
+- `GET /api/articles` - Makaleleri listele (filtrelerle)
   - Query params: `skip`, `limit`, `topic_ids`, `search`, `status`
-- `GET /api/articles/{id}` - Einzelner Artikel
-- `GET /api/articles/topic/{topic_name}` - Artikel nach Thema
+- `GET /api/articles/{id}` - Tek bir makale
+- `GET /api/articles/topic/{topic_name}` - Konuya göre makaleler
 
-#### Zusammenfassungen
+#### Özetler
 
-- `GET /api/articles/{id}/summaries` - Alle Zusammenfassungen eines Artikels
-- `GET /api/articles/{id}/summary/{type}` - Spezifische Zusammenfassung (brief/standard/detailed)
+- `GET /api/articles/{id}/summaries` - Bir makalenin tüm özetleri
+- `GET /api/articles/{id}/summary/{type}` - Belirli bir özet türü (brief/standard/detailed)
 
-#### Topics & Stats
+#### Konular & İstatistikler
 
-- `GET /api/topics` - Alle Themen mit Artikelanzahl
-- `GET /api/stats/costs` - API-Kostenstatistiken
+- `GET /api/topics` - Makale sayısıyla birlikte tüm konular
+- `GET /api/stats/costs` - API maliyet istatistikleri
 
-#### Settings
+#### Ayarlar
 
-- `GET /api/settings` - Benutzereinstellungen abrufen
-- `PUT /api/settings` - Benutzereinstellungen aktualisieren
+- `GET /api/settings` - Kullanıcı ayarlarını getir
+- `PUT /api/settings` - Kullanıcı ayarlarını güncelle
 
-## ⚙️ Konfiguration
+## ⚙️ Yapılandırma
 
 ### Backend (.env)
 
@@ -291,18 +292,18 @@ OPENAI_API_KEY=your-key-here
 DEFAULT_MODEL=gpt-3.5-turbo
 DETAILED_MODEL=gpt-4-turbo-preview
 
-# Database
+# Veritabanı
 DATABASE_URL=sqlite:///./news_summary.db
 
 # RSS Feed
 DEFAULT_FEED_URL=https://rss.dw.com/atom/rss-de-all
-FEED_REFRESH_INTERVAL=1800  # 30 Minuten
+FEED_REFRESH_INTERVAL=1800  # 30 dakika
 
 # Scraping
 SCRAPING_ENABLED=True
-SCRAPING_DELAY=1.0  # Sekunden zwischen Anfragen
+SCRAPING_DELAY=1.0  # İstekler arası saniye
 
-# Cost Limits
+# Maliyet Limitleri
 DAILY_COST_LIMIT=5.0  # USD
 MONTHLY_COST_LIMIT=100.0  # USD
 
@@ -310,135 +311,135 @@ MONTHLY_COST_LIMIT=100.0  # USD
 CORS_ORIGINS=http://localhost:5173,http://localhost:3000
 ```
 
-### Kosten-Management
+### Maliyet Yönetimi
 
-Das System tracked automatisch OpenAI API-Kosten:
+Sistem otomatik olarak OpenAI API maliyetlerini takip eder:
 
-- **Brief Summary** (GPT-3.5): ~$0.0007 pro Artikel
-- **Standard Summary** (GPT-3.5): ~$0.0007 pro Artikel
-- **Detailed Summary** (GPT-4): ~$0.015 pro Artikel
+- **Kısa Özet** (GPT-3.5): Makale başına ~$0.0007
+- **Standart Özet** (GPT-3.5): Makale başına ~$0.0007
+- **Detaylı Özet** (GPT-4): Makale başına ~$0.015
 
-**Geschätzte Kosten für 1000 Artikel/Tag**:
+**Günde 1000 makale için tahmini maliyetler**:
 
-- Nur Standard-Zusammenfassungen: ~$21/Monat
-- Mit allen drei Typen: ~$50-70/Monat
+- Sadece standart özetler: Ayda ~$21
+- Üç tür özet birlikte: Ayda ~$50-70
 
-Limits können in `.env` konfiguriert werden.
+Limitler `.env` dosyasında yapılandırılabilir.
 
-## 🧪 Entwicklung
+## 🧪 Geliştirme
 
-### Datenbank zurücksetzen
+### Veritabanını Sıfırlama
 
 ```bash
 cd backend
 rm news_summary.db checkpoints.db
-# Beim nächsten Start wird die DB neu erstellt
+# Bir sonraki başlatmada DB yeniden oluşturulur
 ```
 
-### Manuelle Feed-Verarbeitung
+### Manuel Feed İşleme
 
 ```python
 from app.tasks.background import process_feed_task
 
-# In Python REPL oder Script
+# Python REPL veya script'te
 process_feed_task(feed_id=1)
 ```
 
-### API testen mit curl
+### curl ile API Testi
 
 ```bash
-# Feeds auflisten
+# Beslemeleri listele
 curl http://localhost:8000/api/feeds
 
-# Artikel abrufen
+# Makaleleri getir
 curl http://localhost:8000/api/articles?limit=10
 
-# Zusammenfassung abrufen
+# Özet getir
 curl http://localhost:8000/api/articles/1/summary/standard
 ```
 
-## 📁 Projektstruktur
+## 📁 Proje Yapısı
 
 ```
-newsSummary/
+Bulten/
 ├── backend/
 │   ├── app/
 │   │   ├── agents/          # LangGraph Workflow
-│   │   │   ├── graph.py     # Workflow-Definition
-│   │   │   ├── nodes.py     # Agent-Nodes
-│   │   │   ├── state.py     # State-Schema
-│   │   │   └── tools.py     # Agent-Tools
+│   │   │   ├── graph.py     # Workflow tanımı
+│   │   │   ├── nodes.py     # Agent Node'ları
+│   │   │   ├── state.py     # State Şeması
+│   │   │   └── tools.py     # Agent Araçları
 │   │   ├── api/
 │   │   │   └── routes/      # API Endpoints
 │   │   ├── core/            # Config & Exceptions
-│   │   ├── db/              # Database Models & CRUD
-│   │   ├── services/        # Business Logic
-│   │   ├── tasks/           # Background Tasks
-│   │   └── main.py          # FastAPI App
+│   │   ├── db/              # Veritabanı Modelleri & CRUD
+│   │   ├── services/        # İş Mantığı
+│   │   ├── tasks/           # Arka Plan Görevleri
+│   │   └── main.py          # FastAPI Uygulaması
 │   ├── Dockerfile           # Python 3.12-slim Image
 │   ├── requirements.txt
-│   └── .env                 # Umgebungsvariablen (nicht ins Git!)
+│   └── .env                 # Ortam değişkenleri (Git'e eklemeyin!)
 ├── frontend/
 │   ├── src/
-│   │   ├── components/      # React Components
-│   │   ├── hooks/           # Custom Hooks
-│   │   ├── services/        # API Client
-│   │   ├── types/           # TypeScript Types
-│   │   └── main.tsx         # Entry Point
+│   │   ├── components/      # React Bileşenleri
+│   │   ├── hooks/           # Custom Hook'lar
+│   │   ├── services/        # API İstemcisi
+│   │   ├── types/           # TypeScript Tipleri
+│   │   └── main.tsx         # Giriş Noktası
 │   ├── Dockerfile           # Multi-Stage: Node build → Nginx serve
-│   ├── nginx.conf           # Nginx-Konfiguration (API-Proxy + SPA-Fallback)
+│   ├── nginx.conf           # Nginx Konfigürasyonu (API-Proxy + SPA-Fallback)
 │   ├── package.json
 │   └── vite.config.ts
-├── docker-compose.yml       # Service-Orchestrierung
+├── docker-compose.yml       # Servis Orkestrasyon
 └── README.md
 ```
 
-## 🛠️ Technologie-Stack
+## 🛠️ Teknoloji Yığını
 
 **Backend:**
 
 - FastAPI (Web Framework)
-- LangGraph (Agent Orchestration)
-- LangChain (LLM Integration)
-- OpenAI (GPT Models)
+- LangGraph (Agent Orkestrasyon)
+- LangChain (LLM Entegrasyon)
+- OpenAI (GPT Modelleri)
 - SQLAlchemy (ORM)
-- Feedparser (RSS Parsing)
-- Trafilatura (Content Extraction)
+- Feedparser (RSS Ayrıştırma)
+- Trafilatura (İçerik Çıkarma)
 - Aiohttp (Async HTTP)
 
 **Frontend:**
 
 - React 18 (UI Framework)
-- TypeScript (Type Safety)
-- Vite (Build Tool)
-- TanStack Query (Data Fetching)
-- Axios (HTTP Client)
-- date-fns (Date Formatting)
+- TypeScript (Tip Güvenliği)
+- Vite (Build Aracı)
+- TanStack Query (Veri Çekme)
+- Axios (HTTP İstemcisi)
+- date-fns (Tarih Biçimlendirme)
 
-## 🐛 Troubleshooting
+## 🐛 Sorun Giderme
 
-### Backend startet nicht
+### Backend başlamıyor
 
-**Problem**: `ModuleNotFoundError`
+**Sorun**: `ModuleNotFoundError`
 
 ```bash
-# Stelle sicher, dass venv aktiviert ist
+# venv'in aktif olduğundan emin olun
 cd backend
 venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-**Problem**: `OpenAI API Key fehlt`
+**Sorun**: `OpenAI API Key eksik`
 
 ```bash
-# Überprüfe .env Datei
+# .env dosyasını kontrol edin
 cat .env  # Linux/Mac
 type .env  # Windows
 ```
 
-### Frontend startet nicht
+### Frontend başlamıyor
 
-**Problem**: `Cannot find module`
+**Sorun**: `Cannot find module`
 
 ```bash
 cd frontend
@@ -446,70 +447,70 @@ rm -rf node_modules package-lock.json
 npm install
 ```
 
-### Keine Artikel erscheinen
+### Makaleler görünmüyor
 
-1. Überprüfe Backend-Logs auf Fehler
-2. Prüfe ob Feed existiert: `curl http://localhost:8000/api/feeds`
-3. Manuell Feed refreshen: `curl -X POST http://localhost:8000/api/feeds/1/refresh`
-4. Warte 2-3 Minuten (Verarbeitung braucht Zeit)
+1. Backend loglarını hatalara karşı kontrol edin
+2. Feed'in var olup olmadığını kontrol edin: `curl http://localhost:8000/api/feeds`
+3. Feed'i manuel olarak yenileyin: `curl -X POST http://localhost:8000/api/feeds/1/refresh`
+4. 2-3 dakika bekleyin (işleme zaman alır)
 
-### Hohe OpenAI-Kosten
+### Yüksek OpenAI maliyetleri
 
-1. Reduziere `DAILY_COST_LIMIT` in `.env`
-2. Nutze nur `gpt-3.5-turbo` statt GPT-4
-3. Erhöhe `FEED_REFRESH_INTERVAL`
+1. `.env` dosyasında `DAILY_COST_LIMIT` değerini düşürün
+2. GPT-4 yerine sadece `gpt-3.5-turbo` kullanın
+3. `FEED_REFRESH_INTERVAL` değerini artırın
 
-### Docker-Probleme
+### Docker sorunları
 
-**Problem**: Container startet nicht / Port 80 belegt
+**Sorun**: Container başlamıyor / Port 80 kullanımda
 
 ```bash
-# Prüfe, welcher Prozess Port 80 verwendet
+# Hangi process'in Port 80 kullandığını kontrol edin
 docker compose ps
-# Anderen Port verwenden (z.B. 8080)
-# In docker-compose.yml: ports: "8080:80"
+# Başka bir port kullanın (örn. 8080)
+# docker-compose.yml'de: ports: "8080:80"
 ```
 
-**Problem**: Backend-Container ist nicht gesund (`unhealthy`)
+**Sorun**: Backend-Container sağlıksız (`unhealthy`)
 
 ```bash
-# Backend-Logs prüfen
+# Backend loglarını kontrol edin
 docker compose logs backend
 
-# Häufige Ursache: OPENAI_API_KEY fehlt in backend/.env
+# Yaygın sebep: backend/.env'de OPENAI_API_KEY eksik
 ```
 
-**Problem**: Änderungen am Code werden nicht übernommen
+**Sorun**: Koddaki değişiklikler yansımıyor
 
 ```bash
-# Images neu bauen
+# Image'ları yeniden build edin
 docker compose build --no-cache
 docker compose up -d
 ```
 
-**Problem**: Datenbank-Fehler nach Update
+**Sorun**: Güncelleme sonrası veritabanı hatası
 
 ```bash
-# Datenbank zurücksetzen (Achtung: alle Daten werden gelöscht!)
+# Veritabanını sıfırlayın (Dikkat: tüm veriler silinir!)
 docker compose down
 rm backend/news_summary.db
 docker compose up -d
 ```
 
-## 📄 Lizenz
+## 📄 Lisans
 
-Dieses Projekt ist für Bildungszwecke erstellt.
+Bu proje eğitim amaçlı oluşturulmuştur.
 
-## 🙏 Credits
+## 🙏 Teşekkürler
 
-- DW Deutsche Welle für RSS-Feeds
-- OpenAI für GPT-Modelle
-- LangGraph Team für Agent-Framework
+- RSS beslemeleri için DW Deutsche Welle
+- GPT modelleri için OpenAI
+- Agent framework için LangGraph Team
 
-## 📞 Support
+## 📞 Destek
 
-Bei Fragen oder Problemen öffnen Sie ein Issue auf GitHub oder kontaktieren Sie den Entwickler.
+Sorular veya sorunlar için GitHub'da bir Issue açın veya geliştirici ile iletişime geçin.
 
 ---
 
-**Viel Erfolg mit Ihrem News Summarizer!** 🎉
+**Haber Özetleyicinizle başarılar!** 🎉
