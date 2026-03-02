@@ -10,8 +10,6 @@ updates:
       time: "09:00"
       timezone: Europe/Berlin
     open-pull-requests-limit: 5
-    reviewers:
-      - ${{ github.repository_owner }}
     labels:
       - dependencies
       - python
@@ -46,8 +44,6 @@ updates:
       time: "09:00"
       timezone: Europe/Berlin
     open-pull-requests-limit: 5
-    reviewers:
-      - ${{ github.repository_owner }}
     labels:
       - dependencies
       - npm
@@ -84,8 +80,6 @@ updates:
       time: "09:00"
       timezone: Europe/Berlin
     open-pull-requests-limit: 3
-    reviewers:
-      - ${{ github.repository_owner }}
     labels:
       - dependencies
       - github-actions
@@ -101,8 +95,6 @@ updates:
       time: "09:00"
       timezone: Europe/Berlin
     open-pull-requests-limit: 3
-    reviewers:
-      - ${{ github.repository_owner }}
     labels:
       - dependencies
       - docker
@@ -118,8 +110,6 @@ updates:
       time: "09:00"
       timezone: Europe/Berlin
     open-pull-requests-limit: 3
-    reviewers:
-      - ${{ github.repository_owner }}
     labels:
       - dependencies
       - docker
