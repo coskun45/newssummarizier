@@ -170,6 +170,30 @@
   flex-shrink: 0;
 }
 
+/* Unimportant item */
+.feed-item--unimportant {
+  border-top: 1px solid #f1f5f9;
+  margin-top: 0.25rem;
+}
+
+.feed-item--unimportant .feed-item-label {
+  color: #9ca3af;
+}
+
+.feed-item--unimportant:hover .feed-item-label {
+  color: #dc2626;
+}
+
+.feed-item--unimportant-active {
+  background: #fff5f5 !important;
+  border-left: 3px solid #fc8181 !important;
+}
+
+.feed-item--unimportant-active .feed-item-label {
+  color: #dc2626 !important;
+  font-weight: 600;
+}
+
 /* Delete button */
 .feed-delete-btn {
   background: none;

@@ -29,6 +29,8 @@ export interface Article {
     published_at: string | null;
     fetched_at: string;
     status: string;
+    importance: string | null;
+    priority: string | null;
     topics: Topic[];
     has_summaries: boolean;
 }
@@ -63,6 +65,7 @@ export interface ArticleFilters {
     search?: string;
     status?: string;
     feed_id?: number;
+    priority?: string;
 }
 
 export interface UserSettings {

@@ -1,4 +1,3 @@
-#!/bin/bash
 # ─────────────────────────────────────────────────────────────────────────────
 # News Summarizer — Deploy Script
 # Kullanım: bash deploy.sh

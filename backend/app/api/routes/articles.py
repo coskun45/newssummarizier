@@ -42,9 +42,11 @@ class ArticleResponse(BaseModel):
     published_at: Optional[datetime] = None
     fetched_at: datetime
     status: str
+    importance: Optional[str] = None
+    priority: Optional[str] = None
     topics: List[TopicInfo] = []
     has_summaries: bool = False
-    
+
     class Config:
         from_attributes = True
 
@@ -71,6 +73,7 @@ async def list_articles(
     search: Optional[str] = None,
     status: Optional[str] = None,
     feed_id: Optional[int] = Query(None),
+    priority: Optional[str] = Query(None, description="Filter by priority: high, med, low"),
     db: Session = Depends(get_db)
 ):
     """
@@ -92,7 +95,8 @@ async def list_articles(
         topic_ids=topic_id_list,
         search_query=search,
         status=status,
-        feed_id=feed_id
+        feed_id=feed_id,
+        priority=priority
     )
 
     # Get total count
@@ -101,7 +105,8 @@ async def list_articles(
         topic_ids=topic_id_list,
         search_query=search,
         status=status,
-        feed_id=feed_id
+        feed_id=feed_id,
+        priority=priority
     )
     
     # Transform to response model
@@ -115,6 +120,8 @@ async def list_articles(
             "published_at": article.published_at,
             "fetched_at": article.fetched_at,
             "status": article.status,
+            "importance": article.importance,
+            "priority": article.priority,
             "topics": [
                 {
                     "id": at.topic.id,
@@ -155,6 +162,8 @@ async def get_article(article_id: int, db: Session = Depends(get_db)):
         "raw_content": article.raw_content,
         "cleaned_content": article.cleaned_content,
         "status": article.status,
+        "importance": article.importance,
+        "priority": article.priority,
         "topics": [
             {
                 "id": at.topic.id,

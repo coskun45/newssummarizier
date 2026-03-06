@@ -17,6 +17,8 @@ interface DashboardProps {
 
 function Dashboard({ currentUser, onLogout }: DashboardProps) {
   const [selectedTopics, setSelectedTopics] = useState<number[]>([]);
+  const [importanceMode, setImportanceMode] = useState<'important' | 'unimportant' | null>(null);
+  const [selectedPriority, setSelectedPriority] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [notification, setNotification] = useState<string | null>(null);
@@ -52,13 +54,17 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
     search: debouncedSearch || undefined,
     limit: 50,
     feed_id: selectedFeedId ?? undefined,
+    status: importanceMode === 'unimportant' ? 'filtered' : (importanceMode === 'important' ? 'summarized' : undefined),
+    priority: selectedPriority ?? undefined,
   };
 
   const { data: articlesData, isLoading, error } = useArticles(filters);
 
-  // Reset selected topics when feed changes
+  // Reset selected topics, priority and importance mode when feed changes
   useEffect(() => {
     setSelectedTopics([]);
+    setImportanceMode(null);
+    setSelectedPriority(null);
   }, [selectedFeedId]);
 
   const handleDeleteFeed = (feedId: number) => {
@@ -304,11 +310,26 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                 topics={topicsData || []}
                 selectedTopics={selectedTopics}
                 onTopicToggle={(topicId) => {
+                  setImportanceMode('important');
                   setSelectedTopics((prev) =>
                     prev.includes(topicId)
                       ? prev.filter((id) => id !== topicId)
                       : [...prev, topicId]
                   );
+                }}
+                importanceMode={importanceMode}
+                onImportanceModeChange={(mode) => {
+                  setImportanceMode(mode);
+                  if (mode === 'unimportant') {
+                    setSelectedTopics([]);
+                    setSelectedPriority(null);
+                    setSelectedFeedId(null);
+                  }
+                }}
+                selectedPriority={selectedPriority}
+                onPriorityChange={(p) => {
+                  setSelectedPriority(p);
+                  if (p) setImportanceMode('important');
                 }}
               />
             </aside>

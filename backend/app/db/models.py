@@ -37,7 +37,9 @@ class Article(Base):
     fetched_at = Column(DateTime(timezone=True), server_default=func.now())
     raw_content = Column(Text)  # Full HTML/text content
     cleaned_content = Column(Text)  # Extracted main content
-    status = Column(String, default="pending", index=True)  # pending, scraped, summarized, failed
+    status = Column(String, default="pending", index=True)  # pending, scraped, summarized, failed, filtered
+    importance = Column(String, nullable=True)  # "important" | "unimportant"
+    priority = Column(String, nullable=True)    # "high" | "med" | "low"
     
     # Relationships
     feed = relationship("Feed", back_populates="articles")

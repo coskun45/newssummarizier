@@ -91,19 +91,22 @@ function ArticleCard({ article }: ArticleCardProps) {
         </div>
       </div>
 
-      {article.topics.length > 0 && (
-        <div className="article-topics">
-          {article.topics.map((topic) => (
-            <span
-              key={topic.id}
-              className="topic-badge"
-              style={{ backgroundColor: topic.color || '#ccc' }}
-            >
-              {topic.name}
-            </span>
-          ))}
-        </div>
-      )}
+      <div className="article-badges">
+        {article.priority && (
+          <span className={`priority-badge priority-${article.priority}`}>
+            {article.priority === 'high' ? '▲ Yüksek' : article.priority === 'med' ? '● Orta' : '▼ Düşük'}
+          </span>
+        )}
+        {article.topics.map((topic) => (
+          <span
+            key={topic.id}
+            className="topic-badge"
+            style={{ backgroundColor: topic.color || '#ccc' }}
+          >
+            {topic.name}
+          </span>
+        ))}
+      </div>
 
       <div className="article-actions">
         <button

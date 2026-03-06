@@ -6,7 +6,7 @@ from typing import Any, Dict
 from app.agents.state import NewsProcessingState, ArticleData
 from app.agents.tools import fetch_rss_feed, extract_article_content, truncate_content
 from app.services.summary_service import (
-    categorize_article_topics,
+    categorize_and_prioritize_article,
     generate_summary
 )
 from app.db.database import SessionLocal
@@ -148,44 +148,59 @@ async def article_processor_node(state: NewsProcessingState) -> Dict[str, Any]:
                 error_details=str(e)
             )
         
-        # Step 3: Categorize by topics
+        # Step 3: Evaluate importance, priority, and classify topics
+        is_important = False
         try:
-            # Get enabled topics from settings
-            enabled_topics_setting = crud.get_setting(db, "enabled_topics") or ""
-            enabled_topic_ids = []
-            if enabled_topics_setting:
-                try:
-                    enabled_topic_ids = [int(x.strip()) for x in enabled_topics_setting.split(",") if x.strip()]
-                except:
-                    enabled_topic_ids = []
-            
             content_for_categorization = article.get("cleaned_content") or article.get("raw_content", "")
-            topics = await categorize_article_topics(
+            categorization = await categorize_and_prioritize_article(
                 title=article["title"],
                 content=truncate_content(content_for_categorization, 2000)
             )
-            
+
+            importance = categorization.get("importance", "unimportant")
+            priority = categorization.get("priority")
+            topics = categorization.get("topics", [])
+
+            crud.update_article_importance(db=db, article_id=db_article.id, importance=importance, priority=priority)
             article["topics"] = topics
-            
-            # Save topics to database (filter by enabled topics if set)
+
+            if importance == "unimportant":
+                crud.update_article_status(db=db, article_id=db_article.id, status="filtered")
+                crud.create_log(
+                    db=db,
+                    article_id=db_article.id,
+                    agent_name="topic_categorizer",
+                    status="success",
+                    message="Article filtered as unimportant — skipping summarization"
+                )
+                article["status"] = "filtered"
+                processed = state.get("processed_articles", [])
+                processed.append(article)
+                return {
+                    "current_article_index": index + 1,
+                    "processed_articles": processed,
+                    "total_cost": state.get("total_cost", 0.0),
+                    "should_continue": index + 1 < len(articles)
+                }
+
+            # Article is important — save topics to DB
+            is_important = True
             for topic in topics:
                 topic_db = crud.get_topic_by_name(db, topic["name"])
                 if topic_db:
-                    # Only add if topic is enabled (or all topics enabled if empty)
-                    if not enabled_topic_ids or topic_db.id in enabled_topic_ids:
-                        crud.add_article_topic(
-                            db=db,
-                            article_id=db_article.id,
-                            topic_id=topic_db.id,
-                            confidence=topic.get("confidence", 1.0)
-                        )
-            
+                    crud.add_article_topic(
+                        db=db,
+                        article_id=db_article.id,
+                        topic_id=topic_db.id,
+                        confidence=topic.get("confidence", 1.0)
+                    )
+
             crud.create_log(
                 db=db,
                 article_id=db_article.id,
                 agent_name="topic_categorizer",
                 status="success",
-                message=f"Categorized into {len(topics)} topics"
+                message=f"Important ({priority}): classified into {len(topics)} topics"
             )
         except Exception as e:
             logger.error(f"Topic categorization failed: {e}")
@@ -198,7 +213,7 @@ async def article_processor_node(state: NewsProcessingState) -> Dict[str, Any]:
                 message="Failed to categorize topics",
                 error_details=str(e)
             )
-        
+
         # Step 4: Generate summaries based on user settings
         total_cost = 0.0
         content_for_summary = article.get("cleaned_content") or article.get("raw_content", "")

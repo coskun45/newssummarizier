@@ -109,7 +109,8 @@ def get_articles(
     status: str = None,
     start_date: datetime = None,
     end_date: datetime = None,
-    feed_id: int = None
+    feed_id: int = None,
+    priority: str = None
 ) -> List[models.Article]:
     """Get articles with optional filtering."""
     query = db.query(models.Article).options(
@@ -130,7 +131,11 @@ def get_articles(
     # Filter by status
     if status:
         query = query.filter(models.Article.status == status)
-    
+
+    # Filter by priority
+    if priority:
+        query = query.filter(models.Article.priority == priority)
+
     # Filter by date range
     if start_date:
         query = query.filter(models.Article.published_at >= start_date)
@@ -156,7 +161,8 @@ def count_articles(
     topic_ids: List[int] = None,
     search_query: str = None,
     status: str = None,
-    feed_id: int = None
+    feed_id: int = None,
+    priority: str = None
 ) -> int:
     """Count articles with optional filtering."""
     query = db.query(func.count(models.Article.id))
@@ -171,14 +177,17 @@ def count_articles(
     
     if status:
         query = query.filter(models.Article.status == status)
-    
+
+    if priority:
+        query = query.filter(models.Article.priority == priority)
+
     if search_query:
         search_filter = or_(
             models.Article.title.ilike(f"%{search_query}%"),
             models.Article.cleaned_content.ilike(f"%{search_query}%")
         )
         query = query.filter(search_filter)
-    
+
     return query.scalar()
 
 
@@ -187,6 +196,22 @@ def update_article_status(db: Session, article_id: int, status: str) -> Optional
     article = get_article(db, article_id)
     if article:
         article.status = status
+        db.commit()
+        db.refresh(article)
+    return article
+
+
+def update_article_importance(
+    db: Session,
+    article_id: int,
+    importance: str,
+    priority: Optional[str] = None
+) -> Optional[models.Article]:
+    """Update article importance and priority."""
+    article = get_article(db, article_id)
+    if article:
+        article.importance = importance
+        article.priority = priority
         db.commit()
         db.refresh(article)
     return article

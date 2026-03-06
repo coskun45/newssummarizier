@@ -14,14 +14,14 @@ def seed_topics():
     db = SessionLocal()
     try:
         topics_data = [
-            {"name": "Politik", "description": "Politische Nachrichten", "color": "#3B82F6"},  # Blue
-            {"name": "Wirtschaft", "description": "Wirtschaftsnachrichten", "color": "#10B981"},  # Green
-            {"name": "Technologie", "description": "Technologie und Innovation", "color": "#8B5CF6"},  # Purple
-            {"name": "Sport", "description": "Sportnachrichten", "color": "#F59E0B"},  # Orange
-            {"name": "Kultur", "description": "Kultur und Unterhaltung", "color": "#EC4899"},  # Pink
-            {"name": "Wissenschaft", "description": "Wissenschaft und Forschung", "color": "#06B6D4"},  # Cyan
-            {"name": "Umwelt", "description": "Umwelt und Klima", "color": "#22C55E"},  # Light Green
-            {"name": "Gesundheit", "description": "Gesundheit und Medizin", "color": "#EF4444"},  # Red
+            {"name": "Ukrayna Savaşı", "description": "Rusya-Ukrayna savaşı ve ilgili gelişmeler", "color": "#3B82F6"},
+            {"name": "ABD-İran Krizi", "description": "ABD ile İran arasındaki kriz ve nükleer müzakereler", "color": "#EF4444"},
+            {"name": "Epstein Dosyası", "description": "Jeffrey Epstein davası ve ilgili gelişmeler", "color": "#8B5CF6"},
+            {"name": "PKK ve SDG", "description": "PKK ve Suriye'deki SDG ile ilgili gelişmeler", "color": "#F59E0B"},
+            {"name": "Migrasyon / Göç", "description": "Göç, sığınmacı ve iltica haberleri", "color": "#06B6D4"},
+            {"name": "Avrupa Savunması ve Savunma Sanayi", "description": "Avrupa savunma politikaları ve savunma sanayi gelişmeleri", "color": "#10B981"},
+            {"name": "NATO", "description": "NATO ile ilgili gelişmeler ve kararlar", "color": "#22C55E"},
+            {"name": "Türkiye Siyaseti", "description": "Türkiye'de seçimler, Cumhur İttifakı ve iç siyaset", "color": "#EC4899"},
         ]
         
         created_count = 0
