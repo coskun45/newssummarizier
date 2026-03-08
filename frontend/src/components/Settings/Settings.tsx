@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useSettings, useUpdateSettings, useTopics, useCreateTopic, useUpdateTopic, useDeleteTopic, useUsers, useCreateUser, useDeleteUser } from '../../hooks/useApi';
+import { useSettings, useUpdateSettings, useTopics, useCreateTopic, useUpdateTopic, useDeleteTopic, useUsers, useCreateUser, useDeleteUser, useFeeds, useCreateFeed, useDeleteFeed } from '../../hooks/useApi';
 import PromptEditor from '../PromptEditor/PromptEditor';
-import { Cog6ToothIcon, FolderIcon, DocumentTextIcon, SparklesIcon, PencilIcon, TrashIcon, CheckIcon, XMarkIcon, PlusIcon, ChevronDownIcon, ChevronRightIcon, UsersIcon } from '@heroicons/react/24/outline';
+import { Cog6ToothIcon, FolderIcon, DocumentTextIcon, SparklesIcon, PencilIcon, TrashIcon, CheckIcon, XMarkIcon, PlusIcon, ChevronDownIcon, ChevronRightIcon, UsersIcon, RssIcon } from '@heroicons/react/24/outline';
 import type { AuthUser } from '../../types';
 import './Settings.css';
 
@@ -21,6 +21,9 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
   const { data: users } = useUsers();
   const { mutate: createUser, isPending: isCreatingUser } = useCreateUser();
   const { mutate: deleteUser, isPending: isDeletingUser } = useDeleteUser();
+  const { data: feeds } = useFeeds();
+  const { mutate: createFeed, isPending: isCreatingFeed } = useCreateFeed();
+  const { mutate: deleteFeed, isPending: isDeletingFeed } = useDeleteFeed();
 
   const [enabledTopicIds, setEnabledTopicIds] = useState<number[]>([]);
   const [enabledSummaryTypes, setEnabledSummaryTypes] = useState<string[]>([]);
@@ -37,8 +40,14 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
   const [newUserRole, setNewUserRole] = useState<'admin' | 'user'>('user');
   const [userError, setUserError] = useState('');
 
+  // Feed management form state
+  const [showAddFeed, setShowAddFeed] = useState(false);
+  const [newFeedUrl, setNewFeedUrl] = useState('');
+  const [newFeedTitle, setNewFeedTitle] = useState('');
+
   // Accordion state for sections
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    feeds: false,
     topics: true,
     summaryTypes: false,
     prompts: false,
@@ -164,6 +173,28 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
     }
   };
 
+  const handleAddFeed = () => {
+    if (!newFeedUrl.trim()) return;
+    createFeed({ url: newFeedUrl.trim(), title: newFeedTitle.trim() || undefined }, {
+      onSuccess: () => {
+        setNewFeedUrl('');
+        setNewFeedTitle('');
+        setShowAddFeed(false);
+      }
+    });
+  };
+
+  const handleDeleteFeed = (feedId: number, feedUrl: string) => {
+    if (confirm(`"${feedUrl}" beslemesini silmek istediğinizden emin misiniz?`)) {
+      deleteFeed(feedId);
+    }
+  };
+
+  const getFeedLabel = (feed: { title?: string; url: string }) => {
+    if (feed.title) return feed.title;
+    try { return new URL(feed.url).hostname.replace('www.', ''); } catch { return feed.url; }
+  };
+
   const handleSave = () => {
     updateSettings({
       enabled_topics: enabledTopicIds.join(','),
@@ -191,6 +222,84 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
             <div className="loading">Ayarlar yükleniyor...</div>
           ) : (
             <>
+              {/* RSS Feeds Section */}
+              <div className="settings-section">
+                <div
+                  className="section-header"
+                  onClick={() => toggleSection('feeds')}
+                >
+                  <h3>
+                    {expandedSections.feeds ? <ChevronDownIcon className="collapse-icon" /> : <ChevronRightIcon className="collapse-icon" />}
+                    <RssIcon className="section-icon" /> RSS Beslemeleri
+                  </h3>
+                </div>
+                {expandedSections.feeds && (
+                  <div className="section-content">
+                    <p className="section-description">
+                      RSS besleme kaynaklarını yönetin.
+                    </p>
+                    <div className="user-list">
+                      {feeds?.map(feed => (
+                        <div key={feed.id} className="user-list-item">
+                          <div className="user-list-info">
+                            <span className="user-list-email">{getFeedLabel(feed)}</span>
+                            <span className="user-role-badge" title={feed.url}>{new URL(feed.url).hostname}</span>
+                          </div>
+                          <button
+                            className="delete-topic-button"
+                            onClick={() => handleDeleteFeed(feed.id, getFeedLabel(feed))}
+                            disabled={isDeletingFeed}
+                            title="Beslemeyi sil"
+                          >
+                            <TrashIcon />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    {!showAddFeed ? (
+                      <button className="add-topic-button" onClick={() => setShowAddFeed(true)}>
+                        <PlusIcon /> Yeni besleme ekle
+                      </button>
+                    ) : (
+                      <div className="add-topic-form">
+                        <input
+                          type="url"
+                          className="topic-input"
+                          placeholder="RSS URL (ör. https://example.com/feed.xml)"
+                          value={newFeedUrl}
+                          onChange={(e) => setNewFeedUrl(e.target.value)}
+                          disabled={isCreatingFeed}
+                        />
+                        <input
+                          type="text"
+                          className="topic-input"
+                          placeholder="Ad (isteğe bağlı)"
+                          value={newFeedTitle}
+                          onChange={(e) => setNewFeedTitle(e.target.value)}
+                          disabled={isCreatingFeed}
+                        />
+                        <div className="add-topic-buttons">
+                          <button
+                            className="cancel-add-button"
+                            onClick={() => { setShowAddFeed(false); setNewFeedUrl(''); setNewFeedTitle(''); }}
+                            disabled={isCreatingFeed}
+                          >
+                            İptal
+                          </button>
+                          <button
+                            className="confirm-add-button"
+                            onClick={handleAddFeed}
+                            disabled={isCreatingFeed || !newFeedUrl.trim()}
+                          >
+                            {isCreatingFeed ? 'Ekleniyor...' : 'Ekle'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               {/* Topics Section */}
               <div className="settings-section">
                 <div 

@@ -1,13 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useArticles, useTopics, useFeeds, useRefreshFeed, useCheckNewArticles, useAddArticlesToFeed, useCreateFeed, useDeleteFeed } from '../../hooks/useApi';
+import { useArticles, useArticleCounts, useTopics, useFeeds, useRefreshFeed, useCheckNewArticles, useAddArticlesToFeed } from '../../hooks/useApi';
 import ArticleList from '../ArticleList/ArticleList';
 import TopicFilter from '../TopicFilter/TopicFilter';
 import FeedSidebar from '../FeedSidebar/FeedSidebar';
+import DateFilter from '../DateFilter/DateFilter';
 import SearchBar from '../SearchBar/SearchBar';
 import Settings from '../Settings/Settings';
-import { Cog6ToothIcon, MagnifyingGlassIcon, ChartBarIcon, ArrowPathIcon, XMarkIcon, ArrowRightStartOnRectangleIcon } from '@heroicons/react/24/outline';
-import type { AuthUser } from '../../types';
+import { Cog6ToothIcon, MagnifyingGlassIcon, ChartBarIcon, ArrowPathIcon, XMarkIcon, ArrowRightStartOnRectangleIcon, FunnelIcon } from '@heroicons/react/24/outline';
+import type { AuthUser, DateFilterState } from '../../types';
 import './Dashboard.css';
 
 interface DashboardProps {
@@ -26,17 +27,22 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
   const [selectedNewIndexes, setSelectedNewIndexes] = useState<number[]>([]);
   const [showSettings, setShowSettings] = useState(false);
   const [processingUrls, setProcessingUrls] = useState<string[]>([]);
-  const [selectedFeedId, setSelectedFeedId] = useState<number | null>(null);
+  const [selectedFeedIds, setSelectedFeedIds] = useState<number[]>([]);
+  const emptyDate: DateFilterState = { preset: null, customFrom: '', customTo: '' };
+  const [publishedFilter, setPublishedFilter] = useState<DateFilterState>(emptyDate);
+  const [fetchedFilter, setFetchedFilter] = useState<DateFilterState>(emptyDate);
   const queryClient = useQueryClient();
 
-  const { data: topicsData } = useTopics(selectedFeedId);
   const { data: feedsData } = useFeeds();
+  const { data: articleCounts } = useArticleCounts();
   const { isPending: isRefreshing } = useRefreshFeed();
-  const createFeedMutation = useCreateFeed();
-  const deleteFeedMutation = useDeleteFeed();
 
-  // Use selected feed for "check new" or fall back to the first feed
-  const activeFeedId = selectedFeedId ?? (feedsData && feedsData.length > 0 ? feedsData[0].id : null);
+  // For topic counts: use single feed if exactly one selected, else null (all)
+  const topicFeedId = selectedFeedIds.length === 1 ? selectedFeedIds[0] : null;
+  const { data: topicsData } = useTopics(topicFeedId);
+
+  // Use first selected feed for "check new", or fall back to first feed
+  const activeFeedId = selectedFeedIds[0] ?? (feedsData && feedsData.length > 0 ? feedsData[0].id : null);
 
   const { data: newArticlesData, refetch: checkNewArticles, isFetching: isChecking } = useCheckNewArticles(activeFeedId);
   const addArticlesMutation = useAddArticlesToFeed();
@@ -49,28 +55,56 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  const filters = {
-    topic_ids: selectedTopics.length > 0 ? selectedTopics.join(',') : undefined,
-    search: debouncedSearch || undefined,
-    limit: 50,
-    feed_id: selectedFeedId ?? undefined,
-    status: importanceMode === 'unimportant' ? 'filtered' : (importanceMode === 'important' ? 'summarized' : undefined),
-    priority: selectedPriority ?? undefined,
-  };
+  const filters = useMemo(() => {
+    const resolveDateRange = (f: DateFilterState): { from?: string; to?: string } => {
+      if (!f.preset) return {};
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+      const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).toISOString();
+      if (f.preset === 'today') return { from: todayStart, to: todayEnd };
+      if (f.preset === 'week') {
+        const weekAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6).toISOString();
+        return { from: weekAgo, to: todayEnd };
+      }
+      if (f.preset === 'custom') {
+        return {
+          from: f.customFrom ? new Date(f.customFrom).toISOString() : undefined,
+          to: f.customTo ? new Date(f.customTo + 'T23:59:59').toISOString() : undefined,
+        };
+      }
+      return {};
+    };
+    const pubRange = resolveDateRange(publishedFilter);
+    const fetchRange = resolveDateRange(fetchedFilter);
+    return {
+      topic_ids: selectedTopics.length > 0 ? selectedTopics.join(',') : undefined,
+      search: debouncedSearch || undefined,
+      limit: 50,
+      feed_ids: selectedFeedIds.length > 0 ? selectedFeedIds.join(',') : undefined,
+      status: importanceMode === 'unimportant' ? 'filtered' : (importanceMode === 'important' ? 'summarized' : undefined),
+      priority: selectedPriority ?? undefined,
+      published_from: pubRange.from,
+      published_to: pubRange.to,
+      fetched_from: fetchRange.from,
+      fetched_to: fetchRange.to,
+    };
+  }, [selectedTopics, debouncedSearch, selectedFeedIds, importanceMode, selectedPriority, publishedFilter, fetchedFilter]);
 
   const { data: articlesData, isLoading, error } = useArticles(filters);
 
-  // Reset selected topics, priority and importance mode when feed changes
+  // Reset selected topics and priority when feed selection changes
   useEffect(() => {
     setSelectedTopics([]);
-    setImportanceMode(null);
     setSelectedPriority(null);
-  }, [selectedFeedId]);
+  }, [selectedFeedIds]);
 
-  const handleDeleteFeed = (feedId: number) => {
-    deleteFeedMutation.mutate(feedId);
-    if (selectedFeedId === feedId) setSelectedFeedId(null);
-  };
+  // Remove deleted feeds from selection
+  useEffect(() => {
+    if (feedsData && selectedFeedIds.length > 0) {
+      const validIds = feedsData.map((f: { id: number }) => f.id);
+      setSelectedFeedIds(prev => prev.filter(id => validIds.includes(id)));
+    }
+  }, [feedsData]);
 
   const handleCheckNewArticles = async () => {
     if (activeFeedId) {
@@ -247,7 +281,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
           <div className="header-content">
             <div className="header-text">
               <h1><ChartBarIcon className="header-icon" /> Haber Özetleyici</h1>
-              <p className="text-muted">Deutsche Welle - Akıllı Haber Özetleri</p>
+            
             </div>
             <div className="header-buttons">
 
@@ -292,20 +326,22 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
       <div className="dashboard-content">
         <div className="container">
           <div className="dashboard-grid">
-            {/* Feed Sidebar */}
-            <aside className="dashboard-feed-sidebar">
+            {/* Left Sidebar */}
+            <aside className="dashboard-sidebar">
+              <h2 className="sidebar-section-title">
+                <FunnelIcon className="sidebar-section-icon" /> Filtreleme
+              </h2>
               <FeedSidebar
                 feeds={feedsData || []}
-                selectedFeedId={selectedFeedId}
-                onSelectFeed={setSelectedFeedId}
-                onCreateFeed={(url, title) => createFeedMutation.mutate({ url, title })}
-                onDeleteFeed={handleDeleteFeed}
-                isCreating={createFeedMutation.isPending}
+                selectedFeedIds={selectedFeedIds}
+                feedCounts={articleCounts?.by_feed ?? {}}
+                onFeedToggle={(id) =>
+                  setSelectedFeedIds(prev =>
+                    prev.includes(id) ? prev.filter(f => f !== id) : [...prev, id]
+                  )
+                }
+                onClearFeeds={() => setSelectedFeedIds([])}
               />
-            </aside>
-
-            {/* Topic Sidebar */}
-            <aside className="dashboard-sidebar">
               <TopicFilter
                 topics={topicsData || []}
                 selectedTopics={selectedTopics}
@@ -323,7 +359,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                   if (mode === 'unimportant') {
                     setSelectedTopics([]);
                     setSelectedPriority(null);
-                    setSelectedFeedId(null);
+                    setSelectedFeedIds([]);
                   }
                 }}
                 selectedPriority={selectedPriority}
@@ -331,6 +367,13 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                   setSelectedPriority(p);
                   if (p) setImportanceMode('important');
                 }}
+                priorityCounts={articleCounts?.by_priority ?? {}}
+              />
+              <DateFilter
+                publishedFilter={publishedFilter}
+                onPublishedChange={setPublishedFilter}
+                fetchedFilter={fetchedFilter}
+                onFetchedChange={setFetchedFilter}
               />
             </aside>
 

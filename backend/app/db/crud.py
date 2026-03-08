@@ -109,7 +109,10 @@ def get_articles(
     status: str = None,
     start_date: datetime = None,
     end_date: datetime = None,
+    fetched_from: datetime = None,
+    fetched_to: datetime = None,
     feed_id: int = None,
+    feed_ids: List[int] = None,
     priority: str = None
 ) -> List[models.Article]:
     """Get articles with optional filtering."""
@@ -118,8 +121,10 @@ def get_articles(
         joinedload(models.Article.topics).joinedload(models.ArticleTopic.topic)
     )
 
-    # Filter by feed
-    if feed_id:
+    # Filter by feed(s)
+    if feed_ids:
+        query = query.filter(models.Article.feed_id.in_(feed_ids))
+    elif feed_id:
         query = query.filter(models.Article.feed_id == feed_id)
 
     # Filter by topic
@@ -127,7 +132,7 @@ def get_articles(
         query = query.join(models.ArticleTopic).filter(
             models.ArticleTopic.topic_id.in_(topic_ids)
         )
-    
+
     # Filter by status
     if status:
         query = query.filter(models.Article.status == status)
@@ -136,12 +141,18 @@ def get_articles(
     if priority:
         query = query.filter(models.Article.priority == priority)
 
-    # Filter by date range
+    # Filter by published date range
     if start_date:
         query = query.filter(models.Article.published_at >= start_date)
     if end_date:
         query = query.filter(models.Article.published_at <= end_date)
-    
+
+    # Filter by fetched date range
+    if fetched_from:
+        query = query.filter(models.Article.fetched_at >= fetched_from)
+    if fetched_to:
+        query = query.filter(models.Article.fetched_at <= fetched_to)
+
     # Search in title and content
     if search_query:
         search_filter = or_(
@@ -149,10 +160,10 @@ def get_articles(
             models.Article.cleaned_content.ilike(f"%{search_query}%")
         )
         query = query.filter(search_filter)
-    
+
     # Order by published date descending
     query = query.order_by(desc(models.Article.published_at))
-    
+
     return query.offset(skip).limit(limit).all()
 
 
@@ -162,24 +173,41 @@ def count_articles(
     search_query: str = None,
     status: str = None,
     feed_id: int = None,
-    priority: str = None
+    feed_ids: List[int] = None,
+    priority: str = None,
+    start_date: datetime = None,
+    end_date: datetime = None,
+    fetched_from: datetime = None,
+    fetched_to: datetime = None,
 ) -> int:
     """Count articles with optional filtering."""
     query = db.query(func.count(models.Article.id))
 
-    if feed_id:
+    if feed_ids:
+        query = query.filter(models.Article.feed_id.in_(feed_ids))
+    elif feed_id:
         query = query.filter(models.Article.feed_id == feed_id)
 
     if topic_ids:
         query = query.join(models.ArticleTopic).filter(
             models.ArticleTopic.topic_id.in_(topic_ids)
         )
-    
+
     if status:
         query = query.filter(models.Article.status == status)
 
     if priority:
         query = query.filter(models.Article.priority == priority)
+
+    if start_date:
+        query = query.filter(models.Article.published_at >= start_date)
+    if end_date:
+        query = query.filter(models.Article.published_at <= end_date)
+
+    if fetched_from:
+        query = query.filter(models.Article.fetched_at >= fetched_from)
+    if fetched_to:
+        query = query.filter(models.Article.fetched_at <= fetched_to)
 
     if search_query:
         search_filter = or_(

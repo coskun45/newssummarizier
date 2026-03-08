@@ -369,22 +369,37 @@ button svg {
 
 .dashboard-grid {
   display: grid;
-  grid-template-columns: 210px 260px 1fr;
+  grid-template-columns: auto 1fr;
   gap: 1.5rem;
 }
 
-.dashboard-feed-sidebar {
-  min-width: 0;
+.sidebar-section-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #c4b5fd;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.5rem 0;
+}
+
+.sidebar-section-icon {
+  width: 14px;
+  height: 14px;
 }
 
 .dashboard-sidebar {
   background: white;
   border-radius: 8px;
-  padding: 1.5rem;
+  padding: 1.25rem 1.25rem 0.75rem;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  height: fit-content;
   position: sticky;
   top: 2rem;
+  max-height: calc(100vh - 4rem);
+  overflow-y: auto;
+  align-self: start;
 }
 
 .dashboard-main {
@@ -496,21 +511,13 @@ button svg {
 
 @media (max-width: 1024px) {
   .dashboard-grid {
-    grid-template-columns: 200px 1fr;
-  }
-
-  .dashboard-sidebar {
-    display: none;
+    grid-template-columns: auto 1fr;
   }
 }
 
 @media (max-width: 768px) {
   .dashboard-grid {
     grid-template-columns: 1fr;
-  }
-
-  .dashboard-feed-sidebar {
-    display: none;
   }
 
   .dashboard-sidebar {

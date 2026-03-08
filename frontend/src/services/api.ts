@@ -7,6 +7,7 @@ import type {
     ArticleDetail,
     ArticleListResponse,
     ArticleFilters,
+    ArticleCounts,
     Summary,
     Topic,
     UserSettings,
@@ -130,6 +131,11 @@ export const articlesApi = {
 
     get: async (articleId: number): Promise<ArticleDetail> => {
         const response = await api.get(`/articles/${articleId}`);
+        return response.data;
+    },
+
+    getCounts: async (): Promise<ArticleCounts> => {
+        const response = await api.get('/articles/counts');
         return response.data;
     },
 

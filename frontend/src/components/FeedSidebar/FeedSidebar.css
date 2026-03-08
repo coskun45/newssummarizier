@@ -1,259 +1,71 @@
 .feed-sidebar {
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  overflow: hidden;
-  position: sticky;
-  top: 2rem;
+  margin-bottom: 0.25rem;
 }
 
-.feed-sidebar-header {
+.feed-accordion-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1rem 1rem 0.75rem;
-  border-bottom: 1px solid #f1f5f9;
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0891b2;
+  text-align: left;
+  transition: background-color 0.2s;
+  margin-bottom: 0.25rem;
 }
 
-.feed-sidebar-title {
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: #475569;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+.feed-accordion-header:hover {
+  background-color: #f0f4ff;
+}
+
+.feed-accordion-active {
+  color: #2b6cb0;
+  background-color: #ebf4ff;
+  border-left: 3px solid #4299e1;
+}
+
+.feed-accordion-label {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  margin: 0;
+  flex: 1;
 }
 
 .feed-sidebar-icon {
   width: 16px;
   height: 16px;
-  color: #7c3aed;
+  flex-shrink: 0;
 }
 
-.feed-add-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: #7c3aed;
-  padding: 4px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  transition: background 0.15s;
-}
-
-.feed-add-btn:hover {
-  background: #f3f0ff;
-}
-
-.feed-add-btn svg {
-  width: 18px;
-  height: 18px;
-}
-
-/* Add form */
-.feed-add-form {
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid #f1f5f9;
+.feed-accordion-content {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.25rem;
+  padding-left: 0.5rem;
 }
 
-.feed-input {
-  width: 100%;
-  padding: 0.4rem 0.6rem;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  font-size: 0.8rem;
-  outline: none;
-  box-sizing: border-box;
-}
-
-.feed-input:focus {
-  border-color: #7c3aed;
-  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.15);
-}
-
-.feed-add-actions {
-  display: flex;
-  gap: 0.4rem;
-}
-
-.feed-submit-btn {
-  flex: 1;
-  padding: 0.35rem 0.5rem;
-  background: #7c3aed;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  font-size: 0.78rem;
-  cursor: pointer;
-  font-weight: 600;
-  transition: background 0.15s;
-}
-
-.feed-submit-btn:hover:not(:disabled) {
-  background: #6d28d9;
-}
-
-.feed-submit-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.feed-cancel-btn {
-  padding: 0.35rem 0.5rem;
-  background: none;
-  color: #64748b;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  font-size: 0.78rem;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.feed-cancel-btn:hover {
-  background: #f8fafc;
-}
-
-/* Feed list */
-.feed-list {
-  list-style: none;
-  margin: 0;
-  padding: 0.5rem 0;
-}
-
-.feed-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.55rem 1rem;
-  cursor: pointer;
-  transition: background 0.15s;
-  gap: 0.5rem;
-}
-
-.feed-item:hover {
-  background: #f8fafc;
-}
-
-.feed-item--active {
-  background: #f3f0ff;
-  border-left: 3px solid #7c3aed;
-}
-
-.feed-item--active .feed-item-label {
-  color: #6d28d9;
+.feed-item-all {
   font-weight: 600;
 }
 
-.feed-item-label {
-  font-size: 0.85rem;
-  color: #374151;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
+@media (prefers-color-scheme: dark) {
+  .feed-accordion-header {
+    color: #22d3ee;
+  }
 
-.feed-item-count {
-  font-size: 0.72rem;
-  color: #9ca3af;
-  background: #f1f5f9;
-  padding: 2px 6px;
-  border-radius: 10px;
-  flex-shrink: 0;
-}
+  .feed-accordion-header:hover {
+    background-color: #4a5568;
+  }
 
-/* Unimportant item */
-.feed-item--unimportant {
-  border-top: 1px solid #f1f5f9;
-  margin-top: 0.25rem;
-}
-
-.feed-item--unimportant .feed-item-label {
-  color: #9ca3af;
-}
-
-.feed-item--unimportant:hover .feed-item-label {
-  color: #dc2626;
-}
-
-.feed-item--unimportant-active {
-  background: #fff5f5 !important;
-  border-left: 3px solid #fc8181 !important;
-}
-
-.feed-item--unimportant-active .feed-item-label {
-  color: #dc2626 !important;
-  font-weight: 600;
-}
-
-/* Delete button */
-.feed-delete-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: #cbd5e1;
-  padding: 2px;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  opacity: 0;
-  transition: opacity 0.15s, color 0.15s;
-}
-
-.feed-item:hover .feed-delete-btn {
-  opacity: 1;
-}
-
-.feed-delete-btn:hover {
-  color: #ef4444;
-}
-
-.feed-delete-btn svg {
-  width: 14px;
-  height: 14px;
-}
-
-/* Delete confirm */
-.feed-delete-confirm {
-  display: flex;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.feed-delete-yes {
-  font-size: 0.72rem;
-  padding: 2px 6px;
-  background: #fee2e2;
-  color: #dc2626;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-weight: 600;
-}
-
-.feed-delete-yes:hover {
-  background: #fecaca;
-}
-
-.feed-delete-no {
-  font-size: 0.72rem;
-  padding: 2px 6px;
-  background: #f1f5f9;
-  color: #64748b;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.feed-delete-no:hover {
-  background: #e2e8f0;
+  .feed-accordion-active {
+    background-color: #2a4365;
+    color: #90cdf4;
+    border-left-color: #63b3ed;
+  }
 }

@@ -6,6 +6,14 @@ import { articlesApi, summariesApi, topicsApi, settingsApi, statsApi, feedsApi, 
 import type { ArticleFilters, UserSettings } from '../types';
 
 // Articles hooks
+export const useArticleCounts = () => {
+    return useQuery({
+        queryKey: ['articleCounts'],
+        queryFn: () => articlesApi.getCounts(),
+        staleTime: 30000,
+    });
+};
+
 export const useArticles = (filters: ArticleFilters = {}) => {
     return useQuery({
         queryKey: ['articles', filters],

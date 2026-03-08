@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(test -f /c/Users/ecoskun/Desktop/newsSummary/backend/.env)"
+      "Bash(test -f /c/Users/ecoskun/Desktop/newsSummary/backend/.env)",
+      "Bash(sqlite3 /c/Users/ecoskun/Desktop/newsSummary/backend/news_summary.db \":*)"
     ]
   }
 }

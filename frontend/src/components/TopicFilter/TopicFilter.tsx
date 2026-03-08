@@ -10,6 +10,7 @@ interface TopicFilterProps {
   onImportanceModeChange: (mode: 'important' | 'unimportant' | null) => void;
   selectedPriority: string | null;
   onPriorityChange: (priority: string | null) => void;
+  priorityCounts: Record<string, number>;
 }
 
 const PRIORITIES = [
@@ -18,62 +19,64 @@ const PRIORITIES = [
   { value: 'low',  label: 'Düşük' },
 ];
 
-function TopicFilter({ topics, selectedTopics, onTopicToggle, importanceMode, onImportanceModeChange, selectedPriority, onPriorityChange }: TopicFilterProps) {
-  const [open, setOpen] = useState(true);
+function TopicFilter({ topics, selectedTopics, onTopicToggle, importanceMode, onImportanceModeChange, selectedPriority, onPriorityChange, priorityCounts }: TopicFilterProps) {
+  const [openCategories, setOpenCategories] = useState(true);
+  const [openPriority, setOpenPriority] = useState(true);
 
   const handleUnimportantClick = () => {
     const next = importanceMode === 'unimportant' ? null : 'unimportant';
     onImportanceModeChange(next);
-    if (next === 'unimportant') setOpen(false);
   };
 
-  const handleImportantClick = () => {
-    const next = !open;
-    setOpen(next);
-    onImportanceModeChange(next ? 'important' : null);
+  const handleCategoriesClick = () => {
+    const next = !openCategories;
+    setOpenCategories(next);
+    if (!next) onImportanceModeChange(null);
   };
 
-  const isImportantActive = importanceMode === 'important' || selectedTopics.length > 0 || !!selectedPriority;
+  const isCategoriesActive = importanceMode === 'important' || selectedTopics.length > 0;
+  const isPriorityActive = !!selectedPriority;
 
   return (
     <div className="topic-filter">
-      {/* Önemsiz — üstte, basit tıklanabilir satır */}
+      {/* Önem Seviyesi — accordion */}
       <button
-        className={`importance-header unimportant-btn ${importanceMode === 'unimportant' ? 'unimportant-active' : ''}`}
-        onClick={handleUnimportantClick}
+        className={`importance-header ${isPriorityActive ? 'active' : ''}`}
+        onClick={() => setOpenPriority(v => !v)}
       >
-        <span className="importance-label">Önemsiz</span>
+        <span className="importance-label">Önem Seviyesi</span>
+        <span className="importance-chevron">{openPriority ? '▲' : '▼'}</span>
       </button>
 
-      <div className="importance-divider" />
-
-      {/* Önemli — accordion */}
-      <button
-        className={`importance-header ${isImportantActive ? 'active' : ''}`}
-        onClick={handleImportantClick}
-      >
-        <span className="importance-label">Önemli</span>
-        <span className="importance-chevron">{open ? '▲' : '▼'}</span>
-      </button>
-
-      {open && (
+      {openPriority && (
         <div className="importance-topics">
-          {/* Öncelik filtresi */}
-          <div className="priority-filter-row">
-            {PRIORITIES.map((p) => (
-              <button
-                key={p.value}
-                className={`priority-filter-btn priority-filter-${p.value} ${selectedPriority === p.value ? 'priority-filter-active' : ''}`}
-                onClick={() => onPriorityChange(selectedPriority === p.value ? null : p.value)}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
+          {PRIORITIES.map((p) => (
+            <label key={p.value} className="topic-item">
+              <input
+                type="checkbox"
+                checked={selectedPriority === p.value}
+                onChange={() => onPriorityChange(selectedPriority === p.value ? null : p.value)}
+              />
+              <span className="topic-name">{p.label}</span>
+              {priorityCounts[p.value] !== undefined && (
+                <span className="topic-count">{priorityCounts[p.value]}</span>
+              )}
+            </label>
+          ))}
+        </div>
+      )}
 
-          <div className="importance-divider" style={{ margin: '0.4rem 0' }} />
+      {/* Kategoriler — accordion */}
+      <button
+        className={`importance-header ${isCategoriesActive ? 'active' : ''}`}
+        onClick={handleCategoriesClick}
+      >
+        <span className="importance-label">Kategoriler</span>
+        <span className="importance-chevron">{openCategories ? '▲' : '▼'}</span>
+      </button>
 
-          {/* Konu listesi */}
+      {openCategories && (
+        <div className="importance-topics">
           {topics.map((topic) => (
             <label key={topic.id} className="topic-item">
               <input
@@ -87,6 +90,16 @@ function TopicFilter({ topics, selectedTopics, onTopicToggle, importanceMode, on
               )}
             </label>
           ))}
+
+          {/* Önemsiz */}
+          <label className="topic-item">
+            <input
+              type="checkbox"
+              checked={importanceMode === 'unimportant'}
+              onChange={handleUnimportantClick}
+            />
+            <span className="topic-name">Önemsiz</span>
+          </label>
         </div>
       )}
     </div>

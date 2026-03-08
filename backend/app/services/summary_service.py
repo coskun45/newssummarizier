@@ -121,14 +121,7 @@ INTEREST_KEYWORDS = [
 ]
 
 _CATEGORIZATION_SYSTEM_PROMPT = """Sen bir haber analiz asistanısın. Görevin haberleri değerlendirmek, sınıflandırmak ve önceliklendirmektir.
-Her zaman geçerli JSON döndür, başka hiçbir şey yazma."""
-
-_CATEGORIZATION_USER_PROMPT_TEMPLATE = """Aşağıdaki haberi analiz et ve şu kurallara göre değerlendir:
-
-HABER BAŞLIĞI: {title}
-
-HABER İÇERİĞİ:
-{content}
+Her zaman geçerli JSON döndür, başka hiçbir şey yazma.
 
 ---
 
@@ -139,14 +132,7 @@ Haber aşağıdaki TOPIC listesi veya KEYWORD listesiyle ilgili DEĞİLSE → "u
 İlgiliyse → "important" döndür ve 2. adıma geç.
 
 TOPIC LİSTESİ:
-- Ukrayna Savaşı
-- ABD-İran Krizi
-- Epstein Dosyası
-- PKK ve Suriye'de SDG ile ilgili gelişmeler
-- Migrasyon / Göç
-- Avrupa Savunması ve Savunma Sanayi
-- NATO
-- Türkiye siyaseti (Seçimler, Cumhur İttifakı, Bilal Erdoğan)
+{topic_list}
 
 KEYWORD LİSTESİ (bu kelimelerden biri haberde geçiyorsa potansiyel olarak önemlidir):
 Turkey, Türkei, Turquie, Turkish, Turken, Turk, Turc, Turchia, Turco, Turquía, Turquia, Turcos, Turkiye, Istanbul,
@@ -163,26 +149,40 @@ Fetö, Feto, Fetullah, Gülen, Gulen, Cemaat, KHK, MIT
 
 3. KONU SINIFLANDIRMASI (yalnızca önemli haberler için)
 Haberi aşağıdaki konulardan bir veya birkaçına sınıflandır (bir haber birden fazla konuya girebilir):
-- Ukrayna Savaşı
-- ABD-İran Krizi
-- Epstein Dosyası
-- PKK ve SDG
-- Migrasyon / Göç
-- Avrupa Savunması ve Savunma Sanayi
-- NATO
-- Türkiye Siyaseti
+{topic_list}
 
 ---
 
 ÇIKTI FORMATI (yalnızca geçerli JSON):
 
 Önemsiz haber için:
-{{"importance": "unimportant", "priority": null, "topics": []}}
+{"importance": "unimportant", "priority": null, "topics": []}
 
 Önemli haber için:
-{{"importance": "important", "priority": "high", "topics": [{{"name": "Ukrayna Savaşı", "confidence": 0.95}}, {{"name": "NATO", "confidence": 0.7}}]}}
+{"importance": "important", "priority": "high", "topics": [{"name": "Ukrayna Savaşı", "confidence": 0.95}, {"name": "NATO", "confidence": 0.7}]}
 
-Sadece confidence >= 0.5 olan konuları dahil et."""
+Sadece confidence >= 0.5 olan konuları dahil et.
+"""
+
+def _build_topic_list(topics) -> str:
+    """Format DB topics as a bullet list for injection into the system prompt."""
+    lines = []
+    for t in topics:
+        if t.description:
+            lines.append(f"- {t.name}: {t.description}")
+        else:
+            lines.append(f"- {t.name}")
+    return "\n".join(lines)
+
+
+_CATEGORIZATION_USER_PROMPT_TEMPLATE = """Aşağıdaki haberi analiz et ve şu kurallara göre değerlendir:
+
+HABER BAŞLIĞI: {title}
+
+HABER İÇERİĞİ:
+{content}
+
+"""
 
 
 async def categorize_and_prioritize_article(title: str, content: str) -> Dict[str, Any]:
@@ -201,19 +201,26 @@ async def categorize_and_prioritize_article(title: str, content: str) -> Dict[st
     try:
         await check_cost_limits()
 
-        prompt = _CATEGORIZATION_USER_PROMPT_TEMPLATE.format(
-            title=title,
-            content=content[:2000],
-        )
+        db = SessionLocal()
+        try:
+            prompt_obj = crud.get_system_prompt(db, "classification")
+            system_prompt = prompt_obj.prompt_text if (prompt_obj and prompt_obj.is_active) else _CATEGORIZATION_SYSTEM_PROMPT
+            db_topics = crud.get_topics(db)
+        finally:
+            db.close()
+
+        system_prompt = system_prompt.replace("{topic_list}", _build_topic_list(db_topics))
+
+        user_prompt = _CATEGORIZATION_USER_PROMPT_TEMPLATE.replace("{title}", title).replace("{content}", content[:2000])
 
         model = settings.default_model
-        input_tokens = count_tokens(prompt, model)
+        input_tokens = count_tokens(system_prompt + user_prompt, model)
 
         response = await get_openai_client().chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": _CATEGORIZATION_SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
             ],
             temperature=0.1,
             max_completion_tokens=300,

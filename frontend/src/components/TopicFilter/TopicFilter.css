@@ -7,17 +7,17 @@
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding: 0.6rem 0.75rem;
+  padding: 0.5rem 0.75rem;
   background: none;
   border: none;
   border-radius: 6px;
   cursor: pointer;
   font-size: 0.95rem;
   font-weight: 700;
-  color: #2d3748;
+  color: #0891b2;
   text-align: left;
   transition: background-color 0.2s;
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.1rem;
 }
 
 .importance-header:hover {
@@ -63,40 +63,10 @@
 .importance-topics {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.15rem;
   padding-left: 0.5rem;
 }
 
-.priority-filter-row {
-  display: flex;
-  gap: 0.4rem;
-  padding: 0.25rem 0.5rem 0.1rem;
-}
-
-.priority-filter-btn {
-  flex: 1;
-  padding: 0.25rem 0.4rem;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s;
-  background: #f1f5f9;
-  color: #64748b;
-}
-
-.priority-filter-btn:hover {
-  opacity: 0.85;
-}
-
-.priority-filter-high  { border-color: #fca5a5; }
-.priority-filter-med   { border-color: #fcd34d; }
-.priority-filter-low   { border-color: #86efac; }
-
-.priority-filter-active.priority-filter-high { background: #fee2e2; color: #dc2626; border-color: #dc2626; }
-.priority-filter-active.priority-filter-med  { background: #fef3c7; color: #d97706; border-color: #d97706; }
-.priority-filter-active.priority-filter-low  { background: #dcfce7; color: #16a34a; border-color: #16a34a; }
 
 .topic-item {
   display: flex;
@@ -129,9 +99,10 @@
   border-radius: 10px;
 }
 
+
 @media (prefers-color-scheme: dark) {
   .importance-header {
-    color: #f7fafc;
+    color: #22d3ee;
   }
 
   .importance-header:hover {
