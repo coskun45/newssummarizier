@@ -25,6 +25,7 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ promptType, label, descript
         return () => {
             if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current);
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [promptType]);
 
     const loadPrompt = async () => {
@@ -35,8 +36,8 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ promptType, label, descript
             setPrompt(data);
             setEditedText(data.prompt_text);
             setIsActive(data.is_active);
-        } catch (err: any) {
-            if (err?.response?.status === 404) {
+        } catch (err) {
+            if ((err as { response?: { status?: number } })?.response?.status === 404) {
                 // Prompt does not exist yet — allow creation without showing an error
                 setPrompt(null);
             } else {

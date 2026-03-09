@@ -104,6 +104,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
       const validIds = feedsData.map((f: { id: number }) => f.id);
       setSelectedFeedIds(prev => prev.filter(id => validIds.includes(id)));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [feedsData]);
 
   const handleCheckNewArticles = async () => {
@@ -143,6 +144,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
       setNotification(null);
     }, 180000); // 3 min safety limit
     return () => { clearInterval(interval); clearTimeout(timeout); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [processingUrls]);
 
   // Check processing completion when articlesData updates
@@ -157,6 +159,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
       setNotification('Makaleler başarıyla işlendi!');
       setTimeout(() => setNotification(null), 5000);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [articlesData]);
 
   return (

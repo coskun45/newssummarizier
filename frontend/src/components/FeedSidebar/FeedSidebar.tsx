@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { RssIcon } from '@heroicons/react/24/outline';
 import type { Feed } from '../../types';
 import './FeedSidebar.css';
 
