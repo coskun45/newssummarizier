@@ -14,13 +14,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY app/ ./app/
 
-# Create non-root user (UID 1001) and data directory
-RUN groupadd --gid 1001 appgroup \
-    && useradd --uid 1001 --gid appgroup --no-create-home --shell /bin/false appuser \
-    && mkdir -p /app/data \
-    && chown -R appuser:appgroup /app
-
-USER appuser
+# Create data directory
+RUN mkdir -p /app/data
 
 EXPOSE 8000
 
