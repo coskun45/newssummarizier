@@ -12,8 +12,7 @@ services:
 
       # ── App ───────────────────────────────────────────────────────────────
       DEBUG: "false"
-      # TODO: Replace YOUR_SERVER_IP with the actual Hetzner server IP
-      CORS_ORIGINS: "http://YOUR_SERVER_IP"
+      CORS_ORIGINS: "http://77.42.89.136"
 
       # ── OpenAI Models (explicitly override env_file defaults) ─────────────
       DEFAULT_MODEL: gpt-4o-mini
