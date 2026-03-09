@@ -190,7 +190,7 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
     }
   };
 
-  const getFeedLabel = (feed: { title?: string; url: string }) => {
+  const getFeedLabel = (feed: { title?: string | null; url: string }) => {
     if (feed.title) return feed.title;
     try { return new URL(feed.url).hostname.replace('www.', ''); } catch { return feed.url; }
   };
