@@ -4,10 +4,8 @@ Settings endpoints.
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import Optional
 from app.db.database import get_db
 from app.db import crud
-import json
 
 router = APIRouter()
 

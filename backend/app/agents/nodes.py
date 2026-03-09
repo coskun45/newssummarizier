@@ -3,7 +3,7 @@ Agent node functions for the news processing workflow.
 """
 import logging
 from typing import Any, Dict
-from app.agents.state import NewsProcessingState, ArticleData
+from app.agents.state import NewsProcessingState
 from app.agents.tools import fetch_rss_feed, extract_article_content, truncate_content
 from app.services.summary_service import (
     categorize_and_prioritize_article,
@@ -149,7 +149,6 @@ async def article_processor_node(state: NewsProcessingState) -> Dict[str, Any]:
             )
         
         # Step 3: Evaluate importance, priority, and classify topics
-        is_important = False
         try:
             content_for_categorization = article.get("cleaned_content") or article.get("raw_content", "")
             categorization = await categorize_and_prioritize_article(
@@ -184,7 +183,6 @@ async def article_processor_node(state: NewsProcessingState) -> Dict[str, Any]:
                 }
 
             # Article is important — save topics to DB
-            is_important = True
             for topic in topics:
                 topic_db = crud.get_topic_by_name(db, topic["name"])
                 if topic_db:

@@ -3,7 +3,7 @@ Summary and categorization service using OpenAI.
 """
 import tiktoken
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 from openai import AsyncOpenAI
 from app.core.config import settings
 from app.core.exceptions import SummarizationError, TopicCategorizationError, CostLimitExceededError

@@ -2,9 +2,9 @@
 CRUD (Create, Read, Update, Delete) operations for database models.
 """
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import desc, func, and_, or_
+from sqlalchemy import desc, func, or_
 from typing import List, Optional, Dict, Any
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from app.db import models
 
 
@@ -33,7 +33,7 @@ def get_feeds(db: Session, active_only: bool = True) -> List[models.Feed]:
     """Get all feeds."""
     query = db.query(models.Feed)
     if active_only:
-        query = query.filter(models.Feed.is_active == True)
+        query = query.filter(models.Feed.is_active)
     return query.all()
 
 

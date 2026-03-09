@@ -2,14 +2,12 @@
 LangGraph workflow for news processing.
 """
 from langgraph.graph import StateGraph, END
-from typing import TypedDict
 from app.agents.state import NewsProcessingState
 from app.agents.nodes import (
     rss_fetcher_node,
     article_processor_node,
     should_continue_processing
 )
-from app.core.config import settings
 import logging
 
 logger = logging.getLogger(__name__)

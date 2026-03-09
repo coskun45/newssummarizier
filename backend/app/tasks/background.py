@@ -5,7 +5,6 @@ import logging
 from app.agents.graph import get_workflow
 from app.db.database import SessionLocal
 from app.db import crud
-from datetime import datetime
 from app.services import summary_service
 
 logger = logging.getLogger(__name__)

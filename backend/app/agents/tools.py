@@ -6,7 +6,6 @@ import trafilatura
 import aiohttp
 import logging
 from typing import List, Dict, Any, Optional
-from datetime import datetime
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 from dateutil import parser as date_parser

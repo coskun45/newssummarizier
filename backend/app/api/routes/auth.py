@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from app.db.database import get_db
 from app.db import models, crud
 from app.core.security import verify_password, hash_password, create_access_token

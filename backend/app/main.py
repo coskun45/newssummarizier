@@ -7,6 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.db.database import init_db
 from app.api.deps import get_current_user
+from app.api.routes import rss, articles, summaries, settings as settings_routes, topics, prompts
+from app.api.routes import auth as auth_routes
 import logging
 
 # Configure logging
@@ -74,10 +76,6 @@ async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
 
-
-# Import and include routers
-from app.api.routes import rss, articles, summaries, settings as settings_routes, topics, prompts
-from app.api.routes import auth as auth_routes
 
 # Public auth routes (no JWT required)
 app.include_router(auth_routes.router, prefix="/api/auth", tags=["auth"])

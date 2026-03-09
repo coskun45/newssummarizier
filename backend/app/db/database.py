@@ -33,7 +33,6 @@ def get_db():
 
 def init_db():
     """Initialize database tables."""
-    from app.db import models  # Import models to register them
     from sqlalchemy import text
     Base.metadata.create_all(bind=engine)
     # Add new columns to existing DB if they don't exist (SQLite doesn't support IF NOT EXISTS for columns)
