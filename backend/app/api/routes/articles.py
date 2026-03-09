@@ -257,6 +257,8 @@ async def get_articles_by_topic(
             "published_at": article.published_at,
             "fetched_at": article.fetched_at,
             "status": article.status,
+            "importance": article.importance,
+            "priority": article.priority,
             "topics": [
                 {
                     "id": at.topic.id,

@@ -4,7 +4,7 @@ CRUD (Create, Read, Update, Delete) operations for database models.
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import desc, func, and_, or_
 from typing import List, Optional, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from app.db import models
 
 
@@ -41,7 +41,7 @@ def update_feed_last_fetched(db: Session, feed_id: int) -> Optional[models.Feed]
     """Update feed's last fetched timestamp."""
     feed = get_feed(db, feed_id)
     if feed:
-        feed.last_fetched = datetime.utcnow()
+        feed.last_fetched = datetime.now(timezone.utc)
         db.commit()
         db.refresh(feed)
     return feed
@@ -321,13 +321,13 @@ def get_total_cost(db: Session, start_date: datetime = None, end_date: datetime 
 
 def get_daily_cost(db: Session) -> float:
     """Get today's API costs."""
-    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     return get_total_cost(db, start_date=today)
 
 
 def get_monthly_cost(db: Session) -> float:
     """Get this month's API costs."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     return get_total_cost(db, start_date=month_start)
 
@@ -495,7 +495,7 @@ def set_setting(db: Session, key: str, value: str) -> models.Settings:
     setting = db.query(models.Settings).filter(models.Settings.key == key).first()
     if setting:
         setting.value = value
-        setting.updated_at = datetime.utcnow()
+        setting.updated_at = datetime.now(timezone.utc)
     else:
         setting = models.Settings(key=key, value=value)
         db.add(setting)
@@ -549,7 +549,7 @@ def update_system_prompt(
             prompt.prompt_text = prompt_text
         if is_active is not None:
             prompt.is_active = is_active
-        prompt.updated_at = datetime.utcnow()
+        prompt.updated_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(prompt)
     return prompt
@@ -566,7 +566,7 @@ def upsert_system_prompt(
     if prompt:
         prompt.prompt_text = prompt_text
         prompt.is_active = is_active
-        prompt.updated_at = datetime.utcnow()
+        prompt.updated_at = datetime.now(timezone.utc)
     else:
         prompt = models.SystemPrompt(
             prompt_type=prompt_type,

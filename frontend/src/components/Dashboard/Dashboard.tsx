@@ -118,7 +118,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
   useEffect(() => {
     if (newArticlesData?.new_articles_list) {
       setSelectedNewIndexes(
-        newArticlesData.new_articles_list.map((_: any, i: number) => i)
+        newArticlesData.new_articles_list.map((_,  i: number) => i)
       );
     }
   }, [newArticlesData]);
@@ -188,7 +188,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                     }
                     onChange={(e) => {
                       if (e.target.checked) {
-                        setSelectedNewIndexes(newArticlesData?.new_articles_list ? newArticlesData.new_articles_list.map((_: any, i: number) => i) : []);
+                        setSelectedNewIndexes(newArticlesData?.new_articles_list ? newArticlesData.new_articles_list.map((_, i: number) => i) : []);
                       } else {
                         setSelectedNewIndexes([]);
                       }
@@ -198,7 +198,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                 </label>
               </div>
               <ul className="new-articles-list">
-                {newArticlesData.new_articles_list?.map((article: any, index: number) => (
+                {newArticlesData.new_articles_list?.map((article, index: number) => (
                   <li key={index} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <input
                       type="checkbox"
@@ -239,7 +239,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                 onClick={() => {
                   if (!activeFeedId) return;
                   const feedId = activeFeedId;
-                  const selected = (newArticlesData?.new_articles_list || []).filter((_: any, i: number) => selectedNewIndexes.includes(i));
+                  const selected = (newArticlesData?.new_articles_list || []).filter((_, i: number) => selectedNewIndexes.includes(i));
                   if (selected.length === 0) {
                     setNotification('Makale seçilmedi.');
                     setTimeout(() => setNotification(null), 3000);

@@ -18,7 +18,7 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
   const { mutate: createTopic, isPending: isCreatingTopic } = useCreateTopic();
   const { mutate: updateTopic, isPending: isUpdatingTopic } = useUpdateTopic();
   const { mutate: deleteTopic, isPending: isDeletingTopic } = useDeleteTopic();
-  const { data: users } = useUsers();
+  const { data: users, isLoading: isLoadingUsers, error: usersError } = useUsers();
   const { mutate: createUser, isPending: isCreatingUser } = useCreateUser();
   const { mutate: deleteUser, isPending: isDeletingUser } = useDeleteUser();
   const { data: feeds } = useFeeds();
@@ -561,6 +561,8 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
 
                       {/* Existing users list */}
                       <div className="user-list">
+                        {isLoadingUsers && <p className="section-description">Kullanıcılar yükleniyor...</p>}
+                        {usersError && <p className="error-message">Kullanıcılar yüklenemedi.</p>}
                         {users?.map(user => (
                           <div key={user.id} className="user-list-item">
                             <div className="user-list-info">

@@ -1,7 +1,6 @@
 backend/.env
 backend/.venv
 .vscode
-.github
 frontend/node_modules
 backend/app/__pycache__
 .env
