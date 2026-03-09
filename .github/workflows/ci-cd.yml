@@ -61,8 +61,8 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd /root/newssummarizier
-            git checkout -- backend/news_summary.db deploy.sh 2>/dev/null || true
-            git pull origin master
+            git fetch origin
+            git reset --hard origin/master
             export APP_VERSION=1.0.$(git rev-list --count HEAD)
             echo "Deploying version $APP_VERSION"
             APP_VERSION=$APP_VERSION docker compose build --no-cache
