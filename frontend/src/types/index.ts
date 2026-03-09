@@ -29,6 +29,8 @@ export interface Article {
     published_at: string | null;
     fetched_at: string;
     status: string;
+    importance: string | null;
+    priority: string | null;
     topics: Topic[];
     has_summaries: boolean;
 }
@@ -56,6 +58,12 @@ export interface ArticleListResponse {
     limit: number;
 }
 
+export interface DateFilterState {
+    preset: 'today' | 'week' | 'custom' | null;
+    customFrom: string;
+    customTo: string;
+}
+
 export interface ArticleFilters {
     skip?: number;
     limit?: number;
@@ -63,6 +71,12 @@ export interface ArticleFilters {
     search?: string;
     status?: string;
     feed_id?: number;
+    feed_ids?: string;
+    priority?: string;
+    published_from?: string;
+    published_to?: string;
+    fetched_from?: string;
+    fetched_to?: string;
 }
 
 export interface UserSettings {
@@ -85,6 +99,11 @@ export interface SystemPrompt {
     is_active: boolean;
     created_at: string;
     updated_at: string;
+}
+
+export interface ArticleCounts {
+    by_priority: Record<string, number>;
+    by_feed: Record<string, number>;
 }
 
 export interface AuthUser {

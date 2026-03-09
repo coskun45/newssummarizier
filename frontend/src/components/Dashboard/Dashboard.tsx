@@ -1,13 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useArticles, useTopics, useFeeds, useRefreshFeed, useCheckNewArticles, useAddArticlesToFeed, useCreateFeed, useDeleteFeed } from '../../hooks/useApi';
+import { useArticles, useArticleCounts, useTopics, useFeeds, useRefreshFeed, useCheckNewArticles, useAddArticlesToFeed } from '../../hooks/useApi';
 import ArticleList from '../ArticleList/ArticleList';
 import TopicFilter from '../TopicFilter/TopicFilter';
 import FeedSidebar from '../FeedSidebar/FeedSidebar';
+import DateFilter from '../DateFilter/DateFilter';
 import SearchBar from '../SearchBar/SearchBar';
 import Settings from '../Settings/Settings';
-import { Cog6ToothIcon, MagnifyingGlassIcon, ChartBarIcon, ArrowPathIcon, XMarkIcon, ArrowRightStartOnRectangleIcon } from '@heroicons/react/24/outline';
-import type { AuthUser } from '../../types';
+import { Cog6ToothIcon, MagnifyingGlassIcon, ChartBarIcon, ArrowPathIcon, XMarkIcon, ArrowRightStartOnRectangleIcon, FunnelIcon } from '@heroicons/react/24/outline';
+import type { AuthUser, DateFilterState } from '../../types';
 import './Dashboard.css';
 
 interface DashboardProps {
@@ -17,6 +18,8 @@ interface DashboardProps {
 
 function Dashboard({ currentUser, onLogout }: DashboardProps) {
   const [selectedTopics, setSelectedTopics] = useState<number[]>([]);
+  const [importanceMode, setImportanceMode] = useState<'important' | 'unimportant' | null>(null);
+  const [selectedPriority, setSelectedPriority] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [notification, setNotification] = useState<string | null>(null);
@@ -24,17 +27,22 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
   const [selectedNewIndexes, setSelectedNewIndexes] = useState<number[]>([]);
   const [showSettings, setShowSettings] = useState(false);
   const [processingUrls, setProcessingUrls] = useState<string[]>([]);
-  const [selectedFeedId, setSelectedFeedId] = useState<number | null>(null);
+  const [selectedFeedIds, setSelectedFeedIds] = useState<number[]>([]);
+  const emptyDate: DateFilterState = { preset: null, customFrom: '', customTo: '' };
+  const [publishedFilter, setPublishedFilter] = useState<DateFilterState>(emptyDate);
+  const [fetchedFilter, setFetchedFilter] = useState<DateFilterState>(emptyDate);
   const queryClient = useQueryClient();
 
-  const { data: topicsData } = useTopics(selectedFeedId);
   const { data: feedsData } = useFeeds();
+  const { data: articleCounts } = useArticleCounts();
   const { isPending: isRefreshing } = useRefreshFeed();
-  const createFeedMutation = useCreateFeed();
-  const deleteFeedMutation = useDeleteFeed();
 
-  // Use selected feed for "check new" or fall back to the first feed
-  const activeFeedId = selectedFeedId ?? (feedsData && feedsData.length > 0 ? feedsData[0].id : null);
+  // For topic counts: use single feed if exactly one selected, else null (all)
+  const topicFeedId = selectedFeedIds.length === 1 ? selectedFeedIds[0] : null;
+  const { data: topicsData } = useTopics(topicFeedId);
+
+  // Use first selected feed for "check new", or fall back to first feed
+  const activeFeedId = selectedFeedIds[0] ?? (feedsData && feedsData.length > 0 ? feedsData[0].id : null);
 
   const { data: newArticlesData, refetch: checkNewArticles, isFetching: isChecking } = useCheckNewArticles(activeFeedId);
   const addArticlesMutation = useAddArticlesToFeed();
@@ -47,24 +55,56 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  const filters = {
-    topic_ids: selectedTopics.length > 0 ? selectedTopics.join(',') : undefined,
-    search: debouncedSearch || undefined,
-    limit: 50,
-    feed_id: selectedFeedId ?? undefined,
-  };
+  const filters = useMemo(() => {
+    const resolveDateRange = (f: DateFilterState): { from?: string; to?: string } => {
+      if (!f.preset) return {};
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+      const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).toISOString();
+      if (f.preset === 'today') return { from: todayStart, to: todayEnd };
+      if (f.preset === 'week') {
+        const weekAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6).toISOString();
+        return { from: weekAgo, to: todayEnd };
+      }
+      if (f.preset === 'custom') {
+        return {
+          from: f.customFrom ? new Date(f.customFrom).toISOString() : undefined,
+          to: f.customTo ? new Date(f.customTo + 'T23:59:59').toISOString() : undefined,
+        };
+      }
+      return {};
+    };
+    const pubRange = resolveDateRange(publishedFilter);
+    const fetchRange = resolveDateRange(fetchedFilter);
+    return {
+      topic_ids: selectedTopics.length > 0 ? selectedTopics.join(',') : undefined,
+      search: debouncedSearch || undefined,
+      limit: 50,
+      feed_ids: selectedFeedIds.length > 0 ? selectedFeedIds.join(',') : undefined,
+      status: importanceMode === 'unimportant' ? 'filtered' : (importanceMode === 'important' ? 'summarized' : undefined),
+      priority: selectedPriority ?? undefined,
+      published_from: pubRange.from,
+      published_to: pubRange.to,
+      fetched_from: fetchRange.from,
+      fetched_to: fetchRange.to,
+    };
+  }, [selectedTopics, debouncedSearch, selectedFeedIds, importanceMode, selectedPriority, publishedFilter, fetchedFilter]);
 
   const { data: articlesData, isLoading, error } = useArticles(filters);
 
-  // Reset selected topics when feed changes
+  // Reset selected topics and priority when feed selection changes
   useEffect(() => {
     setSelectedTopics([]);
-  }, [selectedFeedId]);
+    setSelectedPriority(null);
+  }, [selectedFeedIds]);
 
-  const handleDeleteFeed = (feedId: number) => {
-    deleteFeedMutation.mutate(feedId);
-    if (selectedFeedId === feedId) setSelectedFeedId(null);
-  };
+  // Remove deleted feeds from selection
+  useEffect(() => {
+    if (feedsData && selectedFeedIds.length > 0) {
+      const validIds = feedsData.map((f: { id: number }) => f.id);
+      setSelectedFeedIds(prev => prev.filter(id => validIds.includes(id)));
+    }
+  }, [feedsData]);
 
   const handleCheckNewArticles = async () => {
     if (activeFeedId) {
@@ -78,7 +118,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
   useEffect(() => {
     if (newArticlesData?.new_articles_list) {
       setSelectedNewIndexes(
-        newArticlesData.new_articles_list.map((_: any, i: number) => i)
+        newArticlesData.new_articles_list.map((_,  i: number) => i)
       );
     }
   }, [newArticlesData]);
@@ -114,7 +154,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
     });
     if (allDone) {
       setProcessingUrls([]);
-      setNotification('Artikel erfolgreich verarbeitet!');
+      setNotification('Makaleler başarıyla işlendi!');
       setTimeout(() => setNotification(null), 5000);
     }
   }, [articlesData]);
@@ -135,7 +175,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
         <div className="new-articles-overlay" onClick={() => setShowNewArticlesList(false)}>
           <div className="new-articles-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3><ChartBarIcon /> {newArticlesData.new_articles} Neue Artikel</h3>
+              <h3><ChartBarIcon /> {newArticlesData.new_articles} Yeni Makale</h3>
               <button className="close-button" onClick={() => setShowNewArticlesList(false)}><XMarkIcon /></button>
             </div>
               <div className="modal-content">
@@ -148,17 +188,17 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                     }
                     onChange={(e) => {
                       if (e.target.checked) {
-                        setSelectedNewIndexes(newArticlesData?.new_articles_list ? newArticlesData.new_articles_list.map((_: any, i: number) => i) : []);
+                        setSelectedNewIndexes(newArticlesData?.new_articles_list ? newArticlesData.new_articles_list.map((_, i: number) => i) : []);
                       } else {
                         setSelectedNewIndexes([]);
                       }
                     }}
                   />
-                  Alle auswählen
+                  Tümünü seç
                 </label>
               </div>
               <ul className="new-articles-list">
-                {newArticlesData.new_articles_list?.map((article: any, index: number) => (
+                {newArticlesData.new_articles_list?.map((article, index: number) => (
                   <li key={index} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <input
                       type="checkbox"
@@ -175,7 +215,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                       <div className="article-title">{article.title}</div>
                       {article.published_at && (
                         <div className="article-date">
-                          {new Date(article.published_at).toLocaleDateString('de-DE', { 
+                          {new Date(article.published_at).toLocaleDateString('tr-TR', {
                             day: '2-digit', 
                             month: '2-digit', 
                             year: 'numeric',
@@ -191,7 +231,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
             </div>
             <div className="modal-footer">
               <button className="cancel-button" onClick={() => setShowNewArticlesList(false)}>
-                Abbrechen
+                İptal
               </button>
               <button
                 className="load-button"
@@ -199,9 +239,9 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                 onClick={() => {
                   if (!activeFeedId) return;
                   const feedId = activeFeedId;
-                  const selected = (newArticlesData?.new_articles_list || []).filter((_: any, i: number) => selectedNewIndexes.includes(i));
+                  const selected = (newArticlesData?.new_articles_list || []).filter((_, i: number) => selectedNewIndexes.includes(i));
                   if (selected.length === 0) {
-                    setNotification('Keine Artikel ausgewählt.');
+                    setNotification('Makale seçilmedi.');
                     setTimeout(() => setNotification(null), 3000);
                     return;
                   }
@@ -213,22 +253,22 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                         setShowNewArticlesList(false);
                         if (res.created > 0) {
                           setProcessingUrls(res.created_list ?? []);
-                          setNotification(`${res.created} Artikel werden verarbeitet...`);
+                          setNotification(`${res.created} makale işleniyor...`);
                           queryClient.invalidateQueries({ queryKey: ['articles'] });
                         } else {
-                          setNotification(`Keine neuen Artikel. ${res.skipped} bereits vorhanden.`);
+                          setNotification(`Yeni makale yok. ${res.skipped} zaten mevcut.`);
                           setTimeout(() => setNotification(null), 5000);
                         }
                       },
                       onError: () => {
-                        setNotification('Fehler beim Hinzufügen der Artikel.');
+                        setNotification('Makaleler eklenirken hata oluştu.');
                         setTimeout(() => setNotification(null), 5000);
                       }
                     }
                   );
                 }}
               >
-                {addArticlesMutation.isPending ? 'Wird hinzugefügt...' : `${selectedNewIndexes.length} Artikel verarbeiten`}
+                {addArticlesMutation.isPending ? 'Ekleniyor...' : `${selectedNewIndexes.length} makaleyi işle`}
               </button>
             </div>
           </div>
@@ -240,8 +280,8 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
         <div className="container">
           <div className="header-content">
             <div className="header-text">
-              <h1><ChartBarIcon className="header-icon" /> News Summarizer</h1>
-              <p className="text-muted">Deutsche Welle - Intelligente Nachrichtenzusammenfassungen</p>
+              <h1><ChartBarIcon className="header-icon" /> Haber Özetleyici</h1>
+            
             </div>
             <div className="header-buttons">
 
@@ -251,18 +291,18 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                 disabled={isChecking || isRefreshing}
               >
                 {isChecking ? (
-                  <><ArrowPathIcon className="spin-icon" /> Prüfe...</>
+                  <><ArrowPathIcon className="spin-icon" /> Kontrol ediliyor...</>
                 ) : newArticlesData ? (
-                  <><ChartBarIcon /> {newArticlesData.new_articles} neue Artikel verfügbar</>
+                  <><ChartBarIcon /> {newArticlesData.new_articles} yeni makale mevcut</>
                 ) : (
-                  <><MagnifyingGlassIcon /> Neue Artikel prüfen</>
+                  <><MagnifyingGlassIcon /> Yeni makaleleri kontrol et</>
                 )}
               </button>
 
               <button
                 className="settings-button"
                 onClick={() => setShowSettings(true)}
-                title="Einstellungen"
+                title="Ayarlar"
               >
                 <Cog6ToothIcon />
               </button>
@@ -272,7 +312,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                 <button
                   className="logout-button"
                   onClick={onLogout}
-                  title="Abmelden"
+                  title="Çıkış Yap"
                 >
                   <ArrowRightStartOnRectangleIcon />
                 </button>
@@ -286,30 +326,54 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
       <div className="dashboard-content">
         <div className="container">
           <div className="dashboard-grid">
-            {/* Feed Sidebar */}
-            <aside className="dashboard-feed-sidebar">
+            {/* Left Sidebar */}
+            <aside className="dashboard-sidebar">
+              <h2 className="sidebar-section-title">
+                <FunnelIcon className="sidebar-section-icon" /> Filtreleme
+              </h2>
               <FeedSidebar
                 feeds={feedsData || []}
-                selectedFeedId={selectedFeedId}
-                onSelectFeed={setSelectedFeedId}
-                onCreateFeed={(url, title) => createFeedMutation.mutate({ url, title })}
-                onDeleteFeed={handleDeleteFeed}
-                isCreating={createFeedMutation.isPending}
+                selectedFeedIds={selectedFeedIds}
+                feedCounts={articleCounts?.by_feed ?? {}}
+                onFeedToggle={(id) =>
+                  setSelectedFeedIds(prev =>
+                    prev.includes(id) ? prev.filter(f => f !== id) : [...prev, id]
+                  )
+                }
+                onClearFeeds={() => setSelectedFeedIds([])}
               />
-            </aside>
-
-            {/* Topic Sidebar */}
-            <aside className="dashboard-sidebar">
               <TopicFilter
                 topics={topicsData || []}
                 selectedTopics={selectedTopics}
                 onTopicToggle={(topicId) => {
+                  setImportanceMode('important');
                   setSelectedTopics((prev) =>
                     prev.includes(topicId)
                       ? prev.filter((id) => id !== topicId)
                       : [...prev, topicId]
                   );
                 }}
+                importanceMode={importanceMode}
+                onImportanceModeChange={(mode) => {
+                  setImportanceMode(mode);
+                  if (mode === 'unimportant') {
+                    setSelectedTopics([]);
+                    setSelectedPriority(null);
+                    setSelectedFeedIds([]);
+                  }
+                }}
+                selectedPriority={selectedPriority}
+                onPriorityChange={(p) => {
+                  setSelectedPriority(p);
+                  if (p) setImportanceMode('important');
+                }}
+                priorityCounts={articleCounts?.by_priority ?? {}}
+              />
+              <DateFilter
+                publishedFilter={publishedFilter}
+                onPublishedChange={setPublishedFilter}
+                fetchedFilter={fetchedFilter}
+                onFetchedChange={setFetchedFilter}
               />
             </aside>
 
@@ -319,21 +383,21 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
 
               {error && (
                 <div className="error-message">
-                  <p>⚠️ Fehler beim Laden der Artikel</p>
+                  <p>⚠️ Makaleler yüklenirken hata oluştu</p>
                 </div>
               )}
 
               {isLoading ? (
                 <div className="loading-state">
-                  <p>⏳ Lade Artikel...</p>
+                  <p>⏳ Makaleler yükleniyor...</p>
                 </div>
               ) : articlesData && articlesData.articles.length === 0 ? (
                 <div className="empty-state">
-                  <p>📭 Keine Artikel gefunden</p>
+                  <p>📭 Makale bulunamadı</p>
                   <p className="text-small text-muted">
                     {selectedTopics.length > 0 || searchQuery
-                      ? 'Versuchen Sie andere Filter'
-                      : 'Artikel werden gerade geladen...'}
+                      ? 'Farklı filtreler deneyin'
+                      : 'Makaleler yükleniyor...'}
                   </p>
                 </div>
               ) : (
@@ -341,7 +405,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                   <>
                     <div className="results-count">
                       <p className="text-small text-muted">
-                        {articlesData.total} Artikel gefunden
+                        {articlesData.total} makale bulundu
                       </p>
                     </div>
                     <ArticleList articles={articlesData.articles} />

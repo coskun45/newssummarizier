@@ -98,105 +98,159 @@ async def check_cost_limits() -> None:
         db.close()
 
 
-async def categorize_article_topics(title: str, content: str) -> List[Dict[str, Any]]:
+INTEREST_TOPICS = [
+    "Ukrayna Savaşı",
+    "ABD-İran Krizi",
+    "Epstein Dosyası",
+    "PKK ve SDG",
+    "Migrasyon / Göç",
+    "Avrupa Savunması ve Savunma Sanayi",
+    "NATO",
+    "Türkiye Siyaseti",
+]
+
+INTEREST_KEYWORDS = [
+    "Turkey", "Türkei", "Turquie", "Turkish", "Turken", "Turk", "Turc", "Turchia", "Turco",
+    "Turquía", "Turquia", "Turcos", "Turkiye", "Istanbul",
+    "Pkk", "Sdg", "Kurds", "Kurden", "Dem parti", "Öcalan", "Ocalan", "Imrali",
+    "Syria", "Syrie", "Syrien", "Suriye", "Damascus", "al-sharaa", "al charaa",
+    "Al-shara", "El-Şara",
+    "Trump",
+    "Israil", "Israel", "Gazze", "Gaza",
+    "Fetö", "Feto", "Fetullah", "Gülen", "Gulen", "Cemaat", "KHK", "MIT",
+]
+
+_CATEGORIZATION_SYSTEM_PROMPT = """Sen bir haber analiz asistanısın. Görevin haberleri değerlendirmek, sınıflandırmak ve önceliklendirmektir.
+Her zaman geçerli JSON döndür, başka hiçbir şey yazma.
+
+---
+
+DEĞERLENDIRME KURALLARI:
+
+1. ÖNEM FİLTRESİ
+Haber aşağıdaki TOPIC listesi veya KEYWORD listesiyle ilgili DEĞİLSE → "unimportant" döndür.
+İlgiliyse → "important" döndür ve 2. adıma geç.
+
+TOPIC LİSTESİ:
+{topic_list}
+
+KEYWORD LİSTESİ (bu kelimelerden biri haberde geçiyorsa potansiyel olarak önemlidir):
+Turkey, Türkei, Turquie, Turkish, Turken, Turk, Turc, Turchia, Turco, Turquía, Turquia, Turcos, Turkiye, Istanbul,
+Pkk, Sdg, Kurds, Kurden, Dem parti, Öcalan, Ocalan, Imrali,
+Syria, Syrie, Syrien, Suriye, Damascus, al-sharaa, al charaa, Al-shara, El-Şara,
+Trump,
+Israil, Israel, Gazze, Gaza,
+Fetö, Feto, Fetullah, Gülen, Gulen, Cemaat, KHK, MIT
+
+2. ÖNCELİK SEVİYESİ (yalnızca önemli haberler için)
+- "high": Büyük jeopolitik gelişme, kriz, askeri hareketlilik, önemli politik karar veya uluslararası etkisi olan olaylar.
+- "med": Politik açıklamalar, diplomatik gelişmeler, önemli fakat sınırlı etkili gelişmeler.
+- "low": Arka plan haberleri, analizler, küçük ölçekli gelişmeler veya dolaylı ilişkili haberler.
+
+3. KONU SINIFLANDIRMASI (yalnızca önemli haberler için)
+Haberi aşağıdaki konulardan bir veya birkaçına sınıflandır (bir haber birden fazla konuya girebilir):
+{topic_list}
+
+---
+
+ÇIKTI FORMATI (yalnızca geçerli JSON):
+
+Önemsiz haber için:
+{"importance": "unimportant", "priority": null, "topics": []}
+
+Önemli haber için:
+{"importance": "important", "priority": "high", "topics": [{"name": "Ukrayna Savaşı", "confidence": 0.95}, {"name": "NATO", "confidence": 0.7}]}
+
+Sadece confidence >= 0.5 olan konuları dahil et.
+"""
+
+def _build_topic_list(topics) -> str:
+    """Format DB topics as a bullet list for injection into the system prompt."""
+    lines = []
+    for t in topics:
+        if t.description:
+            lines.append(f"- {t.name}: {t.description}")
+        else:
+            lines.append(f"- {t.name}")
+    return "\n".join(lines)
+
+
+_CATEGORIZATION_USER_PROMPT_TEMPLATE = """Aşağıdaki haberi analiz et ve şu kurallara göre değerlendir:
+
+HABER BAŞLIĞI: {title}
+
+HABER İÇERİĞİ:
+{content}
+
+"""
+
+
+async def categorize_and_prioritize_article(title: str, content: str) -> Dict[str, Any]:
     """
-    Categorize article into topics using OpenAI.
-    
-    Args:
-        title: Article title
-        content: Article content
-        
-    Returns:
-        List of topics with confidence scores
-        
+    Evaluate article importance, assign priority, and classify into topics.
+
+    Returns a dict with keys: importance, priority, topics.
+    - importance: "important" | "unimportant"
+    - priority: "high" | "med" | "low" | None
+    - topics: list of {"name": str, "confidence": float}
+
     Raises:
-        TopicCategorizationError: If categorization fails
+        TopicCategorizationError: If the LLM call or parsing fails
     """
+    import json
     try:
         await check_cost_limits()
-        
-        # Get available topics from database
+
         db = SessionLocal()
         try:
-            topics = crud.get_topics(db)
-            topic_names = [t.name for t in topics]
-            
-            # Get system prompt from database
-            system_prompt_obj = crud.get_system_prompt(db, "classification")
-            if system_prompt_obj and system_prompt_obj.is_active:
-                system_prompt = system_prompt_obj.prompt_text
-            else:
-                # Fallback to default
-                system_prompt = "You are a news categorization assistant. Return only valid JSON."
+            prompt_obj = crud.get_system_prompt(db, "classification")
+            system_prompt = prompt_obj.prompt_text if (prompt_obj and prompt_obj.is_active) else _CATEGORIZATION_SYSTEM_PROMPT
+            db_topics = crud.get_topics(db)
         finally:
             db.close()
-        
-        if not topic_names:
-            logger.warning("No topics found in database")
-            return []
-        
-        # Create prompt
-        prompt = f"""Analyze the following news article and categorize it into one or more of these topics: {', '.join(topic_names)}.
 
-    Title: {title}
+        system_prompt = system_prompt.replace("{topic_list}", _build_topic_list(db_topics))
 
-    Content: {content[:1000]}
+        user_prompt = _CATEGORIZATION_USER_PROMPT_TEMPLATE.replace("{title}", title).replace("{content}", content[:2000])
 
-    Return ONLY a JSON array with objects containing "name" (topic name) and "confidence" (0.0-1.0).
-    Example: [{{"name": "Politik", "confidence": 0.9}}, {{"name": "Wirtschaft", "confidence": 0.5}}]
-
-    Include only topics with confidence >= 0.5. Return at least one topic."""
-        
         model = settings.default_model
-        input_tokens = count_tokens(prompt, model)
-        
-        # Get system prompt from database
-        db = SessionLocal()
-        try:
-            system_prompt_obj = crud.get_system_prompt(db, "classification")
-            if system_prompt_obj and system_prompt_obj.is_active:
-                system_prompt = system_prompt_obj.prompt_text
-            else:
-                # Fallback to default
-                system_prompt = "You are a news categorization assistant. Return only valid JSON."
-        finally:
-            db.close()
-        
-        # Call OpenAI
+        input_tokens = count_tokens(system_prompt + user_prompt, model)
+
         response = await get_openai_client().chat.completions.create(
             model=model,
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}
+                {"role": "user", "content": user_prompt},
             ],
-            temperature=0.3,
-            max_completion_tokens=200
+            temperature=0.1,
+            max_completion_tokens=300,
         )
-        
+
         output_tokens = response.usage.completion_tokens
         cost = calculate_cost(model, input_tokens, output_tokens)
-        
-        # Parse response
-        import json
+
         result_text = response.choices[0].message.content.strip()
-        
-        # Remove markdown code blocks if present
         if result_text.startswith("```"):
             result_text = result_text.split("```")[1]
             if result_text.startswith("json"):
                 result_text = result_text[4:]
-        
-        categorized_topics = json.loads(result_text)
-        
-        logger.info(f"Categorized article into {len(categorized_topics)} topics. Cost: ${cost:.4f}")
-        
-        return categorized_topics
-        
+
+        result = json.loads(result_text)
+        importance = result.get("importance", "unimportant")
+        priority = result.get("priority")
+        topics = result.get("topics", [])
+
+        logger.info(
+            f"Categorized article: importance={importance}, priority={priority}, "
+            f"topics={len(topics)}, cost=${cost:.4f}"
+        )
+        return {"importance": importance, "priority": priority, "topics": topics}
+
     except CostLimitExceededError:
         raise
     except Exception as e:
-        logger.error(f"Topic categorization failed: {e}")
-        raise TopicCategorizationError(f"Failed to categorize topics: {str(e)}")
+        logger.error(f"Article categorization failed: {e}")
+        raise TopicCategorizationError(f"Failed to categorize article: {str(e)}")
 
 
 async def generate_summary(
@@ -395,39 +449,56 @@ async def process_article_by_id(article_id: int) -> dict:
 
         total_cost = 0.0
 
-        # Categorize topics
+        # Evaluate importance, priority, and classify topics
+        is_important = False
         try:
-            topics = await categorize_article_topics(title=article.title, content=truncate_content(content, 2000))
+            categorization = await categorize_and_prioritize_article(
+                title=article.title,
+                content=truncate_content(content, 2000)
+            )
+            importance = categorization.get("importance", "unimportant")
+            priority = categorization.get("priority")
+            topics = categorization.get("topics", [])
+
+            crud.update_article_importance(db=db, article_id=article.id, importance=importance, priority=priority)
+
+            if importance == "unimportant":
+                crud.update_article_status(db=db, article_id=article.id, status="filtered")
+                crud.create_log(db=db, article_id=article.id, agent_name="topic_categorizer", status="success", message="Article filtered as unimportant — skipping summarization")
+                return {"article_id": article.id, "status": "filtered", "cost": 0.0}
+
+            is_important = True
             for topic in topics:
                 topic_db = crud.get_topic_by_name(db, topic["name"]) if isinstance(topic, dict) else None
                 if topic_db:
                     crud.add_article_topic(db=db, article_id=article.id, topic_id=topic_db.id, confidence=topic.get("confidence", 1.0))
 
-            crud.create_log(db=db, article_id=article.id, agent_name="topic_categorizer", status="success", message=f"Categorized into {len(topics)} topics")
+            crud.create_log(db=db, article_id=article.id, agent_name="topic_categorizer", status="success", message=f"Important ({priority}): classified into {len(topics)} topics")
         except Exception as e:
             crud.create_log(db=db, article_id=article.id, agent_name="topic_categorizer", status="error", message="Topic categorization failed", error_details=str(e))
 
-        # Generate summaries
-        try:
-            enabled_summary_types = crud.get_setting(db, "enabled_summary_types") or "brief,standard,detailed"
-            enabled_types = [x.strip() for x in enabled_summary_types.split(",") if x.strip()]
-            summary_types_map = {
-                "brief": ("brief", "brief"),
-                "standard": ("standard", "standard"),
-                "detailed": ("detailed", "detailed")
-            }
-            summary_types = [summary_types_map[st] for st in enabled_types if st in summary_types_map]
+        # Generate summaries (only for important articles)
+        if is_important:
+            try:
+                enabled_summary_types = crud.get_setting(db, "enabled_summary_types") or "brief,standard,detailed"
+                enabled_types = [x.strip() for x in enabled_summary_types.split(",") if x.strip()]
+                summary_types_map = {
+                    "brief": ("brief", "brief"),
+                    "standard": ("standard", "standard"),
+                    "detailed": ("detailed", "detailed")
+                }
+                summary_types = [summary_types_map[st] for st in enabled_types if st in summary_types_map]
 
-            for summary_type, _ in summary_types:
-                try:
-                    result = await generate_summary(title=article.title, content=truncate_content(content), summary_type=summary_type)
-                    total_cost += result.get("cost", 0.0)
-                    crud.create_summary(db=db, article_id=article.id, summary_text=result["summary_text"], summary_type=summary_type, model_used=result.get("model_used"), tokens_used=result.get("tokens_used", 0), cost=result.get("cost", 0.0))
-                except Exception as e:
-                    crud.create_log(db=db, article_id=article.id, agent_name="summarizer", status="error", message=f"Failed to generate {summary_type} summary", error_details=str(e))
+                for summary_type, _ in summary_types:
+                    try:
+                        result = await generate_summary(title=article.title, content=truncate_content(content), summary_type=summary_type)
+                        total_cost += result.get("cost", 0.0)
+                        crud.create_summary(db=db, article_id=article.id, summary_text=result["summary_text"], summary_type=summary_type, model_used=result.get("model_used"), tokens_used=result.get("tokens_used", 0), cost=result.get("cost", 0.0))
+                    except Exception as e:
+                        crud.create_log(db=db, article_id=article.id, agent_name="summarizer", status="error", message=f"Failed to generate {summary_type} summary", error_details=str(e))
 
-        except Exception as e:
-            logger.error(f"Summary generation loop failed: {e}")
+            except Exception as e:
+                logger.error(f"Summary generation loop failed: {e}")
 
         # Mark as summarized
         crud.update_article_status(db=db, article_id=article.id, status="summarized")

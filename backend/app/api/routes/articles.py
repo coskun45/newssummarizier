@@ -7,7 +7,7 @@ from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
 from app.db.database import get_db
-from app.db import crud
+from app.db import crud, models
 
 
 router = APIRouter()
@@ -42,9 +42,11 @@ class ArticleResponse(BaseModel):
     published_at: Optional[datetime] = None
     fetched_at: datetime
     status: str
+    importance: Optional[str] = None
+    priority: Optional[str] = None
     topics: List[TopicInfo] = []
     has_summaries: bool = False
-    
+
     class Config:
         from_attributes = True
 
@@ -71,6 +73,12 @@ async def list_articles(
     search: Optional[str] = None,
     status: Optional[str] = None,
     feed_id: Optional[int] = Query(None),
+    feed_ids: Optional[str] = Query(None, description="Comma-separated feed IDs"),
+    priority: Optional[str] = Query(None, description="Filter by priority: high, med, low"),
+    published_from: Optional[datetime] = Query(None, description="Published date from (ISO 8601)"),
+    published_to: Optional[datetime] = Query(None, description="Published date to (ISO 8601)"),
+    fetched_from: Optional[datetime] = Query(None, description="Fetched date from (ISO 8601)"),
+    fetched_to: Optional[datetime] = Query(None, description="Fetched date to (ISO 8601)"),
     db: Session = Depends(get_db)
 ):
     """
@@ -84,6 +92,14 @@ async def list_articles(
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid topic IDs format")
 
+    # Parse feed IDs
+    feed_id_list = None
+    if feed_ids:
+        try:
+            feed_id_list = [int(fid) for fid in feed_ids.split(",")]
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid feed IDs format")
+
     # Get articles
     articles = crud.get_articles(
         db=db,
@@ -92,7 +108,13 @@ async def list_articles(
         topic_ids=topic_id_list,
         search_query=search,
         status=status,
-        feed_id=feed_id
+        feed_id=feed_id,
+        feed_ids=feed_id_list,
+        priority=priority,
+        start_date=published_from,
+        end_date=published_to,
+        fetched_from=fetched_from,
+        fetched_to=fetched_to,
     )
 
     # Get total count
@@ -101,7 +123,13 @@ async def list_articles(
         topic_ids=topic_id_list,
         search_query=search,
         status=status,
-        feed_id=feed_id
+        feed_id=feed_id,
+        feed_ids=feed_id_list,
+        priority=priority,
+        start_date=published_from,
+        end_date=published_to,
+        fetched_from=fetched_from,
+        fetched_to=fetched_to,
     )
     
     # Transform to response model
@@ -115,6 +143,8 @@ async def list_articles(
             "published_at": article.published_at,
             "fetched_at": article.fetched_at,
             "status": article.status,
+            "importance": article.importance,
+            "priority": article.priority,
             "topics": [
                 {
                     "id": at.topic.id,
@@ -136,6 +166,26 @@ async def list_articles(
     )
 
 
+@router.get("/counts")
+async def get_article_counts(db: Session = Depends(get_db)):
+    """Get article counts grouped by priority and feed."""
+    from sqlalchemy import func
+    priority_rows = db.query(
+        models.Article.priority,
+        func.count(models.Article.id)
+    ).filter(models.Article.priority.isnot(None)).group_by(models.Article.priority).all()
+
+    feed_rows = db.query(
+        models.Article.feed_id,
+        func.count(models.Article.id)
+    ).group_by(models.Article.feed_id).all()
+
+    return {
+        "by_priority": {p: c for p, c in priority_rows},
+        "by_feed": {str(f): c for f, c in feed_rows},
+    }
+
+
 @router.get("/{article_id}", response_model=ArticleDetailResponse)
 async def get_article(article_id: int, db: Session = Depends(get_db)):
     """
@@ -155,6 +205,8 @@ async def get_article(article_id: int, db: Session = Depends(get_db)):
         "raw_content": article.raw_content,
         "cleaned_content": article.cleaned_content,
         "status": article.status,
+        "importance": article.importance,
+        "priority": article.priority,
         "topics": [
             {
                 "id": at.topic.id,
@@ -205,6 +257,8 @@ async def get_articles_by_topic(
             "published_at": article.published_at,
             "fetched_at": article.fetched_at,
             "status": article.status,
+            "importance": article.importance,
+            "priority": article.priority,
             "topics": [
                 {
                     "id": at.topic.id,

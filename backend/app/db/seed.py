@@ -14,14 +14,14 @@ def seed_topics():
     db = SessionLocal()
     try:
         topics_data = [
-            {"name": "Politik", "description": "Politische Nachrichten", "color": "#3B82F6"},  # Blue
-            {"name": "Wirtschaft", "description": "Wirtschaftsnachrichten", "color": "#10B981"},  # Green
-            {"name": "Technologie", "description": "Technologie und Innovation", "color": "#8B5CF6"},  # Purple
-            {"name": "Sport", "description": "Sportnachrichten", "color": "#F59E0B"},  # Orange
-            {"name": "Kultur", "description": "Kultur und Unterhaltung", "color": "#EC4899"},  # Pink
-            {"name": "Wissenschaft", "description": "Wissenschaft und Forschung", "color": "#06B6D4"},  # Cyan
-            {"name": "Umwelt", "description": "Umwelt und Klima", "color": "#22C55E"},  # Light Green
-            {"name": "Gesundheit", "description": "Gesundheit und Medizin", "color": "#EF4444"},  # Red
+            {"name": "Ukrayna Savaşı", "description": "Rusya-Ukrayna savaşı ve ilgili gelişmeler", "color": "#3B82F6"},
+            {"name": "ABD-İran Krizi", "description": "ABD ile İran arasındaki kriz ve nükleer müzakereler", "color": "#EF4444"},
+            {"name": "Epstein Dosyası", "description": "Jeffrey Epstein davası ve ilgili gelişmeler", "color": "#8B5CF6"},
+            {"name": "PKK ve SDG", "description": "PKK ve Suriye'deki SDG ile ilgili gelişmeler", "color": "#F59E0B"},
+            {"name": "Migrasyon / Göç", "description": "Göç, sığınmacı ve iltica haberleri", "color": "#06B6D4"},
+            {"name": "Avrupa Savunması ve Savunma Sanayi", "description": "Avrupa savunma politikaları ve savunma sanayi gelişmeleri", "color": "#10B981"},
+            {"name": "NATO", "description": "NATO ile ilgili gelişmeler ve kararlar", "color": "#22C55E"},
+            {"name": "Türkiye Siyaseti", "description": "Türkiye'de seçimler, Cumhur İttifakı ve iç siyaset", "color": "#EC4899"},
         ]
         
         created_count = 0
@@ -119,20 +119,12 @@ def seed_database():
 
 def seed_system_prompts():
     """Seed default system prompts."""
+    from app.services.summary_service import _CATEGORIZATION_SYSTEM_PROMPT
     db = SessionLocal()
     try:
         default_prompts = {
-            "classification": """You are a news categorization assistant. Analyze German news articles and categorize them into appropriate topics with confidence scores. 
+            "classification": _CATEGORIZATION_SYSTEM_PROMPT,
 
-Your task:
-1. Read the article title and content carefully
-2. Identify relevant topics from the provided list
-3. Assign confidence scores (0.0-1.0) based on how well the article fits each topic
-4. Return only topics with confidence >= 0.5
-5. Always return at least one topic
-
-Return ONLY valid JSON with no additional text.""",
-            
             "summarization": """You are a professional news summarization assistant. Create clear, concise, and informative summaries of German news articles.
 
 Your task:
@@ -145,7 +137,7 @@ Your task:
 
 Return only the summary text without any additional formatting or explanations."""
         }
-        
+
         created_count = 0
         for prompt_type, prompt_text in default_prompts.items():
             existing = crud.get_system_prompt(db, prompt_type)
@@ -158,9 +150,14 @@ Return only the summary text without any additional formatting or explanations."
                 )
                 created_count += 1
                 logger.info(f"Created system prompt: {prompt_type}")
-        
+            elif "{topic_list}" not in existing.prompt_text:
+                # Migrate: replace hardcoded topic list with dynamic placeholder
+                existing.prompt_text = prompt_text
+                db.commit()
+                logger.info(f"Migrated system prompt to dynamic topic list: {prompt_type}")
+
         logger.info(f"System prompts seeding completed. Created {created_count} new prompts.")
-        
+
     except Exception as e:
         logger.error(f"Error seeding system prompts: {e}")
     finally:

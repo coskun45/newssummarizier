@@ -34,4 +34,13 @@ def get_db():
 def init_db():
     """Initialize database tables."""
     from app.db import models  # Import models to register them
+    from sqlalchemy import text
     Base.metadata.create_all(bind=engine)
+    # Add new columns to existing DB if they don't exist (SQLite doesn't support IF NOT EXISTS for columns)
+    with engine.connect() as conn:
+        for col, coltype in [("importance", "VARCHAR"), ("priority", "VARCHAR")]:
+            try:
+                conn.execute(text(f"ALTER TABLE articles ADD COLUMN {col} {coltype}"))
+                conn.commit()
+            except Exception:
+                pass

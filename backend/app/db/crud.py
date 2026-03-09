@@ -4,7 +4,7 @@ CRUD (Create, Read, Update, Delete) operations for database models.
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import desc, func, and_, or_
 from typing import List, Optional, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from app.db import models
 
 
@@ -41,7 +41,7 @@ def update_feed_last_fetched(db: Session, feed_id: int) -> Optional[models.Feed]
     """Update feed's last fetched timestamp."""
     feed = get_feed(db, feed_id)
     if feed:
-        feed.last_fetched = datetime.utcnow()
+        feed.last_fetched = datetime.now(timezone.utc)
         db.commit()
         db.refresh(feed)
     return feed
@@ -109,7 +109,11 @@ def get_articles(
     status: str = None,
     start_date: datetime = None,
     end_date: datetime = None,
-    feed_id: int = None
+    fetched_from: datetime = None,
+    fetched_to: datetime = None,
+    feed_id: int = None,
+    feed_ids: List[int] = None,
+    priority: str = None
 ) -> List[models.Article]:
     """Get articles with optional filtering."""
     query = db.query(models.Article).options(
@@ -117,8 +121,10 @@ def get_articles(
         joinedload(models.Article.topics).joinedload(models.ArticleTopic.topic)
     )
 
-    # Filter by feed
-    if feed_id:
+    # Filter by feed(s)
+    if feed_ids:
+        query = query.filter(models.Article.feed_id.in_(feed_ids))
+    elif feed_id:
         query = query.filter(models.Article.feed_id == feed_id)
 
     # Filter by topic
@@ -126,17 +132,27 @@ def get_articles(
         query = query.join(models.ArticleTopic).filter(
             models.ArticleTopic.topic_id.in_(topic_ids)
         )
-    
+
     # Filter by status
     if status:
         query = query.filter(models.Article.status == status)
-    
-    # Filter by date range
+
+    # Filter by priority
+    if priority:
+        query = query.filter(models.Article.priority == priority)
+
+    # Filter by published date range
     if start_date:
         query = query.filter(models.Article.published_at >= start_date)
     if end_date:
         query = query.filter(models.Article.published_at <= end_date)
-    
+
+    # Filter by fetched date range
+    if fetched_from:
+        query = query.filter(models.Article.fetched_at >= fetched_from)
+    if fetched_to:
+        query = query.filter(models.Article.fetched_at <= fetched_to)
+
     # Search in title and content
     if search_query:
         search_filter = or_(
@@ -144,10 +160,10 @@ def get_articles(
             models.Article.cleaned_content.ilike(f"%{search_query}%")
         )
         query = query.filter(search_filter)
-    
+
     # Order by published date descending
     query = query.order_by(desc(models.Article.published_at))
-    
+
     return query.offset(skip).limit(limit).all()
 
 
@@ -156,29 +172,50 @@ def count_articles(
     topic_ids: List[int] = None,
     search_query: str = None,
     status: str = None,
-    feed_id: int = None
+    feed_id: int = None,
+    feed_ids: List[int] = None,
+    priority: str = None,
+    start_date: datetime = None,
+    end_date: datetime = None,
+    fetched_from: datetime = None,
+    fetched_to: datetime = None,
 ) -> int:
     """Count articles with optional filtering."""
     query = db.query(func.count(models.Article.id))
 
-    if feed_id:
+    if feed_ids:
+        query = query.filter(models.Article.feed_id.in_(feed_ids))
+    elif feed_id:
         query = query.filter(models.Article.feed_id == feed_id)
 
     if topic_ids:
         query = query.join(models.ArticleTopic).filter(
             models.ArticleTopic.topic_id.in_(topic_ids)
         )
-    
+
     if status:
         query = query.filter(models.Article.status == status)
-    
+
+    if priority:
+        query = query.filter(models.Article.priority == priority)
+
+    if start_date:
+        query = query.filter(models.Article.published_at >= start_date)
+    if end_date:
+        query = query.filter(models.Article.published_at <= end_date)
+
+    if fetched_from:
+        query = query.filter(models.Article.fetched_at >= fetched_from)
+    if fetched_to:
+        query = query.filter(models.Article.fetched_at <= fetched_to)
+
     if search_query:
         search_filter = or_(
             models.Article.title.ilike(f"%{search_query}%"),
             models.Article.cleaned_content.ilike(f"%{search_query}%")
         )
         query = query.filter(search_filter)
-    
+
     return query.scalar()
 
 
@@ -187,6 +224,22 @@ def update_article_status(db: Session, article_id: int, status: str) -> Optional
     article = get_article(db, article_id)
     if article:
         article.status = status
+        db.commit()
+        db.refresh(article)
+    return article
+
+
+def update_article_importance(
+    db: Session,
+    article_id: int,
+    importance: str,
+    priority: Optional[str] = None
+) -> Optional[models.Article]:
+    """Update article importance and priority."""
+    article = get_article(db, article_id)
+    if article:
+        article.importance = importance
+        article.priority = priority
         db.commit()
         db.refresh(article)
     return article
@@ -268,13 +321,13 @@ def get_total_cost(db: Session, start_date: datetime = None, end_date: datetime 
 
 def get_daily_cost(db: Session) -> float:
     """Get today's API costs."""
-    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     return get_total_cost(db, start_date=today)
 
 
 def get_monthly_cost(db: Session) -> float:
     """Get this month's API costs."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     return get_total_cost(db, start_date=month_start)
 
@@ -442,7 +495,7 @@ def set_setting(db: Session, key: str, value: str) -> models.Settings:
     setting = db.query(models.Settings).filter(models.Settings.key == key).first()
     if setting:
         setting.value = value
-        setting.updated_at = datetime.utcnow()
+        setting.updated_at = datetime.now(timezone.utc)
     else:
         setting = models.Settings(key=key, value=value)
         db.add(setting)
@@ -496,7 +549,7 @@ def update_system_prompt(
             prompt.prompt_text = prompt_text
         if is_active is not None:
             prompt.is_active = is_active
-        prompt.updated_at = datetime.utcnow()
+        prompt.updated_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(prompt)
     return prompt
@@ -513,7 +566,7 @@ def upsert_system_prompt(
     if prompt:
         prompt.prompt_text = prompt_text
         prompt.is_active = is_active
-        prompt.updated_at = datetime.utcnow()
+        prompt.updated_at = datetime.now(timezone.utc)
     else:
         prompt = models.SystemPrompt(
             prompt_type=prompt_type,
