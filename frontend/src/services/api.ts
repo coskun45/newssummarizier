@@ -216,7 +216,7 @@ export const statsApi = {
 // App info
 export const appApi = {
     getInfo: async (): Promise<{ app: string; version: string; status: string }> => {
-        const response = await axios.get('/');
+        const response = await api.get('/info');
         return response.data;
     },
 };

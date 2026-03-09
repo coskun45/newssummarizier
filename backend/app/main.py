@@ -77,6 +77,16 @@ async def health_check():
     return {"status": "healthy"}
 
 
+@app.get("/api/info")
+async def app_info():
+    """Public app info endpoint."""
+    return {
+        "app": settings.app_name,
+        "version": settings.app_version,
+        "status": "running"
+    }
+
+
 # Public auth routes (no JWT required)
 app.include_router(auth_routes.router, prefix="/api/auth", tags=["auth"])
 
