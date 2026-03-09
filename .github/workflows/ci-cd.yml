@@ -63,6 +63,8 @@ jobs:
             cd /root/newssummarizier
             git checkout -- backend/news_summary.db deploy.sh 2>/dev/null || true
             git pull origin master
-            docker compose build --no-cache
-            docker compose up -d
+            export APP_VERSION=1.0.$(git rev-list --count HEAD)
+            echo "Deploying version $APP_VERSION"
+            APP_VERSION=$APP_VERSION docker compose build --no-cache
+            APP_VERSION=$APP_VERSION docker compose up -d
             docker compose ps

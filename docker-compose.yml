@@ -13,6 +13,7 @@ services:
       # ── App ───────────────────────────────────────────────────────────────
       DEBUG: "false"
       CORS_ORIGINS: "http://77.42.89.136"
+      APP_VERSION: ${APP_VERSION:-1.0.0}
 
       # ── OpenAI Models (explicitly override env_file defaults) ─────────────
       DEFAULT_MODEL: gpt-4o-mini
