@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useArticles, useArticleCounts, useTopics, useFeeds, useRefreshFeed, useCheckNewArticles, useAddArticlesToFeed } from '../../hooks/useApi';
+import { appApi } from '../../services/api';
 import ArticleList from '../ArticleList/ArticleList';
 import TopicFilter from '../TopicFilter/TopicFilter';
 import FeedSidebar from '../FeedSidebar/FeedSidebar';
@@ -32,6 +33,8 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
   const [publishedFilter, setPublishedFilter] = useState<DateFilterState>(emptyDate);
   const [fetchedFilter, setFetchedFilter] = useState<DateFilterState>(emptyDate);
   const queryClient = useQueryClient();
+
+  const { data: appInfo } = useQuery({ queryKey: ['appInfo'], queryFn: appApi.getInfo, staleTime: Infinity });
 
   const { data: feedsData } = useFeeds();
   const { data: articleCounts } = useArticleCounts();
@@ -284,7 +287,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
           <div className="header-content">
             <div className="header-text">
               <h1><ChartBarIcon className="header-icon" /> Haber Özetleyici</h1>
-            
+              {appInfo && <span className="app-version">v{appInfo.version}</span>}
             </div>
             <div className="header-buttons">
 

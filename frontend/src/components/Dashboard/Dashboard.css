@@ -5,6 +5,13 @@
   position: relative;
 }
 
+.app-version {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin-left: 0.5rem;
+  vertical-align: middle;
+}
+
 /* Icon styles */
 .header-icon {
   vertical-align: middle;

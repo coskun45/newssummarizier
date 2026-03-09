@@ -68,3 +68,4 @@ jobs:
             APP_VERSION=$APP_VERSION docker compose build --no-cache
             APP_VERSION=$APP_VERSION docker compose up -d
             docker compose ps
+            echo "=== Deployed: $APP_VERSION ==="

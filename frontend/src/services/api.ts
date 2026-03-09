@@ -213,6 +213,14 @@ export const statsApi = {
     },
 };
 
+// App info
+export const appApi = {
+    getInfo: async (): Promise<{ app: string; version: string; status: string }> => {
+        const response = await axios.get('/');
+        return response.data;
+    },
+};
+
 // System Prompts endpoints
 export const promptsApi = {
     list: async (): Promise<SystemPrompt[]> => {
