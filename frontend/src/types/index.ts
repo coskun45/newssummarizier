@@ -104,6 +104,7 @@ export interface SystemPrompt {
 export interface ArticleCounts {
     by_priority: Record<string, number>;
     by_feed: Record<string, number>;
+    unimportant_count: number;
 }
 
 export interface AuthUser {

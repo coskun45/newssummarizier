@@ -92,6 +92,9 @@ function ArticleCard({ article }: ArticleCardProps) {
       </div>
 
       <div className="article-badges">
+        {article.importance === 'unimportant' && (
+          <span className="unimportant-badge">⊘ Önemsiz</span>
+        )}
         {article.priority && (
           <span className={`priority-badge priority-${article.priority}`}>
             {article.priority === 'high' ? '▲ Yüksek' : article.priority === 'med' ? '● Orta' : '▼ Düşük'}

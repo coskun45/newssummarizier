@@ -180,9 +180,14 @@ async def get_article_counts(db: Session = Depends(get_db)):
         func.count(models.Article.id)
     ).group_by(models.Article.feed_id).all()
 
+    unimportant_count = db.query(func.count(models.Article.id)).filter(
+        models.Article.importance == "unimportant"
+    ).scalar() or 0
+
     return {
         "by_priority": {p: c for p, c in priority_rows},
         "by_feed": {str(f): c for f, c in feed_rows},
+        "unimportant_count": unimportant_count,
     }
 
 

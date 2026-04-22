@@ -87,6 +87,17 @@
   align-items: center;
 }
 
+.unimportant-badge {
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: #f1f5f9;
+  color: #64748b;
+  border: 1px solid #cbd5e1;
+}
+
 .priority-badge {
   padding: 0.2rem 0.6rem;
   border-radius: 4px;
