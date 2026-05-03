@@ -32,6 +32,9 @@ pydantic-settings==2.1.0
 # Rate limiting
 aiolimiter==1.1.0
 
+# Scheduling
+apscheduler==3.10.4
+
 # Authentication
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4

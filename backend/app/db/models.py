@@ -40,6 +40,7 @@ class Article(Base):
     status = Column(String, default="pending", index=True)  # pending, scraped, summarized, failed, filtered
     importance = Column(String, nullable=True)  # "important" | "unimportant"
     priority = Column(String, nullable=True)    # "high" | "med" | "low"
+    is_read = Column(Boolean, default=False, nullable=False)
     
     # Relationships
     feed = relationship("Feed", back_populates="articles")

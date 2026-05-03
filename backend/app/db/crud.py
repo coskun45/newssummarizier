@@ -113,7 +113,8 @@ def get_articles(
     fetched_to: datetime = None,
     feed_id: int = None,
     feed_ids: List[int] = None,
-    priority: str = None
+    priority: str = None,
+    is_read: bool = None
 ) -> List[models.Article]:
     """Get articles with optional filtering."""
     query = db.query(models.Article).options(
@@ -140,6 +141,10 @@ def get_articles(
     # Filter by priority
     if priority:
         query = query.filter(models.Article.priority == priority)
+
+    # Filter by is_read
+    if is_read is not None:
+        query = query.filter(models.Article.is_read == is_read)
 
     # Filter by published date range
     if start_date:
@@ -179,6 +184,7 @@ def count_articles(
     end_date: datetime = None,
     fetched_from: datetime = None,
     fetched_to: datetime = None,
+    is_read: bool = None,
 ) -> int:
     """Count articles with optional filtering."""
     query = db.query(func.count(models.Article.id))
@@ -198,6 +204,9 @@ def count_articles(
 
     if priority:
         query = query.filter(models.Article.priority == priority)
+
+    if is_read is not None:
+        query = query.filter(models.Article.is_read == is_read)
 
     if start_date:
         query = query.filter(models.Article.published_at >= start_date)
@@ -227,6 +236,26 @@ def update_article_status(db: Session, article_id: int, status: str) -> Optional
         db.commit()
         db.refresh(article)
     return article
+
+
+def mark_article_read(db: Session, article_id: int) -> Optional[models.Article]:
+    """Mark an article as read by the user."""
+    article = db.query(models.Article).filter(models.Article.id == article_id).first()
+    if article:
+        article.is_read = True
+        db.commit()
+        db.refresh(article)
+    return article
+
+
+def mark_articles_read_bulk(db: Session, article_ids: Optional[List[int]] = None) -> int:
+    """Mark multiple articles as read. If article_ids is None, marks all unread articles."""
+    query = db.query(models.Article).filter(models.Article.is_read == False)
+    if article_ids is not None:
+        query = query.filter(models.Article.id.in_(article_ids))
+    count = query.update({models.Article.is_read: True}, synchronize_session=False)
+    db.commit()
+    return count
 
 
 def update_article_importance(

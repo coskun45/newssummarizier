@@ -9,6 +9,7 @@ from app.db.database import init_db
 from app.api.deps import get_current_user
 from app.api.routes import rss, articles, summaries, settings as settings_routes, topics, prompts
 from app.api.routes import auth as auth_routes
+from app.tasks.scheduler import start_scheduler, stop_scheduler
 import logging
 
 # Configure logging
@@ -38,9 +39,13 @@ async def lifespan(app: FastAPI):
     if feed_id:
         logger.info(f"Feed ID {feed_id} ready. Use manual refresh button to fetch news.")
 
+    # Start periodic scheduler (runs feeds at the top of every hour)
+    start_scheduler()
+
     yield
 
     # Shutdown
+    stop_scheduler()
     logger.info("Shutting down News Summarizer application...")
 
 

@@ -33,6 +33,7 @@ export interface Article {
     priority: string | null;
     topics: Topic[];
     has_summaries: boolean;
+    is_read: boolean;
 }
 
 export interface ArticleDetail extends Article {
@@ -77,6 +78,7 @@ export interface ArticleFilters {
     published_to?: string;
     fetched_from?: string;
     fetched_to?: string;
+    is_read?: boolean;
 }
 
 export interface UserSettings {
@@ -105,6 +107,8 @@ export interface ArticleCounts {
     by_priority: Record<string, number>;
     by_feed: Record<string, number>;
     unimportant_count: number;
+    unread_count: number;
+    read_count: number;
 }
 
 export interface AuthUser {

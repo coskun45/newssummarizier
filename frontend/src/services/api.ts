@@ -92,24 +92,19 @@ export const feedsApi = {
         return response.data;
     },
 
-    checkNew: async (feedId: number): Promise<{
-        feed_id: number;
-        total_articles: number;
-        new_articles: number;
-        existing_articles: number;
-        new_articles_list?: Array<{ title: string; url: string; published_at?: string }>;
-    }> => {
-        const response = await api.get(`/feeds/${feedId}/check-new`);
-        return response.data;
-    },
-
     refresh: async (feedId: number): Promise<{ status: string; feed_id: number }> => {
         const response = await api.post(`/feeds/${feedId}/refresh`);
         return response.data;
     },
 
-    addArticles: async (feedId: number, articles: Array<{ title: string; url: string; published_at?: string }>): Promise<{ feed_id: number; created: number; skipped: number; created_list?: string[] }> => {
-        const response = await api.post(`/feeds/${feedId}/add-articles`, { articles });
+    getRefreshStatus: async (feedId: number): Promise<{
+        status: 'idle' | 'running' | 'done' | 'error';
+        new_articles?: number;
+        processed?: number;
+        errors?: number;
+        message?: string;
+    }> => {
+        const response = await api.get(`/feeds/${feedId}/refresh-status`);
         return response.data;
     },
 
@@ -123,6 +118,14 @@ export const feedsApi = {
 export const articlesApi = {
     delete: async (articleId: number): Promise<void> => {
         await api.delete(`/articles/${articleId}`);
+    },
+    markRead: async (articleId: number): Promise<void> => {
+        await api.patch(`/articles/${articleId}/read`);
+    },
+    markBulkRead: async (articleIds?: number[]): Promise<{ marked_count: number }> => {
+        const body = articleIds ? { article_ids: articleIds } : { mark_all: true };
+        const response = await api.post('/articles/mark-read-bulk', body);
+        return response.data;
     },
     list: async (filters: ArticleFilters = {}): Promise<ArticleListResponse> => {
         const response = await api.get('/articles/', { params: filters });

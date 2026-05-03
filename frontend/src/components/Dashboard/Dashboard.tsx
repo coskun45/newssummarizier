@@ -1,14 +1,14 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useArticles, useArticleCounts, useTopics, useFeeds, useRefreshFeed, useCheckNewArticles, useAddArticlesToFeed } from '../../hooks/useApi';
-import { appApi } from '../../services/api';
+import { useArticles, useArticleCounts, useTopics, useFeeds, useRefreshFeed, useMarkArticlesBulkRead } from '../../hooks/useApi';
+import { appApi, feedsApi } from '../../services/api';
 import ArticleList from '../ArticleList/ArticleList';
 import TopicFilter from '../TopicFilter/TopicFilter';
 import FeedSidebar from '../FeedSidebar/FeedSidebar';
 import DateFilter from '../DateFilter/DateFilter';
 import SearchBar from '../SearchBar/SearchBar';
 import Settings from '../Settings/Settings';
-import { Cog6ToothIcon, MagnifyingGlassIcon, ChartBarIcon, ArrowPathIcon, XMarkIcon, ArrowRightStartOnRectangleIcon, FunnelIcon } from '@heroicons/react/24/outline';
+import { Cog6ToothIcon, ArrowPathIcon, ArrowRightStartOnRectangleIcon, FunnelIcon } from '@heroicons/react/24/outline';
 import type { AuthUser, DateFilterState } from '../../types';
 import './Dashboard.css';
 
@@ -23,32 +23,60 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
   const [selectedPriority, setSelectedPriority] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [notification, setNotification] = useState<string | null>(null);
-  const [showNewArticlesList, setShowNewArticlesList] = useState(false);
-  const [selectedNewIndexes, setSelectedNewIndexes] = useState<number[]>([]);
   const [showSettings, setShowSettings] = useState(false);
-  const [processingUrls, setProcessingUrls] = useState<string[]>([]);
   const [selectedFeedIds, setSelectedFeedIds] = useState<number[]>([]);
   const emptyDate: DateFilterState = { preset: null, customFrom: '', customTo: '' };
   const [publishedFilter, setPublishedFilter] = useState<DateFilterState>(emptyDate);
   const [fetchedFilter, setFetchedFilter] = useState<DateFilterState>(emptyDate);
+  const [activeSection, setActiveSection] = useState<'unread' | 'archive'>('unread');
+  const [selectedArticleIds, setSelectedArticleIds] = useState<Set<number>>(new Set());
+  type RefreshStatus = 'idle' | 'running' | { new_articles: number; processed: number };
+  const [refreshStatus, setRefreshStatus] = useState<RefreshStatus>('idle');
+  const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const refreshStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queryClient = useQueryClient();
 
   const { data: appInfo } = useQuery({ queryKey: ['appInfo'], queryFn: appApi.getInfo, staleTime: Infinity });
 
   const { data: feedsData } = useFeeds();
   const { data: articleCounts } = useArticleCounts();
-  const { isPending: isRefreshing } = useRefreshFeed();
+  const refreshFeedMutation = useRefreshFeed();
+  const markBulkReadMutation = useMarkArticlesBulkRead();
+
+  // Stop polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
+      if (refreshStatusTimerRef.current) clearTimeout(refreshStatusTimerRef.current);
+    };
+  }, []);
+
+  const startPolling = (feedId: number) => {
+    if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
+    pollingIntervalRef.current = setInterval(async () => {
+      try {
+        const result = await feedsApi.getRefreshStatus(feedId);
+        if (result.status === 'done' || result.status === 'error') {
+          clearInterval(pollingIntervalRef.current!);
+          pollingIntervalRef.current = null;
+          queryClient.invalidateQueries({ queryKey: ['articles'] });
+          queryClient.invalidateQueries({ queryKey: ['articleCounts'] });
+          setRefreshStatus({ new_articles: result.new_articles ?? 0, processed: result.processed ?? 0 });
+          if (refreshStatusTimerRef.current) clearTimeout(refreshStatusTimerRef.current);
+          refreshStatusTimerRef.current = setTimeout(() => setRefreshStatus('idle'), 5000);
+        }
+      } catch {
+        // silently ignore transient errors
+      }
+    }, 2000);
+  };
 
   // For topic counts: use single feed if exactly one selected, else null (all)
   const topicFeedId = selectedFeedIds.length === 1 ? selectedFeedIds[0] : null;
   const { data: topicsData } = useTopics(topicFeedId);
 
-  // Use first selected feed for "check new", or fall back to first feed
+  // Use first selected feed for manual refresh, or fall back to first feed
   const activeFeedId = selectedFeedIds[0] ?? (feedsData && feedsData.length > 0 ? feedsData[0].id : null);
-
-  const { data: newArticlesData, refetch: checkNewArticles, isFetching: isChecking } = useCheckNewArticles(activeFeedId);
-  const addArticlesMutation = useAddArticlesToFeed();
 
   // Debounce search
   useEffect(() => {
@@ -90,8 +118,9 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
       published_to: pubRange.to,
       fetched_from: fetchRange.from,
       fetched_to: fetchRange.to,
+      is_read: activeSection === 'unread' ? false : true,
     };
-  }, [selectedTopics, debouncedSearch, selectedFeedIds, importanceMode, selectedPriority, publishedFilter, fetchedFilter]);
+  }, [selectedTopics, debouncedSearch, selectedFeedIds, importanceMode, selectedPriority, publishedFilter, fetchedFilter, activeSection]);
 
   const { data: articlesData, isLoading, error } = useArticles(filters);
 
@@ -110,200 +139,78 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [feedsData]);
 
-  const handleCheckNewArticles = async () => {
-    if (activeFeedId) {
-      await checkNewArticles();
-      setShowNewArticlesList(true);
-      // selectedNewIndexes is set via useEffect when newArticlesData updates
-    }
+  const handleSectionChange = (section: 'unread' | 'archive') => {
+    setActiveSection(section);
+    setSelectedArticleIds(new Set());
   };
 
-  // Auto-select all articles when newArticlesData updates (fixes timing bug)
-  useEffect(() => {
-    if (newArticlesData?.new_articles_list) {
-      setSelectedNewIndexes(
-        newArticlesData.new_articles_list.map((_,  i: number) => i)
-      );
-    }
-  }, [newArticlesData]);
-
-  // Auto-hide notification
-  useEffect(() => {
-    if (notification) {
-      const timer = setTimeout(() => setNotification(null), 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [notification]);
-
-  // Poll every 5 seconds while articles are being processed
-  useEffect(() => {
-    if (processingUrls.length === 0) return;
-    const interval = setInterval(() => {
-      queryClient.invalidateQueries({ queryKey: ['articles'] });
-    }, 5000);
-    const timeout = setTimeout(() => {
-      clearInterval(interval);
-      setProcessingUrls([]);
-      setNotification(null);
-    }, 180000); // 3 min safety limit
-    return () => { clearInterval(interval); clearTimeout(timeout); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [processingUrls]);
-
-  // Check processing completion when articlesData updates
-  useEffect(() => {
-    if (processingUrls.length === 0 || !articlesData?.articles) return;
-    const allDone = processingUrls.every(url => {
-      const article = articlesData.articles.find((a) => a.url === url);
-      return article && article.status !== 'queued';
+  const handleToggleSelect = (id: number) => {
+    setSelectedArticleIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
     });
-    if (allDone) {
-      setProcessingUrls([]);
-      setNotification('Makaleler başarıyla işlendi!');
-      setTimeout(() => setNotification(null), 5000);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [articlesData]);
+  };
+
+  const handleSelectAll = (ids: number[]) => {
+    setSelectedArticleIds(prev => {
+      const allSelected = ids.every(id => prev.has(id));
+      if (allSelected) return new Set();
+      return new Set(ids);
+    });
+  };
+
+  const handleMarkSelected = () => {
+    const ids = Array.from(selectedArticleIds);
+    markBulkReadMutation.mutate(ids, { onSuccess: () => setSelectedArticleIds(new Set()) });
+  };
+
+  const handleMarkAll = () => {
+    markBulkReadMutation.mutate(undefined, { onSuccess: () => setSelectedArticleIds(new Set()) });
+  };
 
   return (
     <div className="dashboard">
       <Settings isOpen={showSettings} onClose={() => setShowSettings(false)} currentUser={currentUser} />
-
-      {/* Notification */}
-      {notification && (
-        <div className="notification">
-          {notification}
-        </div>
-      )}
-
-      {/* New Articles List */}
-      {showNewArticlesList && newArticlesData && newArticlesData.new_articles > 0 && (
-        <div className="new-articles-overlay" onClick={() => setShowNewArticlesList(false)}>
-          <div className="new-articles-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3><ChartBarIcon /> {newArticlesData.new_articles} Yeni Makale</h3>
-              <button className="close-button" onClick={() => setShowNewArticlesList(false)}><XMarkIcon /></button>
-            </div>
-              <div className="modal-content">
-              <div style={{ marginBottom: 8 }}>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                  <input
-                    type="checkbox"
-                    checked={
-                      !!newArticlesData?.new_articles_list && selectedNewIndexes.length === newArticlesData.new_articles_list.length
-                    }
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedNewIndexes(newArticlesData?.new_articles_list ? newArticlesData.new_articles_list.map((_, i: number) => i) : []);
-                      } else {
-                        setSelectedNewIndexes([]);
-                      }
-                    }}
-                  />
-                  Tümünü seç
-                </label>
-              </div>
-              <ul className="new-articles-list">
-                {newArticlesData.new_articles_list?.map((article, index: number) => (
-                  <li key={index} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <input
-                      type="checkbox"
-                      checked={selectedNewIndexes.includes(index)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setSelectedNewIndexes((prev) => Array.from(new Set([...prev, index])));
-                        } else {
-                          setSelectedNewIndexes((prev) => prev.filter((i) => i !== index));
-                        }
-                      }}
-                    />
-                    <div>
-                      <div className="article-title">{article.title}</div>
-                      {article.published_at && (
-                        <div className="article-date">
-                          {new Date(article.published_at).toLocaleDateString('tr-TR', {
-                            day: '2-digit', 
-                            month: '2-digit', 
-                            year: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="modal-footer">
-              <button className="cancel-button" onClick={() => setShowNewArticlesList(false)}>
-                İptal
-              </button>
-              <button
-                className="load-button"
-                disabled={addArticlesMutation.isPending}
-                onClick={() => {
-                  if (!activeFeedId) return;
-                  const feedId = activeFeedId;
-                  const selected = (newArticlesData?.new_articles_list || []).filter((_, i: number) => selectedNewIndexes.includes(i));
-                  if (selected.length === 0) {
-                    setNotification('Makale seçilmedi.');
-                    setTimeout(() => setNotification(null), 3000);
-                    return;
-                  }
-
-                  addArticlesMutation.mutate(
-                    { feedId, articles: selected },
-                    {
-                      onSuccess: (res) => {
-                        setShowNewArticlesList(false);
-                        if (res.created > 0) {
-                          setProcessingUrls(res.created_list ?? []);
-                          setNotification(`${res.created} makale işleniyor...`);
-                          queryClient.invalidateQueries({ queryKey: ['articles'] });
-                        } else {
-                          setNotification(`Yeni makale yok. ${res.skipped} zaten mevcut.`);
-                          setTimeout(() => setNotification(null), 5000);
-                        }
-                      },
-                      onError: () => {
-                        setNotification('Makaleler eklenirken hata oluştu.');
-                        setTimeout(() => setNotification(null), 5000);
-                      }
-                    }
-                  );
-                }}
-              >
-                {addArticlesMutation.isPending ? 'Ekleniyor...' : `${selectedNewIndexes.length} makaleyi işle`}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Header */}
       <header className="dashboard-header">
         <div className="container">
           <div className="header-content">
             <div className="header-text">
-              <h1><ChartBarIcon className="header-icon" /> Haber Özetleyici</h1>
+              <h1>Haber Özetleyici</h1>
               {appInfo && <span className="app-version">v{appInfo.version}</span>}
             </div>
             <div className="header-buttons">
 
               <button
                 className="check-button"
-                onClick={handleCheckNewArticles}
-                disabled={isChecking || isRefreshing}
+                onClick={() => {
+                  if (!activeFeedId) return;
+                  setRefreshStatus('running');
+                  refreshFeedMutation.mutate(activeFeedId, {
+                    onSuccess: () => startPolling(activeFeedId),
+                    onError: () => setRefreshStatus('idle'),
+                  });
+                }}
+                disabled={refreshStatus === 'running'}
               >
-                {isChecking ? (
-                  <><ArrowPathIcon className="spin-icon" /> Kontrol ediliyor...</>
-                ) : newArticlesData ? (
-                  <><ChartBarIcon /> {newArticlesData.new_articles} yeni makale mevcut</>
+                {refreshStatus === 'running' ? (
+                  <><ArrowPathIcon className="spin-icon" /> İşleniyor...</>
                 ) : (
-                  <><MagnifyingGlassIcon /> Yeni makaleleri kontrol et</>
+                  <><ArrowPathIcon /> Şimdi Yenile</>
                 )}
               </button>
+              {refreshStatus === 'running' && (
+                <span className="refresh-message refresh-message--processing">⏳ Makaleler işleniyor...</span>
+              )}
+              {typeof refreshStatus === 'object' && (
+                <span className="refresh-message">
+                  {refreshStatus.new_articles > 0
+                    ? `✅ ${refreshStatus.new_articles} yeni makale eklendi (${refreshStatus.processed} işlendi)`
+                    : `ℹ️ ${refreshStatus.processed} makale işlendi, yeni makale yok`}
+                </span>
+              )}
 
               <button
                 className="settings-button"
@@ -352,12 +259,15 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                 topics={topicsData || []}
                 selectedTopics={selectedTopics}
                 onTopicToggle={(topicId) => {
-                  setImportanceMode('important');
-                  setSelectedTopics((prev) =>
-                    prev.includes(topicId)
-                      ? prev.filter((id) => id !== topicId)
-                      : [...prev, topicId]
-                  );
+                  const nextTopics = selectedTopics.includes(topicId)
+                    ? selectedTopics.filter((id) => id !== topicId)
+                    : [...selectedTopics, topicId];
+                  setSelectedTopics(nextTopics);
+                  if (nextTopics.length > 0) {
+                    setImportanceMode('important');
+                  } else if (!selectedPriority) {
+                    setImportanceMode(null);
+                  }
                 }}
                 importanceMode={importanceMode}
                 onImportanceModeChange={(mode) => {
@@ -371,7 +281,11 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                 selectedPriority={selectedPriority}
                 onPriorityChange={(p) => {
                   setSelectedPriority(p);
-                  if (p) setImportanceMode('important');
+                  if (p) {
+                    setImportanceMode('important');
+                  } else if (selectedTopics.length === 0) {
+                    setImportanceMode(null);
+                  }
                 }}
                 priorityCounts={articleCounts?.by_priority ?? {}}
                 unimportantCount={articleCounts?.unimportant_count}
@@ -387,6 +301,48 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
             {/* Main Content Area */}
             <main className="dashboard-main">
               <SearchBar value={searchQuery} onChange={setSearchQuery} />
+
+              <div className="section-tabs">
+                <button
+                  className={`section-tab${activeSection === 'unread' ? ' section-tab--active' : ''}`}
+                  onClick={() => handleSectionChange('unread')}
+                >
+                  📥 Okunmamışlar
+                  {(articleCounts?.unread_count ?? 0) > 0 && (
+                    <span className="section-tab-badge">{articleCounts!.unread_count}</span>
+                  )}
+                </button>
+                <button
+                  className={`section-tab${activeSection === 'archive' ? ' section-tab--active' : ''}`}
+                  onClick={() => handleSectionChange('archive')}
+                >
+                  🗄️ Arşiv
+                  {(articleCounts?.read_count ?? 0) > 0 && (
+                    <span className="section-tab-badge section-tab-badge--archive">{articleCounts!.read_count}</span>
+                  )}
+                </button>
+              </div>
+
+              {activeSection === 'unread' && articlesData && articlesData.articles.length > 0 && (
+                <div className="bulk-action-bar">
+                  <button
+                    className="btn btn-outline btn-sm"
+                    onClick={handleMarkAll}
+                    disabled={markBulkReadMutation.isPending}
+                  >
+                    📦 Tümünü Arşive Gönder
+                  </button>
+                  {selectedArticleIds.size > 0 && (
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={handleMarkSelected}
+                      disabled={markBulkReadMutation.isPending}
+                    >
+                      📦 Seçilenleri Arşive Gönder ({selectedArticleIds.size})
+                    </button>
+                  )}
+                </div>
+              )}
 
               {error && (
                 <div className="error-message">
@@ -415,7 +371,13 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                         {articlesData.total} makale bulundu
                       </p>
                     </div>
-                    <ArticleList articles={articlesData.articles} />
+                    <ArticleList
+                      articles={articlesData.articles}
+                      selectedIds={selectedArticleIds}
+                      onToggleSelect={handleToggleSelect}
+                      onSelectAll={handleSelectAll}
+                      isArchiveView={activeSection === 'archive'}
+                    />
                   </>
                 )
               )}

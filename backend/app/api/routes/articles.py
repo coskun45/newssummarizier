@@ -46,6 +46,7 @@ class ArticleResponse(BaseModel):
     priority: Optional[str] = None
     topics: List[TopicInfo] = []
     has_summaries: bool = False
+    is_read: bool = False
 
     class Config:
         from_attributes = True
@@ -79,6 +80,7 @@ async def list_articles(
     published_to: Optional[datetime] = Query(None, description="Published date to (ISO 8601)"),
     fetched_from: Optional[datetime] = Query(None, description="Fetched date from (ISO 8601)"),
     fetched_to: Optional[datetime] = Query(None, description="Fetched date to (ISO 8601)"),
+    is_read: Optional[bool] = Query(None, description="Filter by read status: true=read, false=unread"),
     db: Session = Depends(get_db)
 ):
     """
@@ -115,6 +117,7 @@ async def list_articles(
         end_date=published_to,
         fetched_from=fetched_from,
         fetched_to=fetched_to,
+        is_read=is_read,
     )
 
     # Get total count
@@ -130,6 +133,7 @@ async def list_articles(
         end_date=published_to,
         fetched_from=fetched_from,
         fetched_to=fetched_to,
+        is_read=is_read,
     )
     
     # Transform to response model
@@ -154,7 +158,8 @@ async def list_articles(
                 }
                 for at in article.topics
             ],
-            "has_summaries": len(article.summaries) > 0
+            "has_summaries": len(article.summaries) > 0,
+            "is_read": article.is_read,
         }
         articles_response.append(ArticleResponse(**article_data))
     
@@ -164,6 +169,42 @@ async def list_articles(
         skip=skip,
         limit=limit
     )
+
+
+@router.patch("/{article_id}/read")
+async def mark_article_read(
+    article_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Mark an article as read by the user.
+    """
+    article = crud.mark_article_read(db, article_id)
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+    return {"id": article_id, "is_read": True}
+
+
+class BulkReadRequest(BaseModel):
+    """Request body for bulk mark-as-read."""
+    article_ids: Optional[List[int]] = None
+    mark_all: bool = False
+
+
+@router.post("/mark-read-bulk")
+async def mark_articles_read_bulk(
+    body: BulkReadRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Mark multiple articles as read. Provide article_ids for specific articles,
+    or set mark_all=true to mark all unread articles.
+    """
+    if not body.mark_all and not body.article_ids:
+        raise HTTPException(status_code=400, detail="Provide article_ids or set mark_all=true")
+    ids = None if body.mark_all else body.article_ids
+    count = crud.mark_articles_read_bulk(db, ids)
+    return {"marked_count": count}
 
 
 @router.get("/counts")
@@ -184,10 +225,20 @@ async def get_article_counts(db: Session = Depends(get_db)):
         models.Article.importance == "unimportant"
     ).scalar() or 0
 
+    unread_count = db.query(func.count(models.Article.id)).filter(
+        models.Article.is_read == False
+    ).scalar() or 0
+
+    read_count = db.query(func.count(models.Article.id)).filter(
+        models.Article.is_read == True
+    ).scalar() or 0
+
     return {
         "by_priority": {p: c for p, c in priority_rows},
         "by_feed": {str(f): c for f, c in feed_rows},
         "unimportant_count": unimportant_count,
+        "unread_count": unread_count,
+        "read_count": read_count,
     }
 
 
@@ -221,7 +272,8 @@ async def get_article(article_id: int, db: Session = Depends(get_db)):
             }
             for at in article.topics
         ],
-        "has_summaries": len(article.summaries) > 0
+        "has_summaries": len(article.summaries) > 0,
+        "is_read": article.is_read,
     }
     
     return ArticleDetailResponse(**article_data)
@@ -273,7 +325,8 @@ async def get_articles_by_topic(
                 }
                 for at in article.topics
             ],
-            "has_summaries": len(article.summaries) > 0
+            "has_summaries": len(article.summaries) > 0,
+            "is_read": article.is_read,
         }
         articles_response.append(ArticleResponse(**article_data))
     

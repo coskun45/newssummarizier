@@ -11,6 +11,7 @@ export const useArticleCounts = () => {
         queryKey: ['articleCounts'],
         queryFn: () => articlesApi.getCounts(),
         staleTime: 30000,
+        refetchInterval: 60000,
     });
 };
 
@@ -18,7 +19,8 @@ export const useArticles = (filters: ArticleFilters = {}) => {
     return useQuery({
         queryKey: ['articles', filters],
         queryFn: () => articlesApi.list(filters),
-        staleTime: 30000, // 30 seconds
+        staleTime: 30000,
+        refetchInterval: 60000, // Poll every 60s to catch scheduler-added articles
     });
 };
 
@@ -36,6 +38,28 @@ export const useDeleteArticle = () => {
         mutationFn: (articleId: number) => articlesApi.delete(articleId),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['articles'] });
+        },
+    });
+};
+
+export const useMarkArticleRead = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (articleId: number) => articlesApi.markRead(articleId),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['articles'] });
+            queryClient.invalidateQueries({ queryKey: ['articleCounts'] });
+        },
+    });
+};
+
+export const useMarkArticlesBulkRead = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (articleIds?: number[]) => articlesApi.markBulkRead(articleIds),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['articles'] });
+            queryClient.invalidateQueries({ queryKey: ['articleCounts'] });
         },
     });
 };
@@ -162,39 +186,9 @@ export const useDeleteFeed = () => {
     });
 };
 
-export const useCheckNewArticles = (feedId: number | null) => {
-    return useQuery({
-        queryKey: ['checkNewArticles', feedId],
-        queryFn: () => feedsApi.checkNew(feedId!),
-        enabled: false, // Manual trigger only
-        staleTime: 0, // Always fresh
-    });
-};
-
 export const useRefreshFeed = () => {
-    const queryClient = useQueryClient();
-
     return useMutation({
         mutationFn: (feedId: number) => feedsApi.refresh(feedId),
-        onSuccess: () => {
-            // Invalidate articles to refetch after feed refresh
-            setTimeout(() => {
-                queryClient.invalidateQueries({ queryKey: ['articles'] });
-            }, 5000); // Wait 5 seconds for processing
-        },
-    });
-};
-
-
-export const useAddArticlesToFeed = () => {
-    const queryClient = useQueryClient();
-
-    return useMutation({
-        mutationFn: ({ feedId, articles }: { feedId: number; articles: Array<{ title: string; url: string; published_at?: string }> }) =>
-            feedsApi.addArticles(feedId, articles),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['articles'] });
-        },
     });
 };
 

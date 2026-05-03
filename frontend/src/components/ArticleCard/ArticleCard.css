@@ -23,6 +23,69 @@
 .article-card {
   position: relative;
 }
+
+.article-card--unread {
+  border-left: 3px solid #2196f3;
+}
+
+.article-card--selected {
+  background-color: #eff6ff;
+  outline: 2px solid #93c5fd;
+}
+
+.article-card--selectable {
+  padding-left: 2.75rem;
+}
+
+.article-card-checkbox {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  z-index: 2;
+  accent-color: #667eea;
+}
+
+.mark-read-btn {
+  margin-left: 8px;
+  padding: 2px 10px;
+  font-size: 0.75rem;
+  background: transparent;
+  color: #2196f3;
+  border: 1px solid #2196f3;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.mark-read-btn:hover:not(:disabled) {
+  background: #2196f3;
+  color: #fff;
+}
+
+.mark-read-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-sm {
+  font-size: 0.8rem;
+  padding: 4px 12px;
+}
+
+.unread-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #2196f3;
+  margin-right: 6px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
 .btn-danger {
   background-color: #e74c3c;
   color: #fff;

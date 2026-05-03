@@ -2,22 +2,33 @@ import { useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import type { Article } from '../../types';
-import { useSummary, useArticle, useDeleteArticle } from '../../hooks/useApi';
+import { useSummary, useArticle, useDeleteArticle, useMarkArticleRead } from '../../hooks/useApi';
 import ContentModal from '../ContentModal/ContentModal';
 import './ArticleCard.css';
 
 interface ArticleCardProps {
   article: Article;
+  isSelected?: boolean;
+  onToggleSelect?: (id: number) => void;
+  isArchiveView?: boolean;
 }
 
 
-function ArticleCard({ article }: ArticleCardProps) {
+function ArticleCard({ article, isSelected = false, onToggleSelect, isArchiveView = false }: ArticleCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [showContent, setShowContent] = useState(false);
   const [summaryType, setSummaryType] = useState<'brief' | 'standard' | 'detailed'>('standard');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const deleteArticleMutation = useDeleteArticle();
+  const markReadMutation = useMarkArticleRead();
+
+  const handleToggleExpand = () => {
+    if (!expanded && !article.is_read) {
+      markReadMutation.mutate(article.id);
+    }
+    setExpanded(!expanded);
+  };
 
   const { data: summary, isLoading: summaryLoading } = useSummary(
     expanded ? article.id : null,
@@ -33,7 +44,16 @@ function ArticleCard({ article }: ArticleCardProps) {
     : null;
 
   return (
-    <div className="article-card">
+    <div className={`article-card${!article.is_read ? ' article-card--unread' : ''}${isSelected ? ' article-card--selected' : ''}${(!isArchiveView && onToggleSelect) ? ' article-card--selectable' : ''}`}>
+      {!isArchiveView && onToggleSelect && (
+        <input
+          type="checkbox"
+          className="article-card-checkbox"
+          checked={isSelected}
+          onChange={() => onToggleSelect(article.id)}
+          title="Seç"
+        />
+      )}
       <button
         className="delete-icon-btn"
         title="Sil"
@@ -83,11 +103,24 @@ function ArticleCard({ article }: ArticleCardProps) {
         </div>
       )}
       <div className="article-header">
-        <h2 className="article-title">{article.title}</h2>
+        <h2 className="article-title">
+          {!article.is_read && <span className="unread-dot" title="Okunmadı" />}
+          {article.title}
+        </h2>
         {article.author && <p className="article-author">Yazar: {article.author}</p>}
         <div className="article-meta">
           {timeAgo && <span className="article-time">{timeAgo}</span>}
           <span className="article-status">{article.status}</span>
+          {!isArchiveView && !article.is_read && (
+            <button
+              className="mark-read-btn"
+              title="Okundu olarak işaretle"
+              onClick={(e) => { e.stopPropagation(); markReadMutation.mutate(article.id); }}
+              disabled={markReadMutation.isPending}
+            >
+              📦 Arşive Gönder
+            </button>
+          )}
         </div>
       </div>
 
@@ -114,7 +147,7 @@ function ArticleCard({ article }: ArticleCardProps) {
       <div className="article-actions">
         <button
           className="btn btn-primary"
-          onClick={() => setExpanded(!expanded)}
+          onClick={handleToggleExpand}
         >
           {expanded ? 'Daha az göster' : 'Özeti göster'}
         </button>
