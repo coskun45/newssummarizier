@@ -226,11 +226,11 @@ async def get_article_counts(db: Session = Depends(get_db)):
     ).scalar() or 0
 
     unread_count = db.query(func.count(models.Article.id)).filter(
-        models.Article.is_read == False
+        models.Article.is_read.is_(False)
     ).scalar() or 0
 
     read_count = db.query(func.count(models.Article.id)).filter(
-        models.Article.is_read == True
+        models.Article.is_read.is_(True)
     ).scalar() or 0
 
     return {

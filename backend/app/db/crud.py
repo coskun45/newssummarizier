@@ -250,7 +250,7 @@ def mark_article_read(db: Session, article_id: int) -> Optional[models.Article]:
 
 def mark_articles_read_bulk(db: Session, article_ids: Optional[List[int]] = None) -> int:
     """Mark multiple articles as read. If article_ids is None, marks all unread articles."""
-    query = db.query(models.Article).filter(models.Article.is_read == False)
+    query = db.query(models.Article).filter(models.Article.is_read.is_(False))
     if article_ids is not None:
         query = query.filter(models.Article.id.in_(article_ids))
     count = query.update({models.Article.is_read: True}, synchronize_session=False)
