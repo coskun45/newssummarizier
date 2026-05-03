@@ -45,6 +45,8 @@ jobs:
         run: ruff check app/
 
       - name: Verify FastAPI app structure
+        env:
+          OPENAI_API_KEY: sk-ci-dummy-key-not-real
         run: python -c "from app.main import app; print('✅ FastAPI app imports successfully')"
 
       - name: Check for exposed API keys (PR only)
