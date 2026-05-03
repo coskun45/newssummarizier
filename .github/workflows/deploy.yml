@@ -3,7 +3,7 @@ name: Deploy
 on:
   push:
     branches:
-      - master
+      - main
 
 jobs:
   deploy:
@@ -23,7 +23,7 @@ jobs:
 
             # ── Kodu güncelle ────────────────────────────────────────────
             cd "$APP_DIR"
-            git pull origin master
+            git pull origin main
 
             # ── backend/.env yoksa oluştur ───────────────────────────────
             ENV_FILE="$APP_DIR/backend/.env"
