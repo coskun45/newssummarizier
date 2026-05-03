@@ -128,14 +128,20 @@ jobs:
       - name: Start services
         run: |
           docker compose up -d
-          sleep 10
+          echo "⏳ Waiting 30s for services to start..."
+          sleep 30
 
       - name: Health check
         run: |
-          for i in 1 2 3; do
-            echo "Attempt $i/3..."
-            curl -f -s http://localhost/api/health && echo "✅ Healthy!" && break || sleep 5
-            [ $i -eq 3 ] && echo "❌ Health check failed" && exit 1
+          for i in 1 2 3 4 5; do
+            echo "Attempt $i/5..."
+            if curl -f -s http://localhost/api/health; then
+              echo "✅ Healthy!"
+              exit 0
+            fi
+            [ $i -eq 5 ] && echo "❌ Health check failed" && exit 1
+            echo "⏳ Waiting 10s..."
+            sleep 10
           done
 
       - name: Show logs on failure
