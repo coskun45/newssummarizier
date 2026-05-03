@@ -36,6 +36,6 @@ aiolimiter==1.1.0
 apscheduler==3.10.4
 
 # Authentication
-python-jose[cryptography]==3.3.0
+python-jose[cryptography]==3.5.0
 passlib[bcrypt]==1.7.4
-bcrypt==3.2.2
+bcrypt==5.0.0
