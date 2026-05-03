@@ -10,9 +10,7 @@ interface ArticleListProps {
   isArchiveView?: boolean;
 }
 
-function ArticleList({ articles, selectedIds = new Set(), onToggleSelect, onSelectAll, isArchiveView = false }: ArticleListProps) {
-  const allIds = articles.map(a => a.id);
-  const allSelected = allIds.length > 0 && allIds.every(id => selectedIds.has(id));
+function ArticleList({ articles, selectedIds = new Set(), onToggleSelect, onSelectAll: _onSelectAll, isArchiveView = false }: ArticleListProps) {
 
   return (
     <div className="article-list">
