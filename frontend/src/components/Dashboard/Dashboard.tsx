@@ -374,6 +374,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                   if (p) setImportanceMode('important');
                 }}
                 priorityCounts={articleCounts?.by_priority ?? {}}
+                unimportantCount={articleCounts?.unimportant_count}
               />
               <DateFilter
                 publishedFilter={publishedFilter}

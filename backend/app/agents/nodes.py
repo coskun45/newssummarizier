@@ -150,10 +150,8 @@ async def article_processor_node(state: NewsProcessingState) -> Dict[str, Any]:
         
         # Step 3: Evaluate importance, priority, and classify topics
         try:
-            content_for_categorization = article.get("cleaned_content") or article.get("raw_content", "")
             categorization = await categorize_and_prioritize_article(
-                title=article["title"],
-                content=truncate_content(content_for_categorization, 2000)
+                title=article["title"]
             )
 
             importance = categorization.get("importance", "unimportant")

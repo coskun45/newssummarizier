@@ -128,7 +128,7 @@ Her zaman geçerli JSON döndür, başka hiçbir şey yazma.
 DEĞERLENDIRME KURALLARI:
 
 1. ÖNEM FİLTRESİ
-Haber aşağıdaki TOPIC listesi veya KEYWORD listesiyle ilgili DEĞİLSE → "unimportant" döndür.
+Haber BAŞLIĞI aşağıdaki TOPIC listesi veya KEYWORD listesiyle ilgili DEĞİLSE → "unimportant" döndür.
 İlgiliyse → "important" döndür ve 2. adıma geç.
 
 TOPIC LİSTESİ:
@@ -179,13 +179,10 @@ _CATEGORIZATION_USER_PROMPT_TEMPLATE = """Aşağıdaki haberi analiz et ve şu k
 
 HABER BAŞLIĞI: {title}
 
-HABER İÇERİĞİ:
-{content}
-
 """
 
 
-async def categorize_and_prioritize_article(title: str, content: str) -> Dict[str, Any]:
+async def categorize_and_prioritize_article(title: str) -> Dict[str, Any]:
     """
     Evaluate article importance, assign priority, and classify into topics.
 
@@ -211,7 +208,7 @@ async def categorize_and_prioritize_article(title: str, content: str) -> Dict[st
 
         system_prompt = system_prompt.replace("{topic_list}", _build_topic_list(db_topics))
 
-        user_prompt = _CATEGORIZATION_USER_PROMPT_TEMPLATE.replace("{title}", title).replace("{content}", content[:2000])
+        user_prompt = _CATEGORIZATION_USER_PROMPT_TEMPLATE.replace("{title}", title)
 
         model = settings.default_model
         input_tokens = count_tokens(system_prompt + user_prompt, model)
@@ -453,8 +450,7 @@ async def process_article_by_id(article_id: int) -> dict:
         is_important = False
         try:
             categorization = await categorize_and_prioritize_article(
-                title=article.title,
-                content=truncate_content(content, 2000)
+                title=article.title
             )
             importance = categorization.get("importance", "unimportant")
             priority = categorization.get("priority")

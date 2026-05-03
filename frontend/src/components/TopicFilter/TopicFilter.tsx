@@ -11,6 +11,7 @@ interface TopicFilterProps {
   selectedPriority: string | null;
   onPriorityChange: (priority: string | null) => void;
   priorityCounts: Record<string, number>;
+  unimportantCount?: number;
 }
 
 const PRIORITIES = [
@@ -19,7 +20,7 @@ const PRIORITIES = [
   { value: 'low',  label: 'Düşük' },
 ];
 
-function TopicFilter({ topics, selectedTopics, onTopicToggle, importanceMode, onImportanceModeChange, selectedPriority, onPriorityChange, priorityCounts }: TopicFilterProps) {
+function TopicFilter({ topics, selectedTopics, onTopicToggle, importanceMode, onImportanceModeChange, selectedPriority, onPriorityChange, priorityCounts, unimportantCount }: TopicFilterProps) {
   const [openCategories, setOpenCategories] = useState(true);
   const [openPriority, setOpenPriority] = useState(true);
 
@@ -99,6 +100,9 @@ function TopicFilter({ topics, selectedTopics, onTopicToggle, importanceMode, on
               onChange={handleUnimportantClick}
             />
             <span className="topic-name">Önemsiz</span>
+            {unimportantCount !== undefined && (
+              <span className="topic-count">{unimportantCount}</span>
+            )}
           </label>
         </div>
       )}
