@@ -186,6 +186,7 @@ docker compose down -v
 # Image'ları yeniden build et (kod değişikliklerinden sonra)
 docker compose build --no-cache
 
+
 # Container durumunu kontrol et
 docker compose ps
 ```
