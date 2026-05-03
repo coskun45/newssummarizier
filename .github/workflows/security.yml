@@ -23,6 +23,8 @@ jobs:
   codeql-python:
     name: CodeQL Analysis (Python)
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout code
@@ -47,6 +49,8 @@ jobs:
   codeql-javascript:
     name: CodeQL Analysis (JavaScript/TypeScript)
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout code
@@ -69,6 +73,8 @@ jobs:
   trivy-backend:
     name: Trivy Scan (Backend Image)
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout code
@@ -119,6 +125,8 @@ jobs:
   trivy-frontend:
     name: Trivy Scan (Frontend Image)
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout code
@@ -163,6 +171,8 @@ jobs:
   trivy-filesystem:
     name: Trivy Scan (Filesystem)
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout code

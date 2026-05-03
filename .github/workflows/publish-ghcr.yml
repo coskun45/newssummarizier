@@ -23,6 +23,8 @@ jobs:
   check-ci-status:
     name: Wait for CI Checks
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     
     steps:
@@ -38,6 +40,8 @@ jobs:
   publish-backend:
     name: Publish Backend Image
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     needs: [check-ci-status]
     if: always() && (needs.check-ci-status.result == 'success' || github.ref_type == 'tag')
 
@@ -96,6 +100,8 @@ jobs:
   publish-frontend:
     name: Publish Frontend Image
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     needs: [check-ci-status]
     if: always() && (needs.check-ci-status.result == 'success' || github.ref_type == 'tag')
 
