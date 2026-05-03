@@ -24,9 +24,6 @@ function ArticleCard({ article, isSelected = false, onToggleSelect, isArchiveVie
   const markReadMutation = useMarkArticleRead();
 
   const handleToggleExpand = () => {
-    if (!expanded && !article.is_read) {
-      markReadMutation.mutate(article.id);
-    }
     setExpanded(!expanded);
   };
 
