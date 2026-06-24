@@ -54,6 +54,29 @@ export const useMarkArticleRead = () => {
     });
 };
 
+export const useSetArticleStarred = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: ({ articleId, starred }: { articleId: number; starred: boolean }) =>
+            articlesApi.setStarred(articleId, starred),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['articles'] });
+            queryClient.invalidateQueries({ queryKey: ['articleCounts'] });
+        },
+    });
+};
+
+export const useUnstarAll = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: () => articlesApi.unstarAll(),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['articles'] });
+            queryClient.invalidateQueries({ queryKey: ['articleCounts'] });
+        },
+    });
+};
+
 export const useMarkArticlesBulkRead = () => {
     const queryClient = useQueryClient();
     return useMutation({

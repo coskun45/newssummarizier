@@ -48,7 +48,7 @@ files). The essentials:
   `app.db.crud`; never raw `db.query` in handlers. Agent nodes are the only code that opens its own
   `SessionLocal()`. All OpenAI calls go through `services/summary_service.py`.
 - **All routers except `auth` require JWT** (`dependencies=auth_dep` in `main.py`).
-- **Schema changes need a hand-written `backend/migrate_*.py`** — `init_db()` only creates missing tables.
+- **Adding a column?** Add it to the model AND append `(column, DDL)` to the `article_columns` list in `init_db()` (`db/database.py`) — it auto-ALTERs existing SQLite DBs on startup (idempotent). No separate migration scripts.
 - **Frontend never calls `axios`/endpoints directly** — go types → `services/api.ts` → `hooks/useApi.ts`
   → component. Mutations must invalidate the affected React Query keys.
 - **Config lives in three places that must agree:** `core/config.py`, `backend/.env.example`, and the

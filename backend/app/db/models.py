@@ -41,7 +41,8 @@ class Article(Base):
     importance = Column(String, nullable=True)  # "important" | "unimportant"
     priority = Column(String, nullable=True)    # "high" | "med" | "low"
     is_read = Column(Boolean, default=False, nullable=False)
-    
+    is_starred = Column(Boolean, default=False, nullable=False, index=True)  # User-curated "Önemli" group
+
     # Relationships
     feed = relationship("Feed", back_populates="articles")
     summaries = relationship("Summary", back_populates="article", cascade="all, delete-orphan")

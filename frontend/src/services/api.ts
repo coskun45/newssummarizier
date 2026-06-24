@@ -130,6 +130,13 @@ export const articlesApi = {
     markRead: async (articleId: number): Promise<void> => {
         await api.patch(`/articles/${articleId}/read`);
     },
+    setStarred: async (articleId: number, starred: boolean): Promise<void> => {
+        await api.patch(`/articles/${articleId}/star`, { starred });
+    },
+    unstarAll: async (): Promise<{ unstarred_count: number }> => {
+        const response = await api.post('/articles/unstar-all');
+        return response.data;
+    },
     markBulkRead: async (articleIds?: number[]): Promise<{ marked_count: number }> => {
         const body = articleIds ? { article_ids: articleIds } : { mark_all: true };
         const response = await api.post('/articles/mark-read-bulk', body);

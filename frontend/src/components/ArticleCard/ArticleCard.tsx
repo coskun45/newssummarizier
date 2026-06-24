@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import type { Article } from '../../types';
-import { useSummaries, useArticle, useDeleteArticle, useMarkArticleRead } from '../../hooks/useApi';
+import { useSummaries, useArticle, useDeleteArticle, useSetArticleStarred } from '../../hooks/useApi';
 import ContentModal from '../ContentModal/ContentModal';
 import './ArticleCard.css';
 
@@ -18,17 +18,18 @@ interface ArticleCardProps {
   isSelected?: boolean;
   onToggleSelect?: (id: number) => void;
   isArchiveView?: boolean;
+  selectable?: boolean;
 }
 
 
-function ArticleCard({ article, isSelected = false, onToggleSelect, isArchiveView = false }: ArticleCardProps) {
+function ArticleCard({ article, isSelected = false, onToggleSelect, isArchiveView = false, selectable = false }: ArticleCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [showContent, setShowContent] = useState(false);
   const [summaryType, setSummaryType] = useState<'brief' | 'standard' | 'detailed'>('standard');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const deleteArticleMutation = useDeleteArticle();
-  const markReadMutation = useMarkArticleRead();
+  const setStarredMutation = useSetArticleStarred();
 
   const handleToggleExpand = () => {
     setExpanded(!expanded);
@@ -56,7 +57,7 @@ function ArticleCard({ article, isSelected = false, onToggleSelect, isArchiveVie
 
   return (
     <div className={`article-card${!article.is_read ? ' article-card--unread' : ''}${isSelected ? ' article-card--selected' : ''}${(!isArchiveView && onToggleSelect) ? ' article-card--selectable' : ''}`}>
-      {!isArchiveView && onToggleSelect && (
+      {selectable && onToggleSelect && (
         <input
           type="checkbox"
           className="article-card-checkbox"
@@ -88,6 +89,16 @@ function ArticleCard({ article, isSelected = false, onToggleSelect, isArchiveVie
           <line x1="10" y1="11" x2="10" y2="17" />
           <line x1="14" y1="11" x2="14" y2="17" />
         </svg>
+      </button>
+
+      <button
+        className={`favorite-icon-btn${article.is_starred ? ' favorite-icon-btn--active' : ''}`}
+        onClick={() => setStarredMutation.mutate({ articleId: article.id, starred: !article.is_starred })}
+        disabled={setStarredMutation.isPending}
+        title={article.is_starred ? 'Favorilerden çıkar' : 'Favorilere ekle'}
+        aria-label={article.is_starred ? 'Favorilerden çıkar' : 'Favorilere ekle'}
+      >
+        {article.is_starred ? '★' : '☆'}
       </button>
 
       {showDeleteConfirm && (
@@ -122,16 +133,6 @@ function ArticleCard({ article, isSelected = false, onToggleSelect, isArchiveVie
         <div className="article-meta">
           {timeAgo && <span className="article-time">{timeAgo}</span>}
           <span className="article-status">{article.status}</span>
-          {!isArchiveView && !article.is_read && (
-            <button
-              className="mark-read-btn"
-              title="Okundu olarak işaretle"
-              onClick={(e) => { e.stopPropagation(); markReadMutation.mutate(article.id); }}
-              disabled={markReadMutation.isPending}
-            >
-              📦 Arşive Gönder
-            </button>
-          )}
         </div>
       </div>
 
@@ -179,7 +180,7 @@ function ArticleCard({ article, isSelected = false, onToggleSelect, isArchiveVie
         >
           Kaynağı aç →
         </a>
-        {/* Delete button moved to top right as icon */}
+        {/* Delete button moved to top right as icon; favorite toggle to bottom-right */}
       </div>
 
       <ContentModal

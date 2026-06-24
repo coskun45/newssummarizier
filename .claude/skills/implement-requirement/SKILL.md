@@ -39,7 +39,7 @@ The plan should cover:
 
 - The layers to change, in implementation order (backend bottom-up, then frontend bottom-up — see
   Phase 3), with the concrete files/functions touched.
-- Data/schema changes and whether a `backend/migrate_*.py` is needed.
+- Data/schema changes (new columns go in the model + the `init_db()` auto-migration list; complex changes may need a one-off `migrate_*.py`).
 - New config/env vars and the three places they must land.
 - API contract (endpoint, method, request/response shape) and the matching frontend type.
 - Risks, trade-offs, and anything deferred or out of scope.
@@ -55,8 +55,9 @@ bottom-up on the frontend**, so each layer compiles against the one below it.
 ### Backend (rules under `backend/.claude/rules/`)
 
 1. **Model** (`app/db/models.py`) — declarative `Column`, `server_default=func.now()`, free-form status
-   strings with inline comments (`db` rule). Altering an existing table needs a hand-written
-   `backend/migrate_*.py` — `init_db()` only creates missing tables.
+   strings with inline comments (`db` rule). Adding a column? Also append `(name, DDL)` to the
+   `article_columns` list in `init_db()` (`db/database.py`) so existing SQLite DBs auto-migrate on
+   startup — no separate script.
 2. **CRUD** (`app/db/crud.py`) — add a `db: Session`-first function; the single DB-access layer both
    routes and agent nodes call.
 3. **Route** (`app/api/routes/*.py`) — `Depends(get_db)`, Pydantic request/response models
@@ -127,5 +128,5 @@ for an independent pass on the diff.
 - **Top-down instead of bottom-up** — route before crud/model, or component before type/api/hook.
 - **Bypassing the layer** — raw `db.query` in a route, `axios` in a component, fetch outside `api.ts`.
 - **Forgetting query invalidation** — a mutation that doesn't invalidate leaves stale UI.
-- **Schema change without a migration** — altering an existing table needs a `migrate_*.py`.
+- **Adding a column but forgetting the `init_db()` auto-migration list** — the model gains it but existing DBs don't, causing "no such column" at runtime.
 - **Treating Phase 4 as optional** — the security + quality review is part of the lifecycle.

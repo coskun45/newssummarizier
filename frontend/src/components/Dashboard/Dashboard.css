@@ -524,6 +524,10 @@ button svg {
   background: #a0aec0;
 }
 
+.section-tab-badge--important {
+  background: #d69e2e;
+}
+
 /* Bulk action bar */
 .bulk-action-bar {
   display: flex;

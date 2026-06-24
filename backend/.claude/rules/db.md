@@ -16,5 +16,6 @@ paths:
 - **CRUD functions commit their own writes.** Callers don't manage transactions beyond passing the session.
 
 ## Migrations
-- **SQLite has no migration framework here** — schema changes are applied by hand-written scripts at the repo root (`backend/migrate_*.py`). When you add/rename a column, write a matching `migrate_*.py` script; `init_db()` only `create_all`s missing tables, it does NOT alter existing ones.
-- **NEVER commit a populated `news_summary.db`** as part of a feature — it's a local dev artifact.
+- **Column adds are handled in code, not scripts.** `create_all()` only creates missing tables (never alters existing ones), so `init_db()` in `db/database.py` runs an idempotent auto-migration: it ALTER-adds any missing column listed in `article_columns`. When you add a column to a model, also append `(name, DDL)` there — existing SQLite DBs get patched on next startup, no manual step.
+- **More complex changes** (renames, type changes, drops, data backfills) aren't covered by the column loop — write a one-off `backend/migrate_*.py` for those (e.g. `migrate_remove_german_topics.py`) and run it manually.
+- **NEVER commit a populated `news_summary.db`** (or any `*.db`) — local artifact, gitignored.

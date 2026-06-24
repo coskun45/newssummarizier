@@ -8,9 +8,10 @@ interface ArticleListProps {
   onToggleSelect?: (id: number) => void;
   onSelectAll?: (ids: number[]) => void;
   isArchiveView?: boolean;
+  selectable?: boolean;
 }
 
-function ArticleList({ articles, selectedIds = new Set(), onToggleSelect, onSelectAll: _onSelectAll, isArchiveView = false }: ArticleListProps) {
+function ArticleList({ articles, selectedIds = new Set(), onToggleSelect, onSelectAll: _onSelectAll, isArchiveView = false, selectable = false }: ArticleListProps) {
 
   return (
     <div className="article-list">
@@ -21,6 +22,7 @@ function ArticleList({ articles, selectedIds = new Set(), onToggleSelect, onSele
           isSelected={selectedIds.has(article.id)}
           onToggleSelect={onToggleSelect}
           isArchiveView={isArchiveView}
+          selectable={selectable}
         />
       ))}
     </div>

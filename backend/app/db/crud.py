@@ -138,7 +138,8 @@ def get_articles(
     feed_id: int = None,
     feed_ids: List[int] = None,
     priority: str = None,
-    is_read: bool = None
+    is_read: bool = None,
+    is_starred: bool = None
 ) -> List[models.Article]:
     """Get articles with optional filtering."""
     query = db.query(models.Article).options(
@@ -172,6 +173,10 @@ def get_articles(
     # Filter by is_read
     if is_read is not None:
         query = query.filter(models.Article.is_read == is_read)
+
+    # Filter by is_starred (user-curated "Önemli" group)
+    if is_starred is not None:
+        query = query.filter(models.Article.is_starred == is_starred)
 
     # Filter by published date range
     if start_date:
@@ -212,6 +217,7 @@ def count_articles(
     fetched_from: datetime = None,
     fetched_to: datetime = None,
     is_read: bool = None,
+    is_starred: bool = None,
 ) -> int:
     """Count articles with optional filtering."""
     query = db.query(func.count(models.Article.id))
@@ -235,6 +241,9 @@ def count_articles(
 
     if is_read is not None:
         query = query.filter(models.Article.is_read == is_read)
+
+    if is_starred is not None:
+        query = query.filter(models.Article.is_starred == is_starred)
 
     if start_date:
         query = query.filter(models.Article.published_at >= start_date)
@@ -286,6 +295,25 @@ def mark_articles_read_bulk(db: Session, article_ids: Optional[List[int]] = None
     return count
 
 
+def set_article_starred(db: Session, article_id: int, starred: bool) -> Optional[models.Article]:
+    """Add/remove an article from the user-curated 'Önemli' group."""
+    article = db.query(models.Article).filter(models.Article.id == article_id).first()
+    if article:
+        article.is_starred = starred
+        db.commit()
+        db.refresh(article)
+    return article
+
+
+def unstar_all(db: Session) -> int:
+    """Clear the whole 'Önemli' group. Returns the number of articles unstarred."""
+    count = db.query(models.Article).filter(models.Article.is_starred.is_(True)).update(
+        {models.Article.is_starred: False}, synchronize_session=False
+    )
+    db.commit()
+    return count
+
+
 def update_article_importance(
     db: Session,
     article_id: int,
@@ -297,6 +325,16 @@ def update_article_importance(
     if article:
         article.importance = importance
         article.priority = priority
+        db.commit()
+        db.refresh(article)
+    return article
+
+
+def update_article_author(db: Session, article_id: int, author: str) -> Optional[models.Article]:
+    """Set an article's author (used to backfill from the page when RSS lacks one)."""
+    article = get_article(db, article_id)
+    if article and author:
+        article.author = author
         db.commit()
         db.refresh(article)
     return article

@@ -109,8 +109,13 @@ async def article_processor_node(state: NewsProcessingState) -> Dict[str, Any]:
         
         # Step 2: Extract content from web page
         try:
-            cleaned_content = await extract_article_content(article["url"])
-            
+            cleaned_content, page_author = await extract_article_content(article["url"])
+
+            # Backfill author from the page when the RSS feed didn't provide one
+            if page_author and not article.get("author"):
+                crud.update_article_author(db=db, article_id=db_article.id, author=page_author)
+                article["author"] = page_author
+
             if cleaned_content:
                 article["cleaned_content"] = cleaned_content
                 crud.update_article_content(

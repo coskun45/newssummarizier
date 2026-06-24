@@ -433,7 +433,9 @@ async def process_article_by_id(article_id: int) -> dict:
         content = article.cleaned_content or article.raw_content or ""
         if not article.cleaned_content:
             try:
-                extracted = await extract_article_content(article.url)
+                extracted, page_author = await extract_article_content(article.url)
+                if page_author and not article.author:
+                    crud.update_article_author(db=db, article_id=article.id, author=page_author)
                 if extracted:
                     content = extracted
                     crud.update_article_content(db=db, article_id=article.id, cleaned_content=content)

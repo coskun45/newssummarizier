@@ -34,6 +34,7 @@ export interface Article {
     topics: Topic[];
     has_summaries: boolean;
     is_read: boolean;
+    is_starred: boolean;
 }
 
 export interface ArticleDetail extends Article {
@@ -79,6 +80,7 @@ export interface ArticleFilters {
     fetched_from?: string;
     fetched_to?: string;
     is_read?: boolean;
+    is_starred?: boolean;
 }
 
 export interface UserSettings {
@@ -109,6 +111,7 @@ export interface ArticleCounts {
     unimportant_count: number;
     unread_count: number;
     read_count: number;
+    starred_count: number;
 }
 
 export interface AuthUser {

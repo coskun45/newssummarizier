@@ -47,6 +47,7 @@ class ArticleResponse(BaseModel):
     topics: List[TopicInfo] = []
     has_summaries: bool = False
     is_read: bool = False
+    is_starred: bool = False
 
     class Config:
         from_attributes = True
@@ -81,6 +82,7 @@ async def list_articles(
     fetched_from: Optional[datetime] = Query(None, description="Fetched date from (ISO 8601)"),
     fetched_to: Optional[datetime] = Query(None, description="Fetched date to (ISO 8601)"),
     is_read: Optional[bool] = Query(None, description="Filter by read status: true=read, false=unread"),
+    is_starred: Optional[bool] = Query(None, description="Filter by the user-curated 'Önemli' group"),
     db: Session = Depends(get_db)
 ):
     """
@@ -118,6 +120,7 @@ async def list_articles(
         fetched_from=fetched_from,
         fetched_to=fetched_to,
         is_read=is_read,
+        is_starred=is_starred,
     )
 
     # Get total count
@@ -134,8 +137,9 @@ async def list_articles(
         fetched_from=fetched_from,
         fetched_to=fetched_to,
         is_read=is_read,
+        is_starred=is_starred,
     )
-    
+
     # Transform to response model
     articles_response = []
     for article in articles:
@@ -160,6 +164,7 @@ async def list_articles(
             ],
             "has_summaries": len(article.summaries) > 0,
             "is_read": article.is_read,
+            "is_starred": article.is_starred,
         }
         articles_response.append(ArticleResponse(**article_data))
     
@@ -207,6 +212,27 @@ async def mark_articles_read_bulk(
     return {"marked_count": count}
 
 
+class StarRequest(BaseModel):
+    """Request body for toggling an article's 'Önemli' (starred) state."""
+    starred: bool = True
+
+
+@router.patch("/{article_id}/star")
+async def star_article(article_id: int, body: StarRequest, db: Session = Depends(get_db)):
+    """Add or remove an article from the user-curated 'Önemli' group."""
+    article = crud.set_article_starred(db, article_id, body.starred)
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+    return {"id": article_id, "is_starred": body.starred}
+
+
+@router.post("/unstar-all")
+async def unstar_all_articles(db: Session = Depends(get_db)):
+    """Clear the whole 'Önemli' group."""
+    count = crud.unstar_all(db)
+    return {"unstarred_count": count}
+
+
 @router.get("/counts")
 async def get_article_counts(db: Session = Depends(get_db)):
     """Get article counts grouped by priority and feed."""
@@ -233,12 +259,17 @@ async def get_article_counts(db: Session = Depends(get_db)):
         models.Article.is_read.is_(True)
     ).scalar() or 0
 
+    starred_count = db.query(func.count(models.Article.id)).filter(
+        models.Article.is_starred.is_(True)
+    ).scalar() or 0
+
     return {
         "by_priority": {p: c for p, c in priority_rows},
         "by_feed": {str(f): c for f, c in feed_rows},
         "unimportant_count": unimportant_count,
         "unread_count": unread_count,
         "read_count": read_count,
+        "starred_count": starred_count,
     }
 
 
@@ -274,8 +305,9 @@ async def get_article(article_id: int, db: Session = Depends(get_db)):
         ],
         "has_summaries": len(article.summaries) > 0,
         "is_read": article.is_read,
+        "is_starred": article.is_starred,
     }
-    
+
     return ArticleDetailResponse(**article_data)
 
 
@@ -327,6 +359,7 @@ async def get_articles_by_topic(
             ],
             "has_summaries": len(article.summaries) > 0,
             "is_read": article.is_read,
+            "is_starred": article.is_starred,
         }
         articles_response.append(ArticleResponse(**article_data))
     

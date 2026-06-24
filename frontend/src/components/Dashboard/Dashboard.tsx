@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useArticles, useArticleCounts, useTopics, useFeeds, useRefreshFeed, useMarkArticlesBulkRead } from '../../hooks/useApi';
-import { appApi, feedsApi } from '../../services/api';
+import { useArticles, useArticleCounts, useTopics, useFeeds, useRefreshFeed, useMarkArticlesBulkRead, useUnstarAll } from '../../hooks/useApi';
+import { appApi, feedsApi, articlesApi, summariesApi } from '../../services/api';
+import { downloadArticlesAsWord, buildWhatsAppMessage, copyToClipboard } from '../../utils/exportArticles';
 import ArticleList from '../ArticleList/ArticleList';
 import TopicFilter from '../TopicFilter/TopicFilter';
 import FeedSidebar from '../FeedSidebar/FeedSidebar';
@@ -32,8 +33,11 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
   const emptyDate: DateFilterState = { preset: null, customFrom: '', customTo: '' };
   const [publishedFilter, setPublishedFilter] = useState<DateFilterState>(emptyDate);
   const [fetchedFilter, setFetchedFilter] = useState<DateFilterState>(emptyDate);
-  const [activeSection, setActiveSection] = useState<'unread' | 'archive'>('unread');
+  const [activeSection, setActiveSection] = useState<'unread' | 'archive' | 'important'>('unread');
   const [selectedArticleIds, setSelectedArticleIds] = useState<Set<number>>(new Set());
+  const [exportNotice, setExportNotice] = useState<string | null>(null);
+  const exportNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const unstarAllMutation = useUnstarAll();
   type RefreshStatus = 'idle' | 'running' | { new_articles: number; processed: number };
   const [refreshStatus, setRefreshStatus] = useState<RefreshStatus>('idle');
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -52,6 +56,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
     return () => {
       if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
       if (refreshStatusTimerRef.current) clearTimeout(refreshStatusTimerRef.current);
+      if (exportNoticeTimerRef.current) clearTimeout(exportNoticeTimerRef.current);
     };
   }, []);
 
@@ -121,7 +126,9 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
       published_to: pubRange.to,
       fetched_from: fetchRange.from,
       fetched_to: fetchRange.to,
-      is_read: activeSection === 'unread' ? false : true,
+      // "Önemli" shows the starred group regardless of read state
+      is_read: activeSection === 'important' ? undefined : activeSection === 'unread' ? false : true,
+      is_starred: activeSection === 'important' ? true : undefined,
     };
   }, [selectedTopics, debouncedSearch, selectedFeedIds, importanceMode, selectedPriority, publishedFilter, fetchedFilter, activeSection]);
 
@@ -164,9 +171,62 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [feedsData]);
 
-  const handleSectionChange = (section: 'unread' | 'archive') => {
+  const handleSectionChange = (section: 'unread' | 'archive' | 'important') => {
     setActiveSection(section);
     setSelectedArticleIds(new Set());
+  };
+
+  const showExportNotice = (msg: string) => {
+    setExportNotice(msg);
+    if (exportNoticeTimerRef.current) clearTimeout(exportNoticeTimerRef.current);
+    exportNoticeTimerRef.current = setTimeout(() => setExportNotice(null), 4000);
+  };
+
+  // Resolve the selected articles together with their summaries (fetched per
+  // article, since the list payload doesn't include summary texts). Only the
+  // current selection is exported.
+  const resolveExportItems = async () => {
+    if (selectedArticleIds.size === 0) return [];
+    const ids = Array.from(selectedArticleIds);
+    return Promise.all(
+      ids.map(async (id) => {
+        const [article, summaries] = await Promise.all([
+          articlesApi.get(id),
+          summariesApi.getByArticle(id),
+        ]);
+        return { article, summaries };
+      })
+    );
+  };
+
+  const handleExportWord = async () => {
+    const items = await resolveExportItems();
+    if (items.length === 0) {
+      showExportNotice('Lütfen dışa aktarmak için makale seçin.');
+      return;
+    }
+    downloadArticlesAsWord(items);
+    showExportNotice(`📄 ${items.length} makale Word olarak indirildi.`);
+  };
+
+  const handleExportWhatsApp = async () => {
+    const items = await resolveExportItems();
+    if (items.length === 0) {
+      showExportNotice('Lütfen dışa aktarmak için makale seçin.');
+      return;
+    }
+    const ok = await copyToClipboard(buildWhatsAppMessage(items));
+    showExportNotice(
+      ok
+        ? `💬 ${items.length} makale panoya kopyalandı — WhatsApp'a yapıştırabilirsiniz.`
+        : 'Panoya kopyalanamadı.'
+    );
+  };
+
+  const handleClearImportant = () => {
+    if (confirm('Tüm favorileri kaldırmak istediğinizden emin misiniz?')) {
+      unstarAllMutation.mutate(undefined, { onSuccess: () => setSelectedArticleIds(new Set()) });
+    }
   };
 
   const handleToggleSelect = (id: number) => {
@@ -346,6 +406,15 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                     <span className="section-tab-badge section-tab-badge--archive">{articleCounts!.read_count}</span>
                   )}
                 </button>
+                <button
+                  className={`section-tab${activeSection === 'important' ? ' section-tab--active' : ''}`}
+                  onClick={() => handleSectionChange('important')}
+                >
+                  ⭐ Favori
+                  {(articleCounts?.starred_count ?? 0) > 0 && (
+                    <span className="section-tab-badge section-tab-badge--important">{articleCounts!.starred_count}</span>
+                  )}
+                </button>
               </div>
 
               {activeSection === 'unread' && articlesData && articlesData.articles.length > 0 && (
@@ -366,6 +435,50 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                       📦 Seçilenleri Arşive Gönder ({selectedArticleIds.size})
                     </button>
                   )}
+                </div>
+              )}
+
+              {activeSection === 'important' && articlesData && articlesData.articles.length > 0 && (
+                <div className="bulk-action-bar">
+                  <button
+                    className="btn btn-outline btn-sm"
+                    onClick={() => handleSelectAll(articlesData.articles.map((a) => a.id))}
+                  >
+                    ☑️ Tümünü Seç
+                  </button>
+                  {selectedArticleIds.size > 0 && (
+                    <button
+                      className="btn btn-outline btn-sm"
+                      onClick={() => setSelectedArticleIds(new Set())}
+                    >
+                      ✖ Seçimi Temizle ({selectedArticleIds.size})
+                    </button>
+                  )}
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={handleExportWord}
+                    disabled={selectedArticleIds.size === 0}
+                    title="Seçili makaleleri özetleriyle birlikte Word olarak indir"
+                  >
+                    📄 Word indir
+                  </button>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={handleExportWhatsApp}
+                    disabled={selectedArticleIds.size === 0}
+                    title="Seçili makaleleri özetleriyle WhatsApp mesajı olarak panoya kopyala"
+                  >
+                    💬 WhatsApp
+                  </button>
+                  <button
+                    className="btn btn-outline btn-sm"
+                    onClick={handleClearImportant}
+                    disabled={unstarAllMutation.isPending}
+                    title="Favori listesini tamamen temizle"
+                  >
+                    🗑️ Listeyi Temizle
+                  </button>
+                  {exportNotice && <span className="refresh-message refresh-message--processing">{exportNotice}</span>}
                 </div>
               )}
 
@@ -402,6 +515,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                       onToggleSelect={handleToggleSelect}
                       onSelectAll={handleSelectAll}
                       isArchiveView={activeSection === 'archive'}
+                      selectable={activeSection !== 'archive'}
                     />
                     <Pagination
                       currentPage={page}
