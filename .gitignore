@@ -7,10 +7,3 @@ frontend/node_modules
 **/*.pyo
 .env
 backend/app/__pycache__
-
-# Local SQLite databases (not part of the repo)
-*.db
-checkpoints.db
-
-# Build output
-frontend/dist
