@@ -150,11 +150,15 @@ Return only the summary text without any additional formatting or explanations."
                 )
                 created_count += 1
                 logger.info(f"Created system prompt: {prompt_type}")
-            elif "{topic_list}" not in existing.prompt_text:
-                # Migrate: replace hardcoded topic list with dynamic placeholder
+            elif prompt_type == "classification" and "{topic_list}" not in existing.prompt_text:
+                # One-time migration for the classification prompt ONLY: older copies had a
+                # hardcoded topic list; restore the dynamic {topic_list} placeholder.
+                # Must stay scoped to classification — applying this to other prompts would
+                # silently overwrite the user's edits on every startup (the summarization
+                # default has no {topic_list}, so the condition would always be true).
                 existing.prompt_text = prompt_text
                 db.commit()
-                logger.info(f"Migrated system prompt to dynamic topic list: {prompt_type}")
+                logger.info("Migrated classification prompt to dynamic topic list")
 
         logger.info(f"System prompts seeding completed. Created {created_count} new prompts.")
 

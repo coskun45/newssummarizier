@@ -47,6 +47,30 @@ def update_feed_last_fetched(db: Session, feed_id: int) -> Optional[models.Feed]
     return feed
 
 
+def update_feed(
+    db: Session,
+    feed_id: int,
+    url: str = None,
+    title: str = None,
+    description: str = None,
+    is_active: bool = None,
+) -> Optional[models.Feed]:
+    """Update a feed's editable fields. Only provided fields are changed."""
+    feed = get_feed(db, feed_id)
+    if feed:
+        if url is not None:
+            feed.url = url
+        if title is not None:
+            feed.title = title
+        if description is not None:
+            feed.description = description
+        if is_active is not None:
+            feed.is_active = is_active
+        db.commit()
+        db.refresh(feed)
+    return feed
+
+
 def delete_feed(db: Session, feed_id: int) -> bool:
     """Delete a feed."""
     feed = get_feed(db, feed_id)
@@ -128,11 +152,14 @@ def get_articles(
     elif feed_id:
         query = query.filter(models.Article.feed_id == feed_id)
 
-    # Filter by topic
+    # Filter by topic — use a subquery instead of a join so an article that
+    # matches several of the selected topics is returned once, not duplicated
+    # (a plain join multiplies rows and breaks limit/offset paging).
     if topic_ids:
-        query = query.join(models.ArticleTopic).filter(
+        article_ids_with_topics = db.query(models.ArticleTopic.article_id).filter(
             models.ArticleTopic.topic_id.in_(topic_ids)
         )
+        query = query.filter(models.Article.id.in_(article_ids_with_topics))
 
     # Filter by status
     if status:
@@ -195,9 +222,10 @@ def count_articles(
         query = query.filter(models.Article.feed_id == feed_id)
 
     if topic_ids:
-        query = query.join(models.ArticleTopic).filter(
+        article_ids_with_topics = db.query(models.ArticleTopic.article_id).filter(
             models.ArticleTopic.topic_id.in_(topic_ids)
         )
+        query = query.filter(models.Article.id.in_(article_ids_with_topics))
 
     if status:
         query = query.filter(models.Article.status == status)

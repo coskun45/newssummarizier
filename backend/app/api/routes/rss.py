@@ -19,6 +19,14 @@ class FeedCreate(BaseModel):
     description: Optional[str] = None
 
 
+class FeedUpdate(BaseModel):
+    """Feed update request. All fields optional — only provided ones are changed."""
+    url: Optional[HttpUrl] = None
+    title: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
 class FeedResponse(BaseModel):
     """Feed response model."""
     id: int
@@ -73,6 +81,34 @@ async def get_feed(feed_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Feed not found")
     return feed
 
+
+
+@router.put("/{feed_id}", response_model=FeedResponse)
+async def update_feed(feed_id: int, feed_update: FeedUpdate, db: Session = Depends(get_db)):
+    """
+    Update an existing RSS feed (URL, title, description, active state).
+    """
+    feed = crud.get_feed(db, feed_id)
+    if not feed:
+        raise HTTPException(status_code=404, detail="Feed not found")
+
+    new_url = str(feed_update.url) if feed_update.url is not None else None
+
+    # Reject a URL change that collides with a different existing feed
+    if new_url and new_url != feed.url:
+        existing = crud.get_feed_by_url(db, new_url)
+        if existing and existing.id != feed_id:
+            raise HTTPException(status_code=400, detail="Feed already exists")
+
+    updated = crud.update_feed(
+        db,
+        feed_id=feed_id,
+        url=new_url,
+        title=feed_update.title,
+        description=feed_update.description,
+        is_active=feed_update.is_active,
+    )
+    return updated
 
 
 @router.post("/{feed_id}/refresh")

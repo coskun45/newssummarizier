@@ -2,9 +2,16 @@ import { useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import type { Article } from '../../types';
-import { useSummary, useArticle, useDeleteArticle, useMarkArticleRead } from '../../hooks/useApi';
+import { useSummaries, useArticle, useDeleteArticle, useMarkArticleRead } from '../../hooks/useApi';
 import ContentModal from '../ContentModal/ContentModal';
 import './ArticleCard.css';
+
+const SUMMARY_ORDER = ['brief', 'standard', 'detailed'] as const;
+const SUMMARY_LABELS: Record<(typeof SUMMARY_ORDER)[number], string> = {
+  brief: 'Kısa',
+  standard: 'Standart',
+  detailed: 'Detaylı',
+};
 
 interface ArticleCardProps {
   article: Article;
@@ -27,10 +34,17 @@ function ArticleCard({ article, isSelected = false, onToggleSelect, isArchiveVie
     setExpanded(!expanded);
   };
 
-  const { data: summary, isLoading: summaryLoading } = useSummary(
-    expanded ? article.id : null,
-    summaryType
+  const { data: summaries, isLoading: summaryLoading } = useSummaries(
+    expanded ? article.id : null
   );
+
+  // Only the summary types that were actually generated for this article
+  const availableTypes = SUMMARY_ORDER.filter(
+    (t) => summaries?.some((s) => s.summary_type === t)
+  );
+  // Fall back to the first available type if the selected one wasn't generated
+  const effectiveType = availableTypes.includes(summaryType) ? summaryType : availableTypes[0];
+  const summary = summaries?.find((s) => s.summary_type === effectiveType);
 
   const { data: articleDetail, isLoading: contentLoading } = useArticle(
     showContent ? article.id : null
@@ -142,12 +156,14 @@ function ArticleCard({ article, isSelected = false, onToggleSelect, isArchiveVie
       </div>
 
       <div className="article-actions">
-        <button
-          className="btn btn-primary"
-          onClick={handleToggleExpand}
-        >
-          {expanded ? 'Daha az göster' : 'Özeti göster'}
-        </button>
+        {article.has_summaries && (
+          <button
+            className="btn btn-primary"
+            onClick={handleToggleExpand}
+          >
+            {expanded ? 'Daha az göster' : 'Özeti göster'}
+          </button>
+        )}
         <button
           className="btn btn-secondary"
           onClick={() => setShowContent(true)}
@@ -175,26 +191,19 @@ function ArticleCard({ article, isSelected = false, onToggleSelect, isArchiveVie
 
       {expanded && (
         <div className="article-summary">
-          <div className="summary-controls">
-            <button
-              className={`summary-type-btn ${summaryType === 'brief' ? 'active' : ''}`}
-              onClick={() => setSummaryType('brief')}
-            >
-              Kısa
-            </button>
-            <button
-              className={`summary-type-btn ${summaryType === 'standard' ? 'active' : ''}`}
-              onClick={() => setSummaryType('standard')}
-            >
-              Standart
-            </button>
-            <button
-              className={`summary-type-btn ${summaryType === 'detailed' ? 'active' : ''}`}
-              onClick={() => setSummaryType('detailed')}
-            >
-              Detaylı
-            </button>
-          </div>
+          {availableTypes.length > 1 && (
+            <div className="summary-controls">
+              {availableTypes.map((t) => (
+                <button
+                  key={t}
+                  className={`summary-type-btn ${effectiveType === t ? 'active' : ''}`}
+                  onClick={() => setSummaryType(t)}
+                >
+                  {SUMMARY_LABELS[t]}
+                </button>
+              ))}
+            </div>
+          )}
 
           {summaryLoading ? (
             <p className="text-muted">⏳ Özet yükleniyor...</p>

@@ -7,10 +7,13 @@ import TopicFilter from '../TopicFilter/TopicFilter';
 import FeedSidebar from '../FeedSidebar/FeedSidebar';
 import DateFilter from '../DateFilter/DateFilter';
 import SearchBar from '../SearchBar/SearchBar';
+import Pagination from '../Pagination/Pagination';
 import Settings from '../Settings/Settings';
 import { Cog6ToothIcon, ArrowPathIcon, ArrowRightStartOnRectangleIcon, FunnelIcon } from '@heroicons/react/24/outline';
 import type { AuthUser, DateFilterState } from '../../types';
 import './Dashboard.css';
+
+const PAGE_SIZE = 20;
 
 interface DashboardProps {
   currentUser: AuthUser;
@@ -18,6 +21,7 @@ interface DashboardProps {
 }
 
 function Dashboard({ currentUser, onLogout }: DashboardProps) {
+  const [page, setPage] = useState(1);
   const [selectedTopics, setSelectedTopics] = useState<number[]>([]);
   const [importanceMode, setImportanceMode] = useState<'important' | 'unimportant' | null>(null);
   const [selectedPriority, setSelectedPriority] = useState<string | null>(null);
@@ -110,7 +114,6 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
     return {
       topic_ids: selectedTopics.length > 0 ? selectedTopics.join(',') : undefined,
       search: debouncedSearch || undefined,
-      limit: 50,
       feed_ids: selectedFeedIds.length > 0 ? selectedFeedIds.join(',') : undefined,
       status: importanceMode === 'unimportant' ? 'filtered' : (importanceMode === 'important' ? 'summarized' : undefined),
       priority: selectedPriority ?? undefined,
@@ -122,7 +125,29 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
     };
   }, [selectedTopics, debouncedSearch, selectedFeedIds, importanceMode, selectedPriority, publishedFilter, fetchedFilter, activeSection]);
 
-  const { data: articlesData, isLoading, error } = useArticles(filters);
+  // Reset to the first page whenever the active filters change
+  useEffect(() => {
+    setPage(1);
+  }, [filters]);
+
+  const queryFilters = useMemo(
+    () => ({ ...filters, skip: (page - 1) * PAGE_SIZE, limit: PAGE_SIZE }),
+    [filters, page]
+  );
+
+  const { data: articlesData, isLoading, error } = useArticles(queryFilters);
+
+  const totalPages = articlesData ? Math.max(1, Math.ceil(articlesData.total / PAGE_SIZE)) : 1;
+
+  // Clamp the page if the result set shrank (e.g. after delete / mark-as-read)
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [totalPages, page]);
+
+  const goToPage = (p: number) => {
+    setPage(p);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   // Reset selected topics and priority when feed selection changes
   useEffect(() => {
@@ -377,6 +402,11 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                       onToggleSelect={handleToggleSelect}
                       onSelectAll={handleSelectAll}
                       isArchiveView={activeSection === 'archive'}
+                    />
+                    <Pagination
+                      currentPage={page}
+                      totalPages={totalPages}
+                      onPageChange={goToPage}
                     />
                   </>
                 )

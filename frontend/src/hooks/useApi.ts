@@ -1,7 +1,7 @@
 /**
  * React Query hooks for data fetching and caching.
  */
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { articlesApi, summariesApi, topicsApi, settingsApi, statsApi, feedsApi, authApi } from '../services/api';
 import type { ArticleFilters, UserSettings } from '../types';
 
@@ -21,6 +21,7 @@ export const useArticles = (filters: ArticleFilters = {}) => {
         queryFn: () => articlesApi.list(filters),
         staleTime: 30000,
         refetchInterval: 60000, // Poll every 60s to catch scheduler-added articles
+        placeholderData: keepPreviousData, // keep current page visible while the next loads
     });
 };
 
@@ -179,6 +180,18 @@ export const useDeleteFeed = () => {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: (feedId: number) => feedsApi.delete(feedId),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['feeds'] });
+            queryClient.invalidateQueries({ queryKey: ['articles'] });
+        },
+    });
+};
+
+export const useUpdateFeed = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: ({ feedId, url, title }: { feedId: number; url?: string; title?: string }) =>
+            feedsApi.update(feedId, { url, title }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['feeds'] });
             queryClient.invalidateQueries({ queryKey: ['articles'] });

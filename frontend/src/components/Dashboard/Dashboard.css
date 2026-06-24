@@ -233,8 +233,11 @@ button svg {
 .dashboard-header {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
-  padding: 2rem 0;
+  padding: 1.25rem 0;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  position: sticky;
+  top: 0;
+  z-index: 100;
 }
 
 .header-content {
@@ -426,8 +429,9 @@ button svg {
   padding: 1.25rem 1.25rem 0.75rem;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   position: sticky;
-  top: 2rem;
-  max-height: calc(100vh - 4rem);
+  /* Sit below the sticky header (~6.5rem) so the two never overlap. */
+  top: 6.5rem;
+  max-height: calc(100vh - 8rem);
   overflow-y: auto;
   align-self: start;
 }

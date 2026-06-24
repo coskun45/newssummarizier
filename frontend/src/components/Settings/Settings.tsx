@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useSettings, useUpdateSettings, useTopics, useCreateTopic, useUpdateTopic, useDeleteTopic, useUsers, useCreateUser, useDeleteUser, useFeeds, useCreateFeed, useDeleteFeed } from '../../hooks/useApi';
+import { useSettings, useUpdateSettings, useTopics, useCreateTopic, useUpdateTopic, useDeleteTopic, useUsers, useCreateUser, useDeleteUser, useFeeds, useCreateFeed, useUpdateFeed, useDeleteFeed } from '../../hooks/useApi';
 import PromptEditor from '../PromptEditor/PromptEditor';
 import { Cog6ToothIcon, FolderIcon, DocumentTextIcon, SparklesIcon, PencilIcon, TrashIcon, CheckIcon, XMarkIcon, PlusIcon, ChevronDownIcon, ChevronRightIcon, UsersIcon, RssIcon } from '@heroicons/react/24/outline';
 import type { AuthUser } from '../../types';
@@ -23,6 +23,7 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
   const { mutate: deleteUser, isPending: isDeletingUser } = useDeleteUser();
   const { data: feeds } = useFeeds();
   const { mutate: createFeed, isPending: isCreatingFeed } = useCreateFeed();
+  const { mutate: updateFeed, isPending: isUpdatingFeed } = useUpdateFeed();
   const { mutate: deleteFeed, isPending: isDeletingFeed } = useDeleteFeed();
 
   const [enabledTopicIds, setEnabledTopicIds] = useState<number[]>([]);
@@ -44,6 +45,9 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
   const [showAddFeed, setShowAddFeed] = useState(false);
   const [newFeedUrl, setNewFeedUrl] = useState('');
   const [newFeedTitle, setNewFeedTitle] = useState('');
+  const [editingFeedId, setEditingFeedId] = useState<number | null>(null);
+  const [editFeedUrl, setEditFeedUrl] = useState('');
+  const [editFeedTitle, setEditFeedTitle] = useState('');
 
   // Accordion state for sections
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -190,6 +194,30 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
     }
   };
 
+  const handleEditFeed = (feedId: number, url: string, title?: string | null) => {
+    setEditingFeedId(feedId);
+    setEditFeedUrl(url);
+    setEditFeedTitle(title || '');
+  };
+
+  const handleCancelFeedEdit = () => {
+    setEditingFeedId(null);
+    setEditFeedUrl('');
+    setEditFeedTitle('');
+  };
+
+  const handleSaveFeedEdit = () => {
+    if (editingFeedId && editFeedUrl.trim()) {
+      updateFeed({
+        feedId: editingFeedId,
+        url: editFeedUrl.trim(),
+        title: editFeedTitle.trim() || undefined
+      }, {
+        onSuccess: handleCancelFeedEdit
+      });
+    }
+  };
+
   const getFeedLabel = (feed: { title?: string | null; url: string }) => {
     if (feed.title) return feed.title;
     try { return new URL(feed.url).hostname.replace('www.', ''); } catch { return feed.url; }
@@ -240,20 +268,66 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
                     </p>
                     <div className="user-list">
                       {feeds?.map(feed => (
-                        <div key={feed.id} className="user-list-item">
-                          <div className="user-list-info">
-                            <span className="user-list-email">{getFeedLabel(feed)}</span>
-                            <span className="user-role-badge" title={feed.url}>{new URL(feed.url).hostname}</span>
+                        editingFeedId === feed.id ? (
+                          <div key={feed.id} className="add-topic-form">
+                            <input
+                              type="url"
+                              className="topic-input"
+                              placeholder="RSS URL"
+                              value={editFeedUrl}
+                              onChange={(e) => setEditFeedUrl(e.target.value)}
+                              disabled={isUpdatingFeed}
+                            />
+                            <input
+                              type="text"
+                              className="topic-input"
+                              placeholder="Ad (isteğe bağlı)"
+                              value={editFeedTitle}
+                              onChange={(e) => setEditFeedTitle(e.target.value)}
+                              disabled={isUpdatingFeed}
+                            />
+                            <div className="add-topic-buttons">
+                              <button
+                                className="cancel-add-button"
+                                onClick={handleCancelFeedEdit}
+                                disabled={isUpdatingFeed}
+                              >
+                                İptal
+                              </button>
+                              <button
+                                className="confirm-add-button"
+                                onClick={handleSaveFeedEdit}
+                                disabled={isUpdatingFeed || !editFeedUrl.trim()}
+                              >
+                                {isUpdatingFeed ? 'Kaydediliyor...' : 'Kaydet'}
+                              </button>
+                            </div>
                           </div>
-                          <button
-                            className="delete-topic-button"
-                            onClick={() => handleDeleteFeed(feed.id, getFeedLabel(feed))}
-                            disabled={isDeletingFeed}
-                            title="Beslemeyi sil"
-                          >
-                            <TrashIcon />
-                          </button>
-                        </div>
+                        ) : (
+                          <div key={feed.id} className="user-list-item">
+                            <div className="user-list-info">
+                              <span className="user-list-email">{getFeedLabel(feed)}</span>
+                              <span className="user-role-badge" title={feed.url}>{new URL(feed.url).hostname}</span>
+                            </div>
+                            <div className="topic-actions">
+                              <button
+                                className="edit-topic-button"
+                                onClick={() => handleEditFeed(feed.id, feed.url, feed.title)}
+                                title="Beslemeyi düzenle"
+                              >
+                                <PencilIcon />
+                              </button>
+                              <button
+                                className="delete-topic-button"
+                                onClick={() => handleDeleteFeed(feed.id, getFeedLabel(feed))}
+                                disabled={isDeletingFeed}
+                                title="Beslemeyi sil"
+                              >
+                                <TrashIcon />
+                              </button>
+                            </div>
+                          </div>
+                        )
                       ))}
                     </div>
                     {!showAddFeed ? (

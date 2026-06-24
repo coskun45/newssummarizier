@@ -1,88 +1,131 @@
 ---
 name: implement-requirement
-description: Implement a new feature or requirement end-to-end across the Bülten stack (FastAPI backend + React frontend). Use when asked to add a capability, endpoint, field, filter, setting, or UI feature that touches one or both layers. Walks the change through the project's layered conventions and finishes with docs + verification.
+description: Implement a new feature or requirement end-to-end across the Bülten stack (FastAPI backend + React frontend) using a 4-phase lifecycle — analyze, plan & get approval, implement, principal-level review. Use when asked to add a capability, endpoint, field, filter, setting, or UI feature that touches one or both layers.
 ---
 
-# Implement a Requirement (end-to-end)
+# Implement a Requirement (4-phase lifecycle)
 
 Bülten is a two-service app: a Python **FastAPI** backend (`backend/`) and a **React + Vite +
-TypeScript** frontend (`frontend/`), talking over `/api`. Most requirements cut across layers in a
-fixed order — follow it so the change stays consistent with the existing code and the `.claude/rules/`.
+TypeScript** frontend (`frontend/`), talking over `/api`. Detailed, path-scoped conventions live in
+**`.claude/rules/`** and auto-load when you edit matching files — lean on them throughout.
 
-Don't build everything at once. Decide which layers the requirement actually touches, then implement
-**bottom-up on the backend, then bottom-up on the frontend**, so each layer compiles against the one
-below it.
+Run the requirement through these **four phases in order**. Do not skip ahead — especially, **do not
+write code before the plan is approved (Phase 2)**.
 
-## 1. Clarify and scope
+---
 
-- Restate the requirement in one sentence and identify which layers it hits: **DB model? CRUD? API
-  route? LangGraph agent? frontend types/api/hooks/components? config/env?**
-- Find the closest existing example and mirror it — e.g. a new filter resembles the `is_read` /
-  `priority` filters already threaded through `crud.get_articles` → `articles` route → `ArticleFilters`
-  type → `useArticles`. Reusing an existing path beats inventing a new shape.
-- If the requirement is ambiguous (which model field, which UI surface, admin-only or not), ask before
-  building.
+## Phase 1 — Requirement analysis
 
-## 2. Backend — bottom-up
+The requirement comes from **the developer's request in this conversation** (no ticket system / file).
 
-Implement only the layers the requirement needs, in this order. Each has a governing rule under
-`backend/.claude/rules/` — read it first.
+- Restate the requirement in one sentence and **discuss it with the developer**: clarify scope,
+  acceptance criteria, edge cases, and which surfaces it touches.
+- Surface ambiguity explicitly and ask — e.g. which model field, admin-only or all users, which UI
+  surface, what happens on empty/error input, backward-compatibility with existing data.
+- Identify the affected layers: **DB model? CRUD? API route? LangGraph agent? frontend
+  types/api/hooks/components? config/env?**
+- Find the closest existing example to mirror (e.g. a new article filter resembles the `is_read` /
+  `priority` filters already threaded through `crud.get_articles` → `articles` route →
+  `ArticleFilters` type → `useArticles`).
 
-1. **Model** (`app/db/models.py`) — add/alter columns following the `db` rule (declarative `Column`,
-   `server_default=func.now()`, free-form status strings with inline comments). A schema change to an
-   existing table needs a hand-written `backend/migrate_*.py` (SQLite `init_db()` won't alter tables).
-2. **CRUD** (`app/db/crud.py`) — add a `db: Session`-first function; this is the single DB-access layer
-   both routes and agent nodes call.
-3. **Route** (`app/api/routes/*.py`) — add the endpoint with `Depends(get_db)`, Pydantic request/
-   response models (`from_attributes = True`), `HTTPException` for 404/400, bounded `Query(...)` params.
-   New router → register it in `app/main.py` with `dependencies=auth_dep` unless it's public. See the
-   `api-routes` rule.
-4. **Agent** (`app/agents/`, `app/services/summary_service.py`) — only if the requirement changes the
-   processing pipeline. Nodes return partial state, manage their own `SessionLocal()`, log via
-   `crud.create_log`, set `should_continue`, and route LLM calls through `summary_service`. See the
-   `langgraph-agent` rule.
-5. **Config** (`app/core/config.py`) — new tunable → typed Pydantic field with a default; then mirror it
-   into `backend/.env.example` and the Docker env table (see the root `config-and-deploy` rule).
+**Do not proceed until the requirement is clearly understood and agreed with the developer.**
 
-## 3. Frontend — bottom-up
+## Phase 2 — Plan & get approval
 
-Mirror the backend contract, in this order (rules under `frontend/.claude/rules/`):
+**Do not code yet.** Produce a written implementation plan and **submit it to the developer for
+approval**.
 
-1. **Types** (`src/types/index.ts`) — add/extend the interface to match the backend Pydantic response
-   exactly. `import type` everywhere.
-2. **API layer** (`src/services/api.ts`) — add the call to the matching typed group (`articlesApi`,
-   `feedsApi`, ...), returning `response.data`. No `axios` outside this file; auth is interceptor-driven.
-3. **Hooks** (`src/hooks/useApi.ts`) — wrap reads in `useQuery`, writes in `useMutation`; use
-   array query keys; invalidate every affected key in `onSuccess`. See the `data-fetching` rule.
+The plan should cover:
+
+- The layers to change, in implementation order (backend bottom-up, then frontend bottom-up — see
+  Phase 3), with the concrete files/functions touched.
+- Data/schema changes and whether a `backend/migrate_*.py` is needed.
+- New config/env vars and the three places they must land.
+- API contract (endpoint, method, request/response shape) and the matching frontend type.
+- Risks, trade-offs, and anything deferred or out of scope.
+
+**Wait for the developer's explicit approval (or requested changes) before Phase 3.** If they ask for
+changes, revise the plan and re-submit.
+
+## Phase 3 — Implement
+
+Build the approved plan. Implement only the layers it needs, **bottom-up on the backend, then
+bottom-up on the frontend**, so each layer compiles against the one below it.
+
+### Backend (rules under `backend/.claude/rules/`)
+
+1. **Model** (`app/db/models.py`) — declarative `Column`, `server_default=func.now()`, free-form status
+   strings with inline comments (`db` rule). Altering an existing table needs a hand-written
+   `backend/migrate_*.py` — `init_db()` only creates missing tables.
+2. **CRUD** (`app/db/crud.py`) — add a `db: Session`-first function; the single DB-access layer both
+   routes and agent nodes call.
+3. **Route** (`app/api/routes/*.py`) — `Depends(get_db)`, Pydantic request/response models
+   (`from_attributes = True`), `HTTPException` for 404/400, bounded `Query(...)`. New router → register
+   in `app/main.py` with `dependencies=auth_dep` unless public (`api-routes` rule).
+4. **Agent** (`app/agents/`, `app/services/summary_service.py`) — only if the processing pipeline
+   changes. Nodes return partial state, own their `SessionLocal()`, log via `crud.create_log`, set
+   `should_continue`, route LLM calls through `summary_service` (`langgraph-agent` rule).
+5. **Config** (`app/core/config.py`) — typed Pydantic field with a default; mirror into
+   `backend/.env.example` **and** the Docker env table in `README.md` (`config-and-deploy` rule).
+
+### Frontend (rules under `frontend/.claude/rules/`)
+
+1. **Types** (`src/types/index.ts`) — match the backend Pydantic response exactly; `import type`.
+2. **API layer** (`src/services/api.ts`) — add to the matching typed group, return `response.data`. No
+   `axios` outside this file; auth is interceptor-driven.
+3. **Hooks** (`src/hooks/useApi.ts`) — `useQuery` for reads, `useMutation` for writes; array query keys;
+   invalidate every affected key in `onSuccess` (`data-fetching` rule).
 4. **Component** (`src/components/<Name>/`) — one folder + co-located CSS, typed `interface Props`,
-   consume data via hooks (never the api layer directly), German UI text, `date-fns` with `tr` locale.
-   See the `components` rule.
+   consume data via hooks (never the api layer directly), German UI text, `date-fns` with `tr` locale
+   (`components` rule).
 
-## 4. Verify it works
+Then **verify it runs**: backend via `uvicorn app.main:app --reload` + `http://localhost:8000/docs` or
+`curl` (test 404/400 paths too); frontend via `npm run dev`, driving the real UI and watching the
+`/api` call + React Query cache. Prefer the `/run` and `/verify` skills over assuming.
 
-- **Backend:** import-check and run — `cd backend && uvicorn app.main:app --reload`; exercise the new
-  endpoint via `http://localhost:8000/docs` or `curl`. Confirm 404/400 paths, not just the happy path.
-- **Frontend:** `cd frontend && npm run dev`; drive the actual UI surface. Watch the network tab for the
-  `/api` call and React Query cache updates.
-- Prefer running the real app over assuming — see the `/run` and `/verify` skills.
+## Phase 4 — Principal-level review
 
-## 5. Wrap up
+Review your own change as a **principal software engineer** before handing back. Improve **security**
+and **code quality**, then re-verify anything you touch.
 
-- Run `/update-docs` to sync `README.md` + `backend/.env.example` if you changed behavior, an endpoint,
-  config, dependencies, or project structure.
-- If you discovered a new recurring convention or gotcha while implementing, capture it with `/add-rule`.
+**Security:**
+
+- **AuthZ/AuthN** — protected routers carry `dependencies=auth_dep`; admin-only actions check
+  `require_admin`. No endpoint silently public.
+- **Input validation** — bounded/validated `Query`/Pydantic params; reject malformed input with 400,
+  don't trust client values.
+- **Injection / data exposure** — go through `crud` (parameterized SQLAlchemy), never string-built SQL;
+  response models don't leak fields like `hashed_password` or raw internals.
+- **Secrets** — nothing hardcoded; keys come from `config.py`/env; no real secret in `.env.example`,
+  README, logs, or commits. No secret/PII written to `ProcessingLog`.
+- **Frontend** — token handling stays in the axios interceptor; no secret in client code; avoid
+  unsanitized `dangerouslySetInnerHTML`.
+
+**Code quality:**
+
+- Follows the layered conventions and the relevant `.claude/rules/` (no `db.query` in routes, no
+  `axios` in components, no bypassed layers).
+- No duplication — reuse existing crud/api/hooks instead of re-implementing.
+- Errors handled, not swallowed; one failure doesn't break a whole agent run (per-article try/except).
+- Mutations invalidate the right React Query keys; no stale UI.
+- Naming/structure match surrounding code; dead code and debug prints removed.
+
+Fix what you find (or, for anything material, raise it back to the developer). Then run `/code-review`
+for an independent pass on the diff.
+
+## Wrap up
+
+- Run `/update-docs` to sync `README.md` + `backend/.env.example` if behavior, an endpoint, config,
+  dependencies, or project structure changed.
+- Capture any new recurring convention/gotcha with `/add-rule`.
 - Don't commit `backend/news_summary.db` or a real `.env`.
 
 ## Common mistakes
 
-- **Top-down instead of bottom-up** — building the route before the CRUD/model, or the component before
-  the type/api/hook, leaves layers referencing things that don't exist yet.
-- **Bypassing the layer** — raw `db.query` in a route, `axios` in a component, or a fetch outside
-  `src/services/api.ts`. Go through crud / the api layer / hooks.
-- **Forgetting query invalidation** — a mutation that doesn't invalidate the affected `useQuery` keys
-  leaves stale UI.
-- **Schema change without a migration** — altering an existing table needs a `migrate_*.py`; `init_db()`
-  only creates missing tables.
-- **Adding a config field in only one place** — `config.py`, `.env.example`, and the Docker env table
-  must agree.
-- **Skipping verification** — run the app and exercise the change; don't assume it works.
+- **Coding before the plan is approved** — Phase 2 approval is a gate, not a formality.
+- **Skipping the requirement discussion** — building the wrong thing fast is still wrong.
+- **Top-down instead of bottom-up** — route before crud/model, or component before type/api/hook.
+- **Bypassing the layer** — raw `db.query` in a route, `axios` in a component, fetch outside `api.ts`.
+- **Forgetting query invalidation** — a mutation that doesn't invalidate leaves stale UI.
+- **Schema change without a migration** — altering an existing table needs a `migrate_*.py`.
+- **Treating Phase 4 as optional** — the security + quality review is part of the lifecycle.

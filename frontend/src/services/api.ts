@@ -92,6 +92,14 @@ export const feedsApi = {
         return response.data;
     },
 
+    update: async (
+        feedId: number,
+        data: { url?: string; title?: string; description?: string; is_active?: boolean }
+    ): Promise<Feed> => {
+        const response = await api.put(`/feeds/${feedId}`, data);
+        return response.data;
+    },
+
     refresh: async (feedId: number): Promise<{ status: string; feed_id: number }> => {
         const response = await api.post(`/feeds/${feedId}/refresh`);
         return response.data;
