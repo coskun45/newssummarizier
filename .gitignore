@@ -7,3 +7,8 @@ frontend/node_modules
 **/*.pyo
 .env
 backend/app/__pycache__
+
+# SQLite veritabanı dosyaları — deploy'da git pull canlı DB'yi ezmesin diye takip edilmez
+backend/news_summary.db
+backend/checkpoints.db
+*.db
