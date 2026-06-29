@@ -115,7 +115,7 @@ button svg {
   color: #2d3748;
 }
 
-.modal-content {
+.new-articles-modal .modal-content {
   padding: 1.5rem;
   overflow-y: auto;
   flex: 1;
