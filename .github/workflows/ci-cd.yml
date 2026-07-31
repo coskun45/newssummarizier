@@ -61,6 +61,11 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd /root/newssummarizier
+            # One-time migration: move the legacy git-tracked db out of the working
+            # tree before reset --hard runs, so it can never delete/overwrite live data again.
+            mkdir -p data
+            [ -f backend/news_summary.db ] && [ ! -f data/news_summary.db ] && mv backend/news_summary.db data/news_summary.db
+            [ -f backend/checkpoints.db ] && [ ! -f data/checkpoints.db ] && mv backend/checkpoints.db data/checkpoints.db
             git fetch origin
             git reset --hard origin/master
             export APP_VERSION=1.0.$(git rev-list --count HEAD)

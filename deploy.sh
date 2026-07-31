@@ -27,6 +27,18 @@ command -v git >/dev/null 2>&1    || error "Git kurulu değil."
 if [ -d "$APP_DIR/.git" ]; then
     warn "Repo mevcut, güncelleniyor..."
     cd "$APP_DIR"
+
+    # Tek seferlik göç: eski git-tracked db dosyalarını çalışma ağacından
+    # çıkar, yoksa 'git pull' onları canlı veriyle birlikte silip üzerine yazar.
+    mkdir -p data
+    if [ -f backend/news_summary.db ] && [ ! -f data/news_summary.db ]; then
+        mv backend/news_summary.db data/news_summary.db
+        info "news_summary.db → data/ dizinine taşındı"
+    fi
+    if [ -f backend/checkpoints.db ] && [ ! -f data/checkpoints.db ]; then
+        mv backend/checkpoints.db data/checkpoints.db
+    fi
+
     git pull
 else
     warn "Repo klonlanıyor..."
@@ -118,12 +130,14 @@ info "CORS_ORIGINS → http://$SERVER_IP"
 sed -i '/# TODO: Replace YOUR_SERVER_IP/d' docker-compose.yml
 
 # ── 6. SQLite DB dosyası ve izinleri ─────────────────────────────────────────
-DB_FILE="$APP_DIR/backend/news_summary.db"
+DATA_DIR="$APP_DIR/data"
+DB_FILE="$DATA_DIR/news_summary.db"
+mkdir -p "$DATA_DIR"
 if [ ! -f "$DB_FILE" ]; then
     touch "$DB_FILE"
     info "news_summary.db oluşturuldu"
 fi
-chown 1001:1001 "$DB_FILE"
+chown -R 1001:1001 "$DATA_DIR"
 info "DB dosyası izinleri ayarlandı (UID 1001)"
 
 # ── 7. Build & Start ──────────────────────────────────────────────────────────

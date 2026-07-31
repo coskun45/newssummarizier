@@ -203,14 +203,16 @@ docker compose ps
 
 ### Veritabanı Kalıcılığı
 
-SQLite veritabanı host'a volume olarak mount edilir:
+SQLite veritabanı ve LangGraph checkpoint'leri host'taki `./data/` dizinine volume olarak mount
+edilir (repo'nun git ağacının dışında, asla commit'lenmez):
 
 ```yaml
 volumes:
-  - ./backend/news_summary.db:/app/data/news_summary.db
+  - ./data:/app/data
 ```
 
-Bu şu anlama gelir: Veriler `docker compose down` sonrasında bile korunur. Sadece `docker compose down -v` veritabanını siler.
+Bu şu anlama gelir: Veriler `docker compose down` ve `git pull`/`reset --hard` sonrasında bile
+korunur. Sadece `./data` dizinini silmek veritabanını siler.
 
 ### Proje Yapısı (Docker ile)
 
@@ -494,7 +496,7 @@ docker compose up -d
 ```bash
 # Veritabanını sıfırlayın (Dikkat: tüm veriler silinir!)
 docker compose down
-rm backend/news_summary.db
+rm data/news_summary.db
 docker compose up -d
 ```
 
