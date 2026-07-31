@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from app.db.database import get_db
 from app.db import models, crud
 from app.core.security import verify_password, hash_password, create_access_token
+from app.core import rate_limit
 from app.api.deps import get_current_user, require_admin
 
 router = APIRouter()
@@ -49,8 +50,16 @@ class CreateUserRequest(BaseModel):
 @router.post("/login", response_model=TokenResponse)
 def login(request: LoginRequest, db: Session = Depends(get_db)):
     """Authenticate user and return JWT token."""
+    locked_seconds = rate_limit.seconds_until_unlocked(request.email)
+    if locked_seconds > 0:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many failed login attempts. Try again in {int(locked_seconds // 60) + 1} minute(s).",
+        )
+
     user = crud.get_user_by_email(db, request.email)
     if not user or not verify_password(request.password, user.hashed_password):
+        rate_limit.record_failure(request.email)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
@@ -60,6 +69,7 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Account is inactive",
         )
+    rate_limit.record_success(request.email)
     token = create_access_token({"sub": str(user.id), "email": user.email, "role": user.role})
     return TokenResponse(access_token=token, user=UserResponse.model_validate(user))
 

@@ -2,7 +2,10 @@
 Application configuration using Pydantic Settings.
 """
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import List
+from pydantic import model_validator
+from typing import List, Optional
+
+_DEFAULT_JWT_SECRET = "change-me-in-production-use-32-char-minimum-secret-key"
 
 
 class Settings(BaseSettings):
@@ -51,14 +54,28 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5174,http://localhost:3000"
 
     # JWT Authentication
-    jwt_secret_key: str = "change-me-in-production-use-32-char-minimum-secret-key"
+    jwt_secret_key: str = _DEFAULT_JWT_SECRET
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 480  # 8 hours
-    
+
+    # Initial admin account (seeded once on first startup if both are set — see db/seed.py)
+    admin_email: Optional[str] = None
+    admin_password: Optional[str] = None
+
     @property
     def cors_origins_list(self) -> List[str]:
         """Parse CORS origins string into list."""
         return [origin.strip() for origin in self.cors_origins.split(",")]
+
+    @model_validator(mode="after")
+    def _reject_default_jwt_secret_outside_debug(self) -> "Settings":
+        """A forgeable, well-known JWT secret is only tolerable in local/dev mode."""
+        if not self.debug and self.jwt_secret_key == _DEFAULT_JWT_SECRET:
+            raise ValueError(
+                "JWT_SECRET_KEY is unset (using the known default placeholder) while DEBUG=False. "
+                "Set a unique JWT_SECRET_KEY before running in a non-debug environment."
+            )
+        return self
 
 
 # Global settings instance

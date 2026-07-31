@@ -55,10 +55,20 @@ if [ ! -f "$ENV_FILE" ]; then
     echo ""
     read -p "  OpenAI API Key girin (sk-proj-...): " OPENAI_KEY
     echo ""
+    read -p "  İlk admin e-posta adresi girin: " ADMIN_EMAIL_INPUT
+    ADMIN_PASSWORD_GENERATED=$(python3 -c "import secrets; print(secrets.token_urlsafe(18))")
+    echo ""
+    info "İlk admin şifresi üretildi: $ADMIN_PASSWORD_GENERATED"
+    warn "Bu şifreyi şimdi bir yere kaydet — tekrar gösterilmeyecek."
+    echo ""
 
     cat > "$ENV_FILE" <<EOF
 # OpenAI
 OPENAI_API_KEY=$OPENAI_KEY
+
+# İlk admin hesabı (yalnızca veritabanı ilk kez seed edilirken kullanılır)
+ADMIN_EMAIL=$ADMIN_EMAIL_INPUT
+ADMIN_PASSWORD=$ADMIN_PASSWORD_GENERATED
 
 # Database
 DATABASE_URL=sqlite:///./news_summary.db

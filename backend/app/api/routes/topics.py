@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from pydantic import BaseModel
 from app.db.database import get_db
-from app.db import crud
+from app.db import crud, models
+from app.api.deps import require_admin
 import random
 
 router = APIRouter()
@@ -65,9 +66,13 @@ async def list_topics(feed_id: Optional[int] = None, db: Session = Depends(get_d
 
 
 @router.post("/", response_model=TopicResponse)
-async def create_topic(topic: TopicCreate, db: Session = Depends(get_db)):
+async def create_topic(
+    topic: TopicCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_admin),
+):
     """
-    Create a new topic.
+    Create a new topic (admin only).
     """
     # Check if topic with same name already exists
     existing_topic = crud.get_topic_by_name(db, topic.name)
@@ -116,9 +121,14 @@ async def get_topic(topic_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/{topic_id}", response_model=TopicResponse)
-async def update_topic(topic_id: int, topic: TopicUpdate, db: Session = Depends(get_db)):
+async def update_topic(
+    topic_id: int,
+    topic: TopicUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_admin),
+):
     """
-    Update a topic.
+    Update a topic (admin only).
     """
     # Check if topic exists
     existing_topic = crud.get_topic(db, topic_id)
@@ -156,9 +166,13 @@ async def update_topic(topic_id: int, topic: TopicUpdate, db: Session = Depends(
 
 
 @router.delete("/{topic_id}")
-async def delete_topic(topic_id: int, db: Session = Depends(get_db)):
+async def delete_topic(
+    topic_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_admin),
+):
     """
-    Delete a topic.
+    Delete a topic (admin only).
     """
     # Check if topic exists
     topic = crud.get_topic(db, topic_id)

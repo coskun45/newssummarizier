@@ -6,7 +6,9 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from pydantic import BaseModel, HttpUrl
 from app.db.database import get_db
-from app.db import crud
+from app.db import crud, models
+from app.api.deps import require_admin
+from app.core.url_safety import assert_safe_feed_url
 from datetime import datetime
 
 router = APIRouter()
@@ -42,15 +44,21 @@ class FeedResponse(BaseModel):
 
 
 @router.post("/", response_model=FeedResponse)
-async def create_feed(feed: FeedCreate, db: Session = Depends(get_db)):
+async def create_feed(
+    feed: FeedCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_admin),
+):
     """
-    Create a new RSS feed.
+    Create a new RSS feed (admin only).
     """
+    assert_safe_feed_url(str(feed.url))
+
     # Check if feed already exists
     existing_feed = crud.get_feed_by_url(db, str(feed.url))
     if existing_feed:
         raise HTTPException(status_code=400, detail="Feed already exists")
-    
+
     # Create feed
     db_feed = crud.create_feed(
         db=db,
@@ -84,9 +92,14 @@ async def get_feed(feed_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/{feed_id}", response_model=FeedResponse)
-async def update_feed(feed_id: int, feed_update: FeedUpdate, db: Session = Depends(get_db)):
+async def update_feed(
+    feed_id: int,
+    feed_update: FeedUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_admin),
+):
     """
-    Update an existing RSS feed (URL, title, description, active state).
+    Update an existing RSS feed (URL, title, description, active state). Admin only.
     """
     feed = crud.get_feed(db, feed_id)
     if not feed:
@@ -96,6 +109,7 @@ async def update_feed(feed_id: int, feed_update: FeedUpdate, db: Session = Depen
 
     # Reject a URL change that collides with a different existing feed
     if new_url and new_url != feed.url:
+        assert_safe_feed_url(new_url)
         existing = crud.get_feed_by_url(db, new_url)
         if existing and existing.id != feed_id:
             raise HTTPException(status_code=400, detail="Feed already exists")
@@ -144,9 +158,13 @@ async def get_refresh_status(feed_id: int):
 
 
 @router.delete("/{feed_id}")
-async def delete_feed(feed_id: int, db: Session = Depends(get_db)):
+async def delete_feed(
+    feed_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_admin),
+):
     """
-    Delete a feed.
+    Delete a feed (admin only).
     """
     success = crud.delete_feed(db, feed_id)
     if not success:

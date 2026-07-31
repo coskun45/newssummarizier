@@ -196,7 +196,8 @@ docker compose ps
 | Değişken | Varsayılan | Açıklama |
 |---|---|---|
 | `OPENAI_API_KEY` | – | **(Zorunlu)** OpenAI API Key |
-| `JWT_SECRET_KEY` | `change-me-use-a-strong-secret-in-production` | JWT imza anahtarı |
+| `JWT_SECRET_KEY` | `change-me-use-a-strong-secret-in-production` | JWT imza anahtarı — **`DEBUG=false` iken varsayılan değerde bırakılırsa uygulama başlamayı reddeder** |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | – | İlk admin kullanıcısını oluşturmak için (ikisi de set edilmelidir). Boş bırakılırsa hiç admin oluşturulmaz — bkz. `db/seed.py` |
 | `DATABASE_URL` | `sqlite:////app/data/news_summary.db` | Container içinde veritabanı yolu |
 | `DEBUG` | `false` | Debug modu |
 | `CORS_ORIGINS` | `http://localhost,http://localhost:80` | İzin verilen CORS origin'leri |

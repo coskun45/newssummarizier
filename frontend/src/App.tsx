@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import Dashboard from './components/Dashboard/Dashboard';
 import Login from './components/Login/Login';
+import ToastContainer from './components/Toast/ToastContainer';
 import type { AuthUser } from './types';
 import './App.css';
 
@@ -34,6 +35,7 @@ function App() {
                 ? <Login onLoginSuccess={handleLoginSuccess} />
                 : <Dashboard currentUser={currentUser} onLogout={handleLogout} />
             }
+            <ToastContainer />
         </div>
     );
 }

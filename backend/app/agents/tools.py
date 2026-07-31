@@ -1,6 +1,7 @@
 """
 Tools for the news processing agents.
 """
+import asyncio
 import feedparser
 import trafilatura
 from trafilatura.metadata import extract_metadata
@@ -14,6 +15,11 @@ from app.core.config import settings
 from app.core.exceptions import RSSFetchError, ScrapingError
 
 logger = logging.getLogger(__name__)
+
+# Both feedparser and RobotFileParser do blocking, timeout-less network I/O under the hood.
+# Run them in a worker thread so a stalled remote server can't freeze the FastAPI event loop,
+# and bound them with an explicit timeout so a hang doesn't stall the caller indefinitely.
+NETWORK_CALL_TIMEOUT_SECONDS = 30
 
 
 def _extract_author(entry) -> Optional[str]:
@@ -64,10 +70,14 @@ async def fetch_rss_feed(feed_url: str) -> List[Dict[str, Any]]:
     """
     try:
         logger.info(f"Fetching RSS feed: {feed_url}")
-        
-        # Parse RSS feed
-        feed = feedparser.parse(feed_url)
-        
+
+        # feedparser.parse() is a blocking, timeout-less network call — run it off the event
+        # loop and bound it so a stalled feed server can't hang the whole app.
+        feed = await asyncio.wait_for(
+            asyncio.to_thread(feedparser.parse, feed_url),
+            timeout=NETWORK_CALL_TIMEOUT_SECONDS,
+        )
+
         if feed.bozo:
             logger.warning(f"RSS feed has parsing issues: {feed.bozo_exception}")
         
@@ -103,26 +113,36 @@ async def fetch_rss_feed(feed_url: str) -> List[Dict[str, Any]]:
         raise RSSFetchError(f"Failed to fetch RSS feed: {str(e)}")
 
 
-def check_robots_txt(url: str) -> bool:
+def _read_robots_txt(robots_url: str, url: str) -> bool:
+    """Blocking robots.txt fetch + check — always run via asyncio.to_thread, never directly."""
+    rp = RobotFileParser()
+    rp.set_url(robots_url)
+    rp.read()
+
+    user_agent = "NewsSummarizer/1.0"
+    return rp.can_fetch(user_agent, url)
+
+
+async def check_robots_txt(url: str) -> bool:
     """
     Check if URL is allowed by robots.txt.
-    
+
     Args:
         url: URL to check
-        
+
     Returns:
         True if allowed, False otherwise
     """
     try:
         parsed = urlparse(url)
         robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
-        
-        rp = RobotFileParser()
-        rp.set_url(robots_url)
-        rp.read()
-        
-        user_agent = "NewsSummarizer/1.0"
-        return rp.can_fetch(user_agent, url)
+
+        # RobotFileParser.read() is a blocking, timeout-less network call — run it off the
+        # event loop and bound it so a stalled/unreachable robots.txt host can't hang the app.
+        return await asyncio.wait_for(
+            asyncio.to_thread(_read_robots_txt, robots_url, url),
+            timeout=NETWORK_CALL_TIMEOUT_SECONDS,
+        )
     except Exception as e:
         logger.warning(f"Error checking robots.txt: {e}. Proceeding with caution.")
         return True  # Default to allowed if robots.txt check fails
@@ -159,24 +179,37 @@ async def extract_article_content(url: str) -> Tuple[Optional[str], Optional[str
 
     try:
         # Check robots.txt
-        if not check_robots_txt(url):
+        if not await check_robots_txt(url):
             logger.warning(f"URL not allowed by robots.txt: {url}")
             return None, None
 
         logger.info(f"Extracting content from: {url}")
+
+        # Be polite to the source server: wait between scrape requests.
+        if settings.scraping_delay > 0:
+            await asyncio.sleep(settings.scraping_delay)
 
         # Fetch the page with custom user agent
         headers = {
             "User-Agent": "NewsSummarizer/1.0 (+https://github.com/yourusername/news-summary)"
         }
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as response:
-                if response.status != 200:
-                    logger.warning(f"HTTP {response.status} for URL: {url}")
-                    return None, None
-
-                html = await response.text()
+        html: Optional[str] = None
+        attempts = max(1, settings.max_retries)
+        for attempt in range(1, attempts + 1):
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                        if response.status != 200:
+                            logger.warning(f"HTTP {response.status} for URL: {url}")
+                            return None, None
+                        html = await response.text()
+                break
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                if attempt >= attempts:
+                    raise
+                logger.warning(f"Transient error fetching {url} (attempt {attempt}/{attempts}): {e}. Retrying...")
+                await asyncio.sleep(settings.scraping_delay)
 
         # Author from page metadata — RSS feeds (e.g. DW) often omit it
         author = _extract_page_author(html)

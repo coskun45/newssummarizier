@@ -5,8 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List, Optional
-from app.api.deps import get_db
-from app.db import crud
+from app.api.deps import get_db, require_admin
+from app.db import crud, models
 
 router = APIRouter()
 
@@ -83,10 +83,11 @@ async def get_system_prompt(prompt_type: str, db: Session = Depends(get_db)):
 @router.post("/", response_model=SystemPromptResponse)
 async def create_system_prompt(
     prompt: SystemPromptCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_admin),
 ):
     """
-    Create or update a system prompt.
+    Create or update a system prompt (admin only).
     """
     db_prompt = crud.upsert_system_prompt(
         db,
@@ -109,10 +110,11 @@ async def create_system_prompt(
 async def update_system_prompt(
     prompt_type: str,
     prompt_update: SystemPromptUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_admin),
 ):
     """
-    Update an existing system prompt.
+    Update an existing system prompt (admin only).
     """
     db_prompt = crud.update_system_prompt(
         db,

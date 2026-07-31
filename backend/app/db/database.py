@@ -1,16 +1,30 @@
 """
 Database connection and session management.
 """
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
 
+_is_sqlite = "sqlite" in settings.database_url
+
 # Create database engine
 engine = create_engine(
     settings.database_url,
-    connect_args={"check_same_thread": False} if "sqlite" in settings.database_url else {}
+    connect_args={"check_same_thread": False} if _is_sqlite else {}
 )
+
+if _is_sqlite:
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragmas(dbapi_connection, connection_record):
+        """WAL lets readers and writers proceed concurrently instead of blocking on the
+        default rollback-journal lock; busy_timeout makes a writer wait for a released lock
+        instead of failing immediately with 'database is locked' under concurrent access
+        (interactive requests vs. the hourly background feed refresh)."""
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=5000")
+        cursor.close()
 
 # Create session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

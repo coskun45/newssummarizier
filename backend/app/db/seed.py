@@ -76,21 +76,33 @@ def seed_feed():
 
 
 def seed_admin_user():
-    """Seed the default admin user if it does not exist."""
+    """Seed the initial admin user from ADMIN_EMAIL/ADMIN_PASSWORD env vars, if set.
+
+    No hardcoded fallback credentials — if either is missing, skip and warn so the
+    operator knows no admin account was created (and must set one up manually via
+    another admin, or set the env vars and restart).
+    """
+    if not settings.admin_email or not settings.admin_password:
+        logger.warning(
+            "ADMIN_EMAIL/ADMIN_PASSWORD not set — skipping initial admin user seeding. "
+            "Set both env vars and restart to create the first admin account."
+        )
+        return
+
     db = SessionLocal()
     try:
-        existing = crud.get_user_by_email(db, "admin@gmail.com")
+        existing = crud.get_user_by_email(db, settings.admin_email)
         if not existing:
             from app.core.security import hash_password
             crud.create_user(
                 db=db,
-                email="admin@gmail.com",
-                hashed_password=hash_password("T9$kL7!qZ4@vR2#x"),
+                email=settings.admin_email,
+                hashed_password=hash_password(settings.admin_password),
                 role="admin",
             )
-            logger.info("Created default admin user: admin@gmail.com")
+            logger.info(f"Created initial admin user: {settings.admin_email}")
         else:
-            logger.info("Default admin user already exists.")
+            logger.info("Admin user already exists.")
     except Exception as e:
         logger.error(f"Error seeding admin user: {e}")
     finally:
