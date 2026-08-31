@@ -138,8 +138,8 @@ export const articlesApi = {
         const response = await api.post('/articles/unstar-all');
         return response.data;
     },
-    markBulkRead: async (articleIds?: number[]): Promise<{ marked_count: number }> => {
-        const body = articleIds ? { article_ids: articleIds } : { mark_all: true };
+    markBulkRead: async (articleIds?: number[], filters?: ArticleFilters): Promise<{ marked_count: number }> => {
+        const body = articleIds ? { article_ids: articleIds } : { mark_all: true, ...filters };
         const response = await api.post('/articles/mark-read-bulk', body);
         return response.data;
     },
@@ -165,6 +165,39 @@ export const articlesApi = {
     ): Promise<ArticleListResponse> => {
         const response = await api.get(`/articles/topic/${topicName}`, {
             params: { skip, limit },
+        });
+        return response.data;
+    },
+
+    getIdsByTopic: async (topicId: number): Promise<number[]> => {
+        const response = await api.get(`/articles/topic/${topicId}/ids`);
+        return response.data.article_ids;
+    },
+
+    deleteAllByTopic: async (topicId: number, feedIds?: number[]): Promise<{ deleted_count: number }> => {
+        const response = await api.post(`/articles/topic/${topicId}/delete-all`, null, {
+            params: feedIds && feedIds.length > 0 ? { feed_ids: feedIds.join(',') } : {},
+        });
+        return response.data;
+    },
+
+    archiveAllByTopic: async (topicId: number, feedIds?: number[]): Promise<{ archived_count: number }> => {
+        const response = await api.post(`/articles/topic/${topicId}/archive-all`, null, {
+            params: feedIds && feedIds.length > 0 ? { feed_ids: feedIds.join(',') } : {},
+        });
+        return response.data;
+    },
+
+    deleteAllUnimportant: async (feedIds?: number[]): Promise<{ deleted_count: number }> => {
+        const response = await api.post('/articles/unimportant/delete-all', null, {
+            params: feedIds && feedIds.length > 0 ? { feed_ids: feedIds.join(',') } : {},
+        });
+        return response.data;
+    },
+
+    archiveAllUnimportant: async (feedIds?: number[]): Promise<{ archived_count: number }> => {
+        const response = await api.post('/articles/unimportant/archive-all', null, {
+            params: feedIds && feedIds.length > 0 ? { feed_ids: feedIds.join(',') } : {},
         });
         return response.data;
     },

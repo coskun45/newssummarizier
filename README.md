@@ -270,6 +270,10 @@ Bulten/
   - Query params: `skip`, `limit`, `topic_ids`, `search`, `status`
 - `GET /api/articles/{id}` - Tek bir makale
 - `GET /api/articles/topic/{topic_name}` - Konuya göre makaleler
+- `POST /api/articles/topic/{topic_id}/delete-all` - Konudaki tüm okunmamış makaleleri sil
+- `POST /api/articles/topic/{topic_id}/archive-all` - Konudaki tüm okunmamış makaleleri arşive gönder
+- `POST /api/articles/unimportant/delete-all` - Tüm okunmamış önemsiz makaleleri sil
+- `POST /api/articles/unimportant/archive-all` - Tüm okunmamış önemsiz makaleleri arşive gönder
 
 #### Özetler
 

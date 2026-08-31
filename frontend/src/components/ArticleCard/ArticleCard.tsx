@@ -17,22 +17,33 @@ interface ArticleCardProps {
   article: Article;
   isSelected?: boolean;
   onToggleSelect?: (id: number) => void;
+  onDeleted?: (id: number) => void;
   isArchiveView?: boolean;
   selectable?: boolean;
 }
 
 
-function ArticleCard({ article, isSelected = false, onToggleSelect, isArchiveView = false, selectable = false }: ArticleCardProps) {
+function ArticleCard({ article, isSelected = false, onToggleSelect, onDeleted, isArchiveView = false, selectable = false }: ArticleCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [showContent, setShowContent] = useState(false);
   const [summaryType, setSummaryType] = useState<'brief' | 'standard' | 'detailed'>('standard');
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const deleteArticleMutation = useDeleteArticle();
   const setStarredMutation = useSetArticleStarred();
 
   const handleToggleExpand = () => {
     setExpanded(!expanded);
+  };
+
+  const handleCopySummary = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // clipboard unavailable — ignore
+    }
   };
 
   const { data: summaries, isLoading: summaryLoading } = useSummaries(
@@ -69,7 +80,9 @@ function ArticleCard({ article, isSelected = false, onToggleSelect, isArchiveVie
       <button
         className="delete-icon-btn"
         title="Sil"
-        onClick={() => setShowDeleteConfirm(true)}
+        onClick={() => {
+          deleteArticleMutation.mutate(article.id, { onSuccess: () => onDeleted?.(article.id) });
+        }}
         disabled={deleteArticleMutation.isPending}
       >
         <svg
@@ -101,29 +114,6 @@ function ArticleCard({ article, isSelected = false, onToggleSelect, isArchiveVie
         {article.is_starred ? '★' : '☆'}
       </button>
 
-      {showDeleteConfirm && (
-        <div className="delete-confirm-popup" style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: '#fff', padding: 24, borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.2)', minWidth: 280, textAlign: 'center' }}>
-            <p>Bu makaleyi silmek istediğinize emin misiniz?</p>
-            <button
-              onClick={() => {
-                deleteArticleMutation.mutate(article.id);
-                setShowDeleteConfirm(false);
-              }}
-              style={{ marginRight: 12, background: '#e53935', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 4, cursor: 'pointer' }}
-              disabled={deleteArticleMutation.isPending}
-            >
-              Sil
-            </button>
-            <button
-              onClick={() => setShowDeleteConfirm(false)}
-              style={{ background: '#ccc', color: '#333', border: 'none', padding: '8px 16px', borderRadius: 4, cursor: 'pointer' }}
-            >
-              Vazgeç
-            </button>
-          </div>
-        </div>
-      )}
       <div className="article-header">
         <h2 className="article-title">
           {!article.is_read && <span className="unread-dot" title="Okunmadı" />}
@@ -192,19 +182,30 @@ function ArticleCard({ article, isSelected = false, onToggleSelect, isArchiveVie
 
       {expanded && (
         <div className="article-summary">
-          {availableTypes.length > 1 && (
-            <div className="summary-controls">
-              {availableTypes.map((t) => (
-                <button
-                  key={t}
-                  className={`summary-type-btn ${effectiveType === t ? 'active' : ''}`}
-                  onClick={() => setSummaryType(t)}
-                >
-                  {SUMMARY_LABELS[t]}
-                </button>
-              ))}
-            </div>
-          )}
+          <div className="summary-header">
+            {availableTypes.length > 1 && (
+              <div className="summary-controls">
+                {availableTypes.map((t) => (
+                  <button
+                    key={t}
+                    className={`summary-type-btn ${effectiveType === t ? 'active' : ''}`}
+                    onClick={() => setSummaryType(t)}
+                  >
+                    {SUMMARY_LABELS[t]}
+                  </button>
+                ))}
+              </div>
+            )}
+            {summary && (
+              <button
+                className={`btn btn-outline btn-sm copy-summary-btn${copied ? ' copy-summary-btn--copied' : ''}`}
+                onClick={() => handleCopySummary(summary.summary_text)}
+                title={copied ? 'Kopyalandı' : 'Özeti kopyala'}
+              >
+                {copied ? '✅ Kopyalandı' : '📋 Kopyala'}
+              </button>
+            )}
+          </div>
 
           {summaryLoading ? (
             <p className="text-muted">⏳ Özet yükleniyor...</p>

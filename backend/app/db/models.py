@@ -130,6 +130,15 @@ class Settings(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class DeletedArticleUrl(Base):
+    """Tombstone for a URL the user explicitly deleted. Checked during RSS
+    ingestion so a feed that still lists the item doesn't recreate it."""
+    __tablename__ = "deleted_article_urls"
+
+    url = Column(String, primary_key=True)
+    deleted_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class User(Base):
     """Application user model."""
     __tablename__ = "users"

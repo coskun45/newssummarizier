@@ -12,16 +12,25 @@ from app.db import crud, models
 
 router = APIRouter()
 
+
+def _parse_comma_ids(raw: Optional[str], field_name: str) -> Optional[List[int]]:
+    """Parse a comma-separated query/body string of ids into a list of ints."""
+    if not raw:
+        return None
+    try:
+        return [int(v) for v in raw.split(",")]
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid {field_name} format")
+
+
 @router.delete("/{article_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_article(article_id: int, db: Session = Depends(get_db)):
     """
-    Delete an article by ID.
+    Delete an article by ID. Its URL is tombstoned so the next feed refresh
+    doesn't recreate it if the RSS feed still lists the item.
     """
-    article = crud.get_article(db, article_id)
-    if not article:
+    if not crud.delete_article(db, article_id):
         raise HTTPException(status_code=404, detail="Article not found")
-    db.delete(article)
-    db.commit()
     return None
 
 
@@ -88,21 +97,8 @@ async def list_articles(
     """
     List articles with optional filtering.
     """
-    # Parse topic IDs
-    topic_id_list = None
-    if topic_ids:
-        try:
-            topic_id_list = [int(tid) for tid in topic_ids.split(",")]
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid topic IDs format")
-
-    # Parse feed IDs
-    feed_id_list = None
-    if feed_ids:
-        try:
-            feed_id_list = [int(fid) for fid in feed_ids.split(",")]
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid feed IDs format")
+    topic_id_list = _parse_comma_ids(topic_ids, "topic IDs")
+    feed_id_list = _parse_comma_ids(feed_ids, "feed IDs")
 
     # Get articles
     articles = crud.get_articles(
@@ -194,6 +190,19 @@ class BulkReadRequest(BaseModel):
     """Request body for bulk mark-as-read."""
     article_ids: Optional[List[int]] = None
     mark_all: bool = False
+    # When mark_all=true, these scope it to the caller's active filters instead
+    # of every unread article in the database (mirrors list_articles' filters).
+    topic_ids: Optional[str] = None
+    search: Optional[str] = None
+    status: Optional[str] = None
+    feed_id: Optional[int] = None
+    feed_ids: Optional[str] = None
+    priority: Optional[str] = None
+    published_from: Optional[datetime] = None
+    published_to: Optional[datetime] = None
+    fetched_from: Optional[datetime] = None
+    fetched_to: Optional[datetime] = None
+    is_starred: Optional[bool] = None
 
 
 @router.post("/mark-read-bulk")
@@ -203,12 +212,30 @@ async def mark_articles_read_bulk(
 ):
     """
     Mark multiple articles as read. Provide article_ids for specific articles,
-    or set mark_all=true to mark all unread articles.
+    or set mark_all=true to mark all unread articles matching the given filters
+    (no filters = every unread article).
     """
     if not body.mark_all and not body.article_ids:
         raise HTTPException(status_code=400, detail="Provide article_ids or set mark_all=true")
     ids = None if body.mark_all else body.article_ids
-    count = crud.mark_articles_read_bulk(db, ids)
+    if ids is not None:
+        count = crud.mark_articles_read_bulk(db, ids)
+    else:
+        count = crud.mark_articles_read_bulk(
+            db,
+            None,
+            topic_ids=_parse_comma_ids(body.topic_ids, "topic IDs"),
+            search_query=body.search,
+            status=body.status,
+            feed_id=body.feed_id,
+            feed_ids=_parse_comma_ids(body.feed_ids, "feed IDs"),
+            priority=body.priority,
+            start_date=body.published_from,
+            end_date=body.published_to,
+            fetched_from=body.fetched_from,
+            fetched_to=body.fetched_to,
+            is_starred=body.is_starred,
+        )
     return {"marked_count": count}
 
 
@@ -233,14 +260,76 @@ async def unstar_all_articles(db: Session = Depends(get_db)):
     return {"unstarred_count": count}
 
 
+@router.get("/topic/{topic_id}/ids")
+async def get_article_ids_by_topic(topic_id: int, db: Session = Depends(get_db)):
+    """All article ids tagged with this topic, regardless of status (used for 'select all' by category)."""
+    if not crud.get_topic(db, topic_id):
+        raise HTTPException(status_code=404, detail="Topic not found")
+    return {"article_ids": crud.get_article_ids_by_topic(db, topic_id)}
+
+
+@router.post("/topic/{topic_id}/delete-all")
+async def delete_articles_by_topic(
+    topic_id: int,
+    feed_ids: Optional[str] = Query(None, description="Comma-separated feed IDs to scope the delete to"),
+    db: Session = Depends(get_db)
+):
+    """Delete every unread article tagged with this topic, optionally scoped to feed_ids."""
+    if not crud.get_topic(db, topic_id):
+        raise HTTPException(status_code=404, detail="Topic not found")
+    count = crud.delete_articles_by_topic(db, topic_id, feed_ids=_parse_comma_ids(feed_ids, "feed IDs"))
+    return {"deleted_count": count}
+
+
+@router.post("/topic/{topic_id}/archive-all")
+async def archive_articles_by_topic(
+    topic_id: int,
+    feed_ids: Optional[str] = Query(None, description="Comma-separated feed IDs to scope the archive to"),
+    db: Session = Depends(get_db)
+):
+    """Mark every unread article tagged with this topic as read, optionally scoped to feed_ids."""
+    if not crud.get_topic(db, topic_id):
+        raise HTTPException(status_code=404, detail="Topic not found")
+    count = crud.mark_articles_read_by_topic(db, topic_id, feed_ids=_parse_comma_ids(feed_ids, "feed IDs"))
+    return {"archived_count": count}
+
+
+@router.post("/unimportant/delete-all")
+async def delete_articles_unimportant(
+    feed_ids: Optional[str] = Query(None, description="Comma-separated feed IDs to scope the delete to"),
+    db: Session = Depends(get_db)
+):
+    """Delete every unread unimportant article, optionally scoped to feed_ids."""
+    count = crud.delete_articles_unimportant(db, feed_ids=_parse_comma_ids(feed_ids, "feed IDs"))
+    return {"deleted_count": count}
+
+
+@router.post("/unimportant/archive-all")
+async def archive_articles_unimportant(
+    feed_ids: Optional[str] = Query(None, description="Comma-separated feed IDs to scope the archive to"),
+    db: Session = Depends(get_db)
+):
+    """Mark every unread unimportant article as read, optionally scoped to feed_ids."""
+    count = crud.mark_articles_read_unimportant(db, feed_ids=_parse_comma_ids(feed_ids, "feed IDs"))
+    return {"archived_count": count}
+
+
 @router.get("/counts")
 async def get_article_counts(db: Session = Depends(get_db)):
-    """Get article counts grouped by priority and feed."""
+    """Get article counts grouped by priority and feed.
+
+    by_priority/unimportant_count are scoped to unread articles — they back the
+    sidebar filter badges, which are meant to read as "how many are left to
+    triage", so they should drop as articles are archived, not just deleted.
+    """
     from sqlalchemy import func
     priority_rows = db.query(
         models.Article.priority,
         func.count(models.Article.id)
-    ).filter(models.Article.priority.isnot(None)).group_by(models.Article.priority).all()
+    ).filter(
+        models.Article.priority.isnot(None),
+        models.Article.is_read.is_(False),
+    ).group_by(models.Article.priority).all()
 
     feed_rows = db.query(
         models.Article.feed_id,
@@ -248,7 +337,8 @@ async def get_article_counts(db: Session = Depends(get_db)):
     ).group_by(models.Article.feed_id).all()
 
     unimportant_count = db.query(func.count(models.Article.id)).filter(
-        models.Article.importance == "unimportant"
+        models.Article.importance == "unimportant",
+        models.Article.is_read.is_(False),
     ).scalar() or 0
 
     unread_count = db.query(func.count(models.Article.id)).filter(

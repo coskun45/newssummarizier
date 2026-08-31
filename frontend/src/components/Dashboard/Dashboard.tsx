@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useArticles, useArticleCounts, useTopics, useFeeds, useRefreshFeed, useMarkArticlesBulkRead, useUnstarAll } from '../../hooks/useApi';
+import { useArticles, useArticleCounts, useTopics, useFeeds, useRefreshFeed, useMarkArticlesBulkRead, useUnstarAll, useDeleteAllArticlesByTopic, useArchiveAllArticlesByTopic, useDeleteAllUnimportant, useArchiveAllUnimportant } from '../../hooks/useApi';
 import { appApi, feedsApi, articlesApi, summariesApi } from '../../services/api';
 import { downloadArticlesAsWord, buildWhatsAppMessage, copyToClipboard } from '../../utils/exportArticles';
 import ArticleList from '../ArticleList/ArticleList';
 import TopicFilter from '../TopicFilter/TopicFilter';
+import CategoryBulkActions from '../CategoryBulkActions/CategoryBulkActions';
 import FeedSidebar from '../FeedSidebar/FeedSidebar';
 import DateFilter from '../DateFilter/DateFilter';
 import SearchBar from '../SearchBar/SearchBar';
@@ -50,6 +51,10 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
   const { data: articleCounts } = useArticleCounts();
   const refreshFeedMutation = useRefreshFeed();
   const markBulkReadMutation = useMarkArticlesBulkRead();
+  const deleteAllByTopicMutation = useDeleteAllArticlesByTopic();
+  const archiveAllByTopicMutation = useArchiveAllArticlesByTopic();
+  const deleteAllUnimportantMutation = useDeleteAllUnimportant();
+  const archiveAllUnimportantMutation = useArchiveAllUnimportant();
 
   // Stop polling on unmount
   useEffect(() => {
@@ -247,11 +252,48 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
 
   const handleMarkSelected = () => {
     const ids = Array.from(selectedArticleIds);
-    markBulkReadMutation.mutate(ids, { onSuccess: () => setSelectedArticleIds(new Set()) });
+    markBulkReadMutation.mutate({ articleIds: ids }, { onSuccess: () => setSelectedArticleIds(new Set()) });
   };
 
   const handleMarkAll = () => {
-    markBulkReadMutation.mutate(undefined, { onSuccess: () => setSelectedArticleIds(new Set()) });
+    markBulkReadMutation.mutate({ filters }, { onSuccess: () => setSelectedArticleIds(new Set()) });
+  };
+
+  const handleArticleDeleted = (id: number) => {
+    setSelectedArticleIds(prev => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  };
+
+  const handleArchiveAllCategory = (topicId: number) => {
+    archiveAllByTopicMutation.mutate(
+      { topicId, feedIds: selectedFeedIds },
+      { onSuccess: () => setSelectedArticleIds(new Set()) }
+    );
+  };
+
+  const handleDeleteAllCategory = (topicId: number) => {
+    deleteAllByTopicMutation.mutate(
+      { topicId, feedIds: selectedFeedIds },
+      { onSuccess: () => setSelectedArticleIds(new Set()) }
+    );
+  };
+
+  const handleArchiveAllUnimportant = () => {
+    archiveAllUnimportantMutation.mutate(
+      { feedIds: selectedFeedIds },
+      { onSuccess: () => setSelectedArticleIds(new Set()) }
+    );
+  };
+
+  const handleDeleteAllUnimportant = () => {
+    deleteAllUnimportantMutation.mutate(
+      { feedIds: selectedFeedIds },
+      { onSuccess: () => setSelectedArticleIds(new Set()) }
+    );
   };
 
   return (
@@ -438,6 +480,19 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                 </div>
               )}
 
+              {activeSection === 'unread' && topicsData && topicsData.length > 0 && (
+                <CategoryBulkActions
+                  topics={topicsData}
+                  unimportantCount={articleCounts?.unimportant_count ?? 0}
+                  onDeleteAll={handleDeleteAllCategory}
+                  onArchiveAll={handleArchiveAllCategory}
+                  onDeleteAllUnimportant={handleDeleteAllUnimportant}
+                  onArchiveAllUnimportant={handleArchiveAllUnimportant}
+                  deletePending={deleteAllByTopicMutation.isPending || deleteAllUnimportantMutation.isPending}
+                  archivePending={archiveAllByTopicMutation.isPending || archiveAllUnimportantMutation.isPending}
+                />
+              )}
+
               {activeSection === 'important' && articlesData && articlesData.articles.length > 0 && (
                 <div className="bulk-action-bar">
                   <button
@@ -514,6 +569,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                       selectedIds={selectedArticleIds}
                       onToggleSelect={handleToggleSelect}
                       onSelectAll={handleSelectAll}
+                      onDeleted={handleArticleDeleted}
                       isArchiveView={activeSection === 'archive'}
                       selectable={activeSection !== 'archive'}
                     />

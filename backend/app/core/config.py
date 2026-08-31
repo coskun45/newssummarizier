@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     # RSS Feed Configuration
     default_feed_url: str = "https://rss.dw.com/atom/rss-de-all"
     feed_refresh_interval: int = 1800  # seconds (30 minutes)
+
+    # LangGraph workflow recursion limit.
+    # The news-processing graph loops once per article, so this must be large
+    # enough to cover the number of new articles in a single feed refresh
+    # (default LangGraph limit is 25, which is too small for DW feeds).
+    graph_recursion_limit: int = 100
     
     # Scraping Configuration
     scraping_enabled: bool = True
@@ -51,7 +57,7 @@ class Settings(BaseSettings):
     monthly_cost_limit: float = 100.0  # USD
     
     # CORS
-    cors_origins: str = "http://localhost:5174,http://localhost:3000"
+    cors_origins: str = "http://localhost:5173,http://localhost:3000"
 
     # JWT Authentication
     jwt_secret_key: str = _DEFAULT_JWT_SECRET

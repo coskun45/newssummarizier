@@ -19,6 +19,7 @@ export interface Topic {
     color: string | null;
     confidence?: number;
     article_count?: number;
+    unread_count?: number;
 }
 
 export interface Article {

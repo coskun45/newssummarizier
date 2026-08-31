@@ -1,0 +1,131 @@
+.category-bulk-actions {
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.category-bulk-actions-title {
+  margin: 0 0 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #4a5568;
+}
+
+.category-bulk-actions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.category-bulk-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.category-bulk-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.875rem;
+  color: #2d3748;
+  min-width: 140px;
+}
+
+.category-bulk-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: #cbd5e0;
+  color: #2d3748;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.category-bulk-buttons {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.category-bulk-delete {
+  color: #e53935;
+  border-color: #e53935;
+}
+
+.category-bulk-delete:hover:not(:disabled) {
+  background: #e53935;
+  color: #fff;
+}
+
+.category-bulk-confirm-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.category-bulk-confirm-box {
+  background: #fff;
+  padding: 24px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  min-width: 300px;
+  max-width: 400px;
+  text-align: center;
+}
+
+.category-bulk-confirm-delete {
+  margin-right: 12px;
+  background: #e53935;
+  color: #fff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.category-bulk-confirm-delete:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.category-bulk-confirm-cancel {
+  background: #ccc;
+  color: #333;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+@media (prefers-color-scheme: dark) {
+  .category-bulk-actions {
+    background: #2d3748;
+    border-color: #4a5568;
+  }
+
+  .category-bulk-actions-title,
+  .category-bulk-name {
+    color: #e2e8f0;
+  }
+
+  .category-bulk-confirm-box {
+    background: #2d3748;
+    color: #e2e8f0;
+  }
+}

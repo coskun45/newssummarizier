@@ -1,9 +1,9 @@
 """
 CRUD (Create, Read, Update, Delete) operations for database models.
 """
-from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import desc, func, or_
-from typing import List, Optional, Dict, Any
+from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import desc, func, or_, case
+from typing import List, Optional, Dict, Any, Set
 from datetime import datetime, timezone
 from app.db import models
 
@@ -114,14 +114,40 @@ def create_article(
 def get_article(db: Session, article_id: int) -> Optional[models.Article]:
     """Get an article by ID with relationships loaded."""
     return db.query(models.Article).options(
-        joinedload(models.Article.summaries),
-        joinedload(models.Article.topics).joinedload(models.ArticleTopic.topic)
+        selectinload(models.Article.summaries),
+        selectinload(models.Article.topics).selectinload(models.ArticleTopic.topic)
     ).filter(models.Article.id == article_id).first()
 
 
 def get_article_by_url(db: Session, url: str) -> Optional[models.Article]:
     """Get an article by URL."""
     return db.query(models.Article).filter(models.Article.url == url).first()
+
+
+def _tombstone_url(db: Session, url: str) -> None:
+    """Record a deleted article's URL so RSS re-ingestion skips it forever.
+    Caller commits — this only stages the insert."""
+    exists = db.query(models.DeletedArticleUrl.url).filter(
+        models.DeletedArticleUrl.url == url
+    ).first()
+    if not exists:
+        db.add(models.DeletedArticleUrl(url=url))
+
+
+def get_deleted_urls(db: Session) -> Set[str]:
+    """All tombstoned URLs, for a single bulk dedup check during RSS ingestion."""
+    return {row[0] for row in db.query(models.DeletedArticleUrl.url).all()}
+
+
+def delete_article(db: Session, article_id: int) -> bool:
+    """Delete an article by ID and tombstone its URL. Returns False if not found."""
+    article = get_article(db, article_id)
+    if not article:
+        return False
+    _tombstone_url(db, article.url)
+    db.delete(article)
+    db.commit()
+    return True
 
 
 def get_articles(
@@ -143,8 +169,8 @@ def get_articles(
 ) -> List[models.Article]:
     """Get articles with optional filtering."""
     query = db.query(models.Article).options(
-        joinedload(models.Article.summaries),
-        joinedload(models.Article.topics).joinedload(models.ArticleTopic.topic)
+        selectinload(models.Article.summaries),
+        selectinload(models.Article.topics).selectinload(models.ArticleTopic.topic)
     )
 
     # Filter by feed(s)
@@ -285,11 +311,64 @@ def mark_article_read(db: Session, article_id: int) -> Optional[models.Article]:
     return article
 
 
-def mark_articles_read_bulk(db: Session, article_ids: Optional[List[int]] = None) -> int:
-    """Mark multiple articles as read. If article_ids is None, marks all unread articles."""
+def mark_articles_read_bulk(
+    db: Session,
+    article_ids: Optional[List[int]] = None,
+    topic_ids: List[int] = None,
+    search_query: str = None,
+    status: str = None,
+    feed_id: int = None,
+    feed_ids: List[int] = None,
+    priority: str = None,
+    start_date: datetime = None,
+    end_date: datetime = None,
+    fetched_from: datetime = None,
+    fetched_to: datetime = None,
+    is_starred: bool = None,
+) -> int:
+    """Mark multiple articles as read. If article_ids is given, marks just those.
+    Otherwise marks every unread article matching the given filters (no filters = all unread)."""
     query = db.query(models.Article).filter(models.Article.is_read.is_(False))
     if article_ids is not None:
         query = query.filter(models.Article.id.in_(article_ids))
+    else:
+        if feed_ids:
+            query = query.filter(models.Article.feed_id.in_(feed_ids))
+        elif feed_id:
+            query = query.filter(models.Article.feed_id == feed_id)
+
+        if topic_ids:
+            article_ids_with_topics = db.query(models.ArticleTopic.article_id).filter(
+                models.ArticleTopic.topic_id.in_(topic_ids)
+            )
+            query = query.filter(models.Article.id.in_(article_ids_with_topics))
+
+        if status:
+            query = query.filter(models.Article.status == status)
+
+        if priority:
+            query = query.filter(models.Article.priority == priority)
+
+        if is_starred is not None:
+            query = query.filter(models.Article.is_starred == is_starred)
+
+        if start_date:
+            query = query.filter(models.Article.published_at >= start_date)
+        if end_date:
+            query = query.filter(models.Article.published_at <= end_date)
+
+        if fetched_from:
+            query = query.filter(models.Article.fetched_at >= fetched_from)
+        if fetched_to:
+            query = query.filter(models.Article.fetched_at <= fetched_to)
+
+        if search_query:
+            search_filter = or_(
+                models.Article.title.ilike(f"%{search_query}%"),
+                models.Article.cleaned_content.ilike(f"%{search_query}%")
+            )
+            query = query.filter(search_filter)
+
     count = query.update({models.Article.is_read: True}, synchronize_session=False)
     db.commit()
     return count
@@ -310,6 +389,100 @@ def unstar_all(db: Session) -> int:
     count = db.query(models.Article).filter(models.Article.is_starred.is_(True)).update(
         {models.Article.is_starred: False}, synchronize_session=False
     )
+    db.commit()
+    return count
+
+
+def get_article_ids_by_topic(db: Session, topic_id: int) -> List[int]:
+    """All article ids tagged with this topic, regardless of status."""
+    rows = db.query(models.ArticleTopic.article_id).filter(
+        models.ArticleTopic.topic_id == topic_id
+    ).all()
+    return [r[0] for r in rows]
+
+
+def delete_articles_by_topic(db: Session, topic_id: int, feed_ids: List[int] = None) -> int:
+    """Delete every unread article tagged with this topic, optionally scoped to
+    a set of feeds. Returns the number deleted.
+
+    Restricted to unread articles (and, when given, the caller's selected
+    feeds) so this matches exactly what the UI's confirmation dialog shows —
+    it's only ever triggered from the unread-articles view, scoped to whatever
+    feed filter is active there.
+
+    Uses a per-row ORM delete (not a bulk Query.delete()) so the
+    cascade="all, delete-orphan" relationships on Article (summaries, topics,
+    logs) actually fire — a bulk DELETE would bypass the ORM and orphan those
+    child rows, same reason the single-article delete endpoint does this too.
+    """
+    article_ids = db.query(models.ArticleTopic.article_id).filter(
+        models.ArticleTopic.topic_id == topic_id
+    )
+    query = db.query(models.Article).filter(
+        models.Article.id.in_(article_ids),
+        models.Article.is_read.is_(False),
+    )
+    if feed_ids:
+        query = query.filter(models.Article.feed_id.in_(feed_ids))
+    articles = query.all()
+    count = len(articles)
+    for article in articles:
+        _tombstone_url(db, article.url)
+        db.delete(article)
+    db.commit()
+    return count
+
+
+def mark_articles_read_by_topic(db: Session, topic_id: int, feed_ids: List[int] = None) -> int:
+    """Mark every unread article tagged with this topic as read, optionally
+    scoped to a set of feeds. Returns the number updated."""
+    article_ids = db.query(models.ArticleTopic.article_id).filter(
+        models.ArticleTopic.topic_id == topic_id
+    )
+    query = db.query(models.Article).filter(
+        models.Article.id.in_(article_ids),
+        models.Article.is_read.is_(False)
+    )
+    if feed_ids:
+        query = query.filter(models.Article.feed_id.in_(feed_ids))
+    count = query.update({models.Article.is_read: True}, synchronize_session=False)
+    db.commit()
+    return count
+
+
+def delete_articles_unimportant(db: Session, feed_ids: List[int] = None) -> int:
+    """Delete every unread article marked unimportant, optionally scoped to a
+    set of feeds. Returns the number deleted.
+
+    Mirrors delete_articles_by_topic but filters on importance == "unimportant"
+    instead of a topic tag. Uses a per-row ORM delete so the cascade
+    relationships on Article (summaries, topics, logs) fire correctly.
+    """
+    query = db.query(models.Article).filter(
+        models.Article.importance == "unimportant",
+        models.Article.is_read.is_(False),
+    )
+    if feed_ids:
+        query = query.filter(models.Article.feed_id.in_(feed_ids))
+    articles = query.all()
+    count = len(articles)
+    for article in articles:
+        _tombstone_url(db, article.url)
+        db.delete(article)
+    db.commit()
+    return count
+
+
+def mark_articles_read_unimportant(db: Session, feed_ids: List[int] = None) -> int:
+    """Mark every unread unimportant article as read, optionally scoped to a
+    set of feeds. Returns the number updated."""
+    query = db.query(models.Article).filter(
+        models.Article.importance == "unimportant",
+        models.Article.is_read.is_(False)
+    )
+    if feed_ids:
+        query = query.filter(models.Article.feed_id.in_(feed_ids))
+    count = query.update({models.Article.is_read: True}, synchronize_session=False)
     db.commit()
     return count
 
@@ -454,17 +627,21 @@ def get_topics(db: Session) -> List[models.Topic]:
 
 
 def get_topics_with_counts(db: Session, feed_id: int = None) -> List[Dict[str, Any]]:
-    """Get all topics with article counts, optionally filtered by feed."""
+    """Get all topics with total and unread article counts, optionally filtered by feed."""
     query = db.query(
         models.Topic,
-        func.count(models.ArticleTopic.article_id).label('article_count')
-    ).outerjoin(models.ArticleTopic)
+        func.count(models.ArticleTopic.article_id).label('article_count'),
+        func.sum(case((models.Article.is_read.is_(False), 1), else_=0)).label('unread_count')
+    ).outerjoin(
+        models.ArticleTopic,
+        models.ArticleTopic.topic_id == models.Topic.id
+    ).outerjoin(
+        models.Article,
+        models.Article.id == models.ArticleTopic.article_id
+    )
 
     if feed_id is not None:
-        query = query.outerjoin(
-            models.Article,
-            models.Article.id == models.ArticleTopic.article_id
-        ).filter(models.Article.feed_id == feed_id)
+        query = query.filter(models.Article.feed_id == feed_id)
 
     results = query.group_by(models.Topic.id).having(
         func.count(models.ArticleTopic.article_id) > 0
@@ -476,9 +653,10 @@ def get_topics_with_counts(db: Session, feed_id: int = None) -> List[Dict[str, A
             "name": topic.name,
             "description": topic.description,
             "color": topic.color,
-            "article_count": count
+            "article_count": article_count,
+            "unread_count": int(unread_count or 0),
         }
-        for topic, count in results
+        for topic, article_count, unread_count in results
     ]
 
 

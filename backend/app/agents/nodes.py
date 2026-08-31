@@ -26,11 +26,17 @@ async def rss_fetcher_node(state: NewsProcessingState) -> Dict[str, Any]:
         # Fetch RSS feed
         articles = await fetch_rss_feed(state["feed_url"])
         
-        # Filter out articles that already exist in database
+        # Filter out articles that already exist in database, or that the
+        # user explicitly deleted before (tombstoned) — otherwise a feed that
+        # still lists an old item keeps recreating it on every refresh.
         db = SessionLocal()
         try:
+            deleted_urls = crud.get_deleted_urls(db)
             new_articles = []
             for article in articles:
+                if article["url"] in deleted_urls:
+                    logger.info(f"Article was deleted by user, skipping: {article['url']}")
+                    continue
                 existing = crud.get_article_by_url(db, article["url"])
                 if not existing:
                     article["status"] = "pending"

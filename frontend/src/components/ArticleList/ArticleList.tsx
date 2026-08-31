@@ -7,11 +7,12 @@ interface ArticleListProps {
   selectedIds?: Set<number>;
   onToggleSelect?: (id: number) => void;
   onSelectAll?: (ids: number[]) => void;
+  onDeleted?: (id: number) => void;
   isArchiveView?: boolean;
   selectable?: boolean;
 }
 
-function ArticleList({ articles, selectedIds = new Set(), onToggleSelect, onSelectAll: _onSelectAll, isArchiveView = false, selectable = false }: ArticleListProps) {
+function ArticleList({ articles, selectedIds = new Set(), onToggleSelect, onSelectAll: _onSelectAll, onDeleted, isArchiveView = false, selectable = false }: ArticleListProps) {
 
   return (
     <div className="article-list">
@@ -21,6 +22,7 @@ function ArticleList({ articles, selectedIds = new Set(), onToggleSelect, onSele
           article={article}
           isSelected={selectedIds.has(article.id)}
           onToggleSelect={onToggleSelect}
+          onDeleted={onDeleted}
           isArchiveView={isArchiveView}
           selectable={selectable}
         />

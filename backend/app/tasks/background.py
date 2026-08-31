@@ -65,7 +65,11 @@ async def process_feed_async(feed_id: int):
         # Run workflow
         logger.info("Invoking LangGraph workflow...")
         
-        final_state = await workflow.ainvoke(initial_state)
+        from app.core.config import settings
+        final_state = await workflow.ainvoke(
+            initial_state,
+            config={"recursion_limit": settings.graph_recursion_limit}
+        )
         
         # Log results
         total_articles = len(final_state.get("processed_articles", []))

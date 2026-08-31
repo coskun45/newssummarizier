@@ -34,7 +34,8 @@ class TopicResponse(BaseModel):
     description: Optional[str] = None
     color: Optional[str] = None
     article_count: int = 0
-    
+    unread_count: int = 0
+
     class Config:
         from_attributes = True
 

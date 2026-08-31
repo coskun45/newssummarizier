@@ -39,6 +39,8 @@ export const useDeleteArticle = () => {
         mutationFn: (articleId: number) => articlesApi.delete(articleId),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['articles'] });
+            queryClient.invalidateQueries({ queryKey: ['articleCounts'] });
+            queryClient.invalidateQueries({ queryKey: ['topics'] });
         },
     });
 };
@@ -80,10 +82,64 @@ export const useUnstarAll = () => {
 export const useMarkArticlesBulkRead = () => {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: (articleIds?: number[]) => articlesApi.markBulkRead(articleIds),
+        mutationFn: ({ articleIds, filters }: { articleIds?: number[]; filters?: ArticleFilters }) =>
+            articlesApi.markBulkRead(articleIds, filters),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['articles'] });
             queryClient.invalidateQueries({ queryKey: ['articleCounts'] });
+            queryClient.invalidateQueries({ queryKey: ['topics'] });
+        },
+    });
+};
+
+export const useDeleteAllArticlesByTopic = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: ({ topicId, feedIds }: { topicId: number; feedIds?: number[] }) =>
+            articlesApi.deleteAllByTopic(topicId, feedIds),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['articles'] });
+            queryClient.invalidateQueries({ queryKey: ['articleCounts'] });
+            queryClient.invalidateQueries({ queryKey: ['topics'] });
+        },
+    });
+};
+
+export const useArchiveAllArticlesByTopic = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: ({ topicId, feedIds }: { topicId: number; feedIds?: number[] }) =>
+            articlesApi.archiveAllByTopic(topicId, feedIds),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['articles'] });
+            queryClient.invalidateQueries({ queryKey: ['articleCounts'] });
+            queryClient.invalidateQueries({ queryKey: ['topics'] });
+        },
+    });
+};
+
+export const useDeleteAllUnimportant = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: ({ feedIds }: { feedIds?: number[] }) =>
+            articlesApi.deleteAllUnimportant(feedIds),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['articles'] });
+            queryClient.invalidateQueries({ queryKey: ['articleCounts'] });
+            queryClient.invalidateQueries({ queryKey: ['topics'] });
+        },
+    });
+};
+
+export const useArchiveAllUnimportant = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: ({ feedIds }: { feedIds?: number[] }) =>
+            articlesApi.archiveAllUnimportant(feedIds),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['articles'] });
+            queryClient.invalidateQueries({ queryKey: ['articleCounts'] });
+            queryClient.invalidateQueries({ queryKey: ['topics'] });
         },
     });
 };
@@ -206,6 +262,8 @@ export const useDeleteFeed = () => {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['feeds'] });
             queryClient.invalidateQueries({ queryKey: ['articles'] });
+            queryClient.invalidateQueries({ queryKey: ['articleCounts'] });
+            queryClient.invalidateQueries({ queryKey: ['topics'] });
         },
     });
 };

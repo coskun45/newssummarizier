@@ -86,8 +86,8 @@ function TopicFilter({ topics, selectedTopics, onTopicToggle, importanceMode, on
                 onChange={() => onTopicToggle(topic.id)}
               />
               <span className="topic-name">{topic.name}</span>
-              {topic.article_count !== undefined && (
-                <span className="topic-count">{topic.article_count}</span>
+              {topic.unread_count !== undefined && (
+                <span className="topic-count">{topic.unread_count}</span>
               )}
             </label>
           ))}
