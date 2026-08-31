@@ -324,11 +324,24 @@
 }
 
 .copy-summary-btn {
-  padding: 0.25rem 0.6rem;
-  font-size: 0.8rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid #667eea;
+  border-radius: 6px;
+  background: transparent;
+  color: #667eea;
   cursor: pointer;
-  white-space: nowrap;
   flex-shrink: 0;
+  transition: all 0.2s;
+}
+
+.copy-summary-btn:hover {
+  background: #667eea;
+  color: white;
 }
 
 .copy-summary-btn--copied {
@@ -400,6 +413,16 @@
   }
 
   .btn-outline:hover {
+    background: #667eea;
+    color: white;
+  }
+
+  .copy-summary-btn {
+    color: #a3bffa;
+    border-color: #a3bffa;
+  }
+
+  .copy-summary-btn:hover {
     background: #667eea;
     color: white;
   }
