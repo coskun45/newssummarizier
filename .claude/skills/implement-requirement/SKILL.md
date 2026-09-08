@@ -84,6 +84,23 @@ Then **verify it runs**: backend via `uvicorn app.main:app --reload` + `http://l
 `curl` (test 404/400 paths too); frontend via `npm run dev`, driving the real UI and watching the
 `/api` call + React Query cache. Prefer the `/run` and `/verify` skills over assuming.
 
+### Tests (required, not optional)
+
+No requirement is done until it has a test covering it. Write these alongside the layer they cover,
+not as an afterthought at the end:
+
+- **Backend route/crud change** → a `pytest` test in `backend/tests/` (e.g. `test_<router>.py`). Use
+  the `client` fixture (`get_db` overridden to an isolated in-memory SQLite via `db_session`, no
+  lifespan/scheduler triggered) and `auth_headers`/`test_user` from `backend/tests/conftest.py` for
+  protected routes — see `backend/tests/test_auth.py` for the shape. Cover the happy path **and** the
+  4xx edges (missing auth, bad input, not-found). Run with `cd backend && pytest -q`.
+- **Frontend component/flow change** → a Playwright e2e spec in `frontend/tests/` (e.g.
+  `<flow>.spec.ts`), asserting on user-visible behavior (`getByRole`/`getByLabel`, not CSS selectors)
+  — see `frontend/tests/login.spec.ts`. Run with `cd frontend && npm run test:e2e`.
+- If a change only touches wiring already covered by an existing test (e.g. a query-key rename caught
+  by an existing e2e flow), extending that test counts — don't skip silently just because "it's covered
+  already" without checking.
+
 ## Phase 4 — Principal-level review
 
 Review your own change as a **principal software engineer** before handing back. Improve **security**
@@ -110,6 +127,8 @@ and **code quality**, then re-verify anything you touch.
 - Errors handled, not swallowed; one failure doesn't break a whole agent run (per-article try/except).
 - Mutations invalidate the right React Query keys; no stale UI.
 - Naming/structure match surrounding code; dead code and debug prints removed.
+- **Tests exist for the change and pass** (`pytest -q` in `backend/`, `npm run test:e2e` in
+  `frontend/`) — not just a manual click-through.
 
 Fix what you find (or, for anything material, raise it back to the developer). Then run `/code-review`
 for an independent pass on the diff.
@@ -130,3 +149,5 @@ for an independent pass on the diff.
 - **Forgetting query invalidation** — a mutation that doesn't invalidate leaves stale UI.
 - **Adding a column but forgetting the `init_db()` auto-migration list** — the model gains it but existing DBs don't, causing "no such column" at runtime.
 - **Treating Phase 4 as optional** — the security + quality review is part of the lifecycle.
+- **Shipping a feature without a test for it** — "it worked when I clicked through it" isn't a
+  substitute for a `pytest`/Playwright test that fails if the behavior regresses later.

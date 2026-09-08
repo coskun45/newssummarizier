@@ -13,7 +13,8 @@ langgraph==0.2.45
 langchain-core==0.2.43
 langchain-openai==0.1.25
 openai>=1.12.0,<2.0.0
-httpx>=0.27.0
+# <0.28: 0.28 dropped Client(app=...), which starlette 0.35's TestClient (pinned by fastapi 0.109) needs.
+httpx>=0.27.0,<0.28
 tiktoken==0.8.0
 
 # RSS and Web Scraping
@@ -39,3 +40,6 @@ apscheduler==3.10.4
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 bcrypt==3.2.2
+
+# Testing
+pytest==8.3.4

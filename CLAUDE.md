@@ -31,8 +31,10 @@ frontend/src/
 ```bash
 # Backend
 cd backend && uvicorn app.main:app --reload      # http://localhost:8000  (docs at /docs)
+cd backend && pytest -q                          # backend tests
 # Frontend
-cd frontend && npm run dev                        # http://localhost:5173
+cd frontend && npm run dev                        # http://localhost:5174
+cd frontend && npm run test:e2e                   # frontend e2e tests (Playwright)
 # Full stack via Docker
 docker compose up --build                         # http://localhost  (API at /api)
 ```
@@ -56,7 +58,9 @@ files). The essentials:
 
 ## Workflow
 
-- **New feature/requirement** → follow the `/implement-requirement` skill (bottom-up across layers).
+- **New feature/requirement** → follow the `/implement-requirement` skill (bottom-up across layers,
+  including a required test — `backend/tests/` pytest and/or `frontend/tests/` Playwright — for what
+  you build).
 - **Learned a new recurring convention/gotcha** → record it with the `/add-rule` skill into
   `.claude/rules/` (do not bloat this file).
 - **Before a PR** → run the `/update-docs` skill to sync `README.md` + `backend/.env.example`.
