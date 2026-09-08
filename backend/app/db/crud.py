@@ -401,25 +401,16 @@ def get_article_ids_by_topic(db: Session, topic_id: int) -> List[int]:
     return [r[0] for r in rows]
 
 
-def delete_articles_by_topic(db: Session, topic_id: int, feed_ids: List[int] = None) -> int:
-    """Delete every unread article tagged with this topic, optionally scoped to
-    a set of feeds. Returns the number deleted.
+def delete_articles_by_priority(db: Session, priority: str, feed_ids: List[int] = None) -> int:
+    """Delete every unread article with this priority, optionally scoped to a
+    set of feeds. Returns the number deleted.
 
-    Restricted to unread articles (and, when given, the caller's selected
-    feeds) so this matches exactly what the UI's confirmation dialog shows —
-    it's only ever triggered from the unread-articles view, scoped to whatever
-    feed filter is active there.
-
-    Uses a per-row ORM delete (not a bulk Query.delete()) so the
+    Uses a per-row ORM delete (not bulk Query.delete()) so the
     cascade="all, delete-orphan" relationships on Article (summaries, topics,
-    logs) actually fire — a bulk DELETE would bypass the ORM and orphan those
-    child rows, same reason the single-article delete endpoint does this too.
+    logs) actually fire.
     """
-    article_ids = db.query(models.ArticleTopic.article_id).filter(
-        models.ArticleTopic.topic_id == topic_id
-    )
     query = db.query(models.Article).filter(
-        models.Article.id.in_(article_ids),
+        models.Article.priority == priority,
         models.Article.is_read.is_(False),
     )
     if feed_ids:
@@ -433,15 +424,12 @@ def delete_articles_by_topic(db: Session, topic_id: int, feed_ids: List[int] = N
     return count
 
 
-def mark_articles_read_by_topic(db: Session, topic_id: int, feed_ids: List[int] = None) -> int:
-    """Mark every unread article tagged with this topic as read, optionally
+def mark_articles_read_by_priority(db: Session, priority: str, feed_ids: List[int] = None) -> int:
+    """Mark every unread article with this priority as read, optionally
     scoped to a set of feeds. Returns the number updated."""
-    article_ids = db.query(models.ArticleTopic.article_id).filter(
-        models.ArticleTopic.topic_id == topic_id
-    )
     query = db.query(models.Article).filter(
-        models.Article.id.in_(article_ids),
-        models.Article.is_read.is_(False)
+        models.Article.priority == priority,
+        models.Article.is_read.is_(False),
     )
     if feed_ids:
         query = query.filter(models.Article.feed_id.in_(feed_ids))
@@ -454,8 +442,8 @@ def delete_articles_unimportant(db: Session, feed_ids: List[int] = None) -> int:
     """Delete every unread article marked unimportant, optionally scoped to a
     set of feeds. Returns the number deleted.
 
-    Mirrors delete_articles_by_topic but filters on importance == "unimportant"
-    instead of a topic tag. Uses a per-row ORM delete so the cascade
+    Mirrors delete_articles_by_priority but filters on importance == "unimportant"
+    instead of a priority level. Uses a per-row ORM delete so the cascade
     relationships on Article (summaries, topics, logs) fire correctly.
     """
     query = db.query(models.Article).filter(

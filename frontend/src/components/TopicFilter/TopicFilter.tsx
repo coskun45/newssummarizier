@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { Topic } from '../../types';
+import { PRIORITIES } from '../../constants/priorities';
 import './TopicFilter.css';
 
 interface TopicFilterProps {
@@ -14,12 +15,6 @@ interface TopicFilterProps {
   unimportantCount?: number;
 }
 
-const PRIORITIES = [
-  { value: 'high', label: 'Yüksek' },
-  { value: 'med',  label: 'Orta' },
-  { value: 'low',  label: 'Düşük' },
-];
-
 function TopicFilter({ topics, selectedTopics, onTopicToggle, importanceMode, onImportanceModeChange, selectedPriority, onPriorityChange, priorityCounts, unimportantCount }: TopicFilterProps) {
   const [openCategories, setOpenCategories] = useState(true);
   const [openPriority, setOpenPriority] = useState(true);
@@ -29,21 +24,27 @@ function TopicFilter({ topics, selectedTopics, onTopicToggle, importanceMode, on
     onImportanceModeChange(next);
   };
 
+  const handlePriorityClick = () => {
+    const next = !openPriority;
+    setOpenPriority(next);
+    if (!next && importanceMode === 'unimportant') onImportanceModeChange(null);
+  };
+
   const handleCategoriesClick = () => {
     const next = !openCategories;
     setOpenCategories(next);
-    if (!next) onImportanceModeChange(null);
+    if (!next && importanceMode === 'important') onImportanceModeChange(null);
   };
 
   const isCategoriesActive = importanceMode === 'important' || selectedTopics.length > 0;
-  const isPriorityActive = !!selectedPriority;
+  const isPriorityActive = !!selectedPriority || importanceMode === 'unimportant';
 
   return (
     <div className="topic-filter">
       {/* Önem Seviyesi — accordion */}
       <button
         className={`importance-header ${isPriorityActive ? 'active' : ''}`}
-        onClick={() => setOpenPriority(v => !v)}
+        onClick={handlePriorityClick}
       >
         <span className="importance-label">Önem Seviyesi</span>
         <span className="importance-chevron">{openPriority ? '▲' : '▼'}</span>
@@ -64,6 +65,19 @@ function TopicFilter({ topics, selectedTopics, onTopicToggle, importanceMode, on
               )}
             </label>
           ))}
+
+          {/* Önemsiz */}
+          <label className="topic-item">
+            <input
+              type="checkbox"
+              checked={importanceMode === 'unimportant'}
+              onChange={handleUnimportantClick}
+            />
+            <span className="topic-name">Önemsiz</span>
+            {unimportantCount !== undefined && (
+              <span className="topic-count">{unimportantCount}</span>
+            )}
+          </label>
         </div>
       )}
 
@@ -91,19 +105,6 @@ function TopicFilter({ topics, selectedTopics, onTopicToggle, importanceMode, on
               )}
             </label>
           ))}
-
-          {/* Önemsiz */}
-          <label className="topic-item">
-            <input
-              type="checkbox"
-              checked={importanceMode === 'unimportant'}
-              onChange={handleUnimportantClick}
-            />
-            <span className="topic-name">Önemsiz</span>
-            {unimportantCount !== undefined && (
-              <span className="topic-count">{unimportantCount}</span>
-            )}
-          </label>
         </div>
       )}
     </div>

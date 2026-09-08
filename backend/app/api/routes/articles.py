@@ -23,6 +23,9 @@ def _parse_comma_ids(raw: Optional[str], field_name: str) -> Optional[List[int]]
         raise HTTPException(status_code=400, detail=f"Invalid {field_name} format")
 
 
+VALID_PRIORITIES = {"high", "med", "low"}
+
+
 @router.delete("/{article_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_article(article_id: int, db: Session = Depends(get_db)):
     """
@@ -268,29 +271,29 @@ async def get_article_ids_by_topic(topic_id: int, db: Session = Depends(get_db))
     return {"article_ids": crud.get_article_ids_by_topic(db, topic_id)}
 
 
-@router.post("/topic/{topic_id}/delete-all")
-async def delete_articles_by_topic(
-    topic_id: int,
+@router.post("/priority/{priority}/delete-all")
+async def delete_articles_by_priority(
+    priority: str,
     feed_ids: Optional[str] = Query(None, description="Comma-separated feed IDs to scope the delete to"),
     db: Session = Depends(get_db)
 ):
-    """Delete every unread article tagged with this topic, optionally scoped to feed_ids."""
-    if not crud.get_topic(db, topic_id):
-        raise HTTPException(status_code=404, detail="Topic not found")
-    count = crud.delete_articles_by_topic(db, topic_id, feed_ids=_parse_comma_ids(feed_ids, "feed IDs"))
+    """Delete every unread article with this priority, optionally scoped to feed_ids."""
+    if priority not in VALID_PRIORITIES:
+        raise HTTPException(status_code=400, detail="Invalid priority; expected one of: high, med, low")
+    count = crud.delete_articles_by_priority(db, priority, feed_ids=_parse_comma_ids(feed_ids, "feed IDs"))
     return {"deleted_count": count}
 
 
-@router.post("/topic/{topic_id}/archive-all")
-async def archive_articles_by_topic(
-    topic_id: int,
+@router.post("/priority/{priority}/archive-all")
+async def archive_articles_by_priority(
+    priority: str,
     feed_ids: Optional[str] = Query(None, description="Comma-separated feed IDs to scope the archive to"),
     db: Session = Depends(get_db)
 ):
-    """Mark every unread article tagged with this topic as read, optionally scoped to feed_ids."""
-    if not crud.get_topic(db, topic_id):
-        raise HTTPException(status_code=404, detail="Topic not found")
-    count = crud.mark_articles_read_by_topic(db, topic_id, feed_ids=_parse_comma_ids(feed_ids, "feed IDs"))
+    """Mark every unread article with this priority as read, optionally scoped to feed_ids."""
+    if priority not in VALID_PRIORITIES:
+        raise HTTPException(status_code=400, detail="Invalid priority; expected one of: high, med, low")
+    count = crud.mark_articles_read_by_priority(db, priority, feed_ids=_parse_comma_ids(feed_ids, "feed IDs"))
     return {"archived_count": count}
 
 

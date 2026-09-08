@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import type { Topic } from '../../types';
+import { PRIORITIES, type PriorityOption } from '../../constants/priorities';
 import './CategoryBulkActions.css';
 
 interface CategoryBulkActionsProps {
-  topics: Topic[];
+  priorityCounts: Record<string, number>;
   unimportantCount: number;
-  onDeleteAll: (topicId: number) => void;
-  onArchiveAll: (topicId: number) => void;
+  onDeleteAllByPriority: (priority: string) => void;
+  onArchiveAllByPriority: (priority: string) => void;
   onDeleteAllUnimportant: () => void;
   onArchiveAllUnimportant: () => void;
   deletePending?: boolean;
@@ -14,46 +14,45 @@ interface CategoryBulkActionsProps {
 }
 
 function CategoryBulkActions({
-  topics,
+  priorityCounts,
   unimportantCount,
-  onDeleteAll,
-  onArchiveAll,
+  onDeleteAllByPriority,
+  onArchiveAllByPriority,
   onDeleteAllUnimportant,
   onArchiveAllUnimportant,
   deletePending = false,
   archivePending = false,
 }: CategoryBulkActionsProps) {
-  const [confirmTopic, setConfirmTopic] = useState<Topic | null>(null);
+  const [confirmPriority, setConfirmPriority] = useState<PriorityOption | null>(null);
   const [confirmUnimportant, setConfirmUnimportant] = useState(false);
 
   return (
     <div className="category-bulk-actions">
-      <p className="category-bulk-actions-title">Kategori bazlı toplu işlemler</p>
+      <p className="category-bulk-actions-title">Önem seviyesi bazlı toplu işlemler</p>
       <div className="category-bulk-actions-list">
-        {topics.map((topic) => {
-          const empty = (topic.unread_count ?? 0) === 0;
+        {PRIORITIES.map((p) => {
+          const count = priorityCounts[p.value] ?? 0;
+          const empty = count === 0;
           return (
-            <div key={topic.id} className="category-bulk-row">
+            <div key={p.value} className="category-bulk-row">
               <span className="category-bulk-name">
-                {topic.name}
-                {topic.unread_count !== undefined && (
-                  <span className="category-bulk-count">{topic.unread_count}</span>
-                )}
+                {p.label}
+                <span className="category-bulk-count">{count}</span>
               </span>
               <div className="category-bulk-buttons">
                 <button
                   className="btn btn-outline btn-sm"
-                  onClick={() => onArchiveAll(topic.id)}
+                  onClick={() => onArchiveAllByPriority(p.value)}
                   disabled={empty || archivePending}
-                  title={`${topic.name} kategorisindeki tüm haberleri arşive gönder`}
+                  title={`${p.label} önceliğindeki tüm haberleri arşive gönder`}
                 >
                   📦 Tümünü Arşive Gönder
                 </button>
                 <button
                   className="btn btn-outline btn-sm category-bulk-delete"
-                  onClick={() => setConfirmTopic(topic)}
+                  onClick={() => setConfirmPriority(p)}
                   disabled={empty || deletePending}
-                  title={`${topic.name} kategorisindeki tüm haberleri sil`}
+                  title={`${p.label} önceliğindeki tüm haberleri sil`}
                 >
                   🗑️ Tümünü Sil
                 </button>
@@ -88,25 +87,25 @@ function CategoryBulkActions({
         </div>
       </div>
 
-      {confirmTopic && (
+      {confirmPriority && (
         <div className="category-bulk-confirm-overlay">
           <div className="category-bulk-confirm-box">
             <p>
-              &quot;{confirmTopic.name}&quot; kategorisindeki tüm okunmamış haberleri
-              {confirmTopic.unread_count !== undefined ? ` (${confirmTopic.unread_count} adet)` : ''} silmek
+              &quot;{confirmPriority.label}&quot; önceliğindeki tüm okunmamış haberleri
+              {` (${priorityCounts[confirmPriority.value] ?? 0} adet)`} silmek
               istediğinize emin misiniz?
             </p>
             <button
               className="category-bulk-confirm-delete"
               onClick={() => {
-                onDeleteAll(confirmTopic.id);
-                setConfirmTopic(null);
+                onDeleteAllByPriority(confirmPriority.value);
+                setConfirmPriority(null);
               }}
               disabled={deletePending}
             >
               Sil
             </button>
-            <button className="category-bulk-confirm-cancel" onClick={() => setConfirmTopic(null)}>
+            <button className="category-bulk-confirm-cancel" onClick={() => setConfirmPriority(null)}>
               Vazgeç
             </button>
           </div>

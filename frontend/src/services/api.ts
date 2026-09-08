@@ -174,15 +174,15 @@ export const articlesApi = {
         return response.data.article_ids;
     },
 
-    deleteAllByTopic: async (topicId: number, feedIds?: number[]): Promise<{ deleted_count: number }> => {
-        const response = await api.post(`/articles/topic/${topicId}/delete-all`, null, {
+    deleteAllByPriority: async (priority: string, feedIds?: number[]): Promise<{ deleted_count: number }> => {
+        const response = await api.post(`/articles/priority/${priority}/delete-all`, null, {
             params: feedIds && feedIds.length > 0 ? { feed_ids: feedIds.join(',') } : {},
         });
         return response.data;
     },
 
-    archiveAllByTopic: async (topicId: number, feedIds?: number[]): Promise<{ archived_count: number }> => {
-        const response = await api.post(`/articles/topic/${topicId}/archive-all`, null, {
+    archiveAllByPriority: async (priority: string, feedIds?: number[]): Promise<{ archived_count: number }> => {
+        const response = await api.post(`/articles/priority/${priority}/archive-all`, null, {
             params: feedIds && feedIds.length > 0 ? { feed_ids: feedIds.join(',') } : {},
         });
         return response.data;

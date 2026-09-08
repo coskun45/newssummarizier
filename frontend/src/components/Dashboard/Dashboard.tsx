@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useArticles, useArticleCounts, useTopics, useFeeds, useRefreshFeed, useMarkArticlesBulkRead, useUnstarAll, useDeleteAllArticlesByTopic, useArchiveAllArticlesByTopic, useDeleteAllUnimportant, useArchiveAllUnimportant } from '../../hooks/useApi';
+import { useArticles, useArticleCounts, useTopics, useFeeds, useRefreshFeed, useMarkArticlesBulkRead, useUnstarAll, useDeleteAllArticlesByPriority, useArchiveAllArticlesByPriority, useDeleteAllUnimportant, useArchiveAllUnimportant } from '../../hooks/useApi';
 import { appApi, feedsApi, articlesApi, summariesApi } from '../../services/api';
 import { downloadArticlesAsWord, buildWhatsAppMessage, copyToClipboard } from '../../utils/exportArticles';
 import ArticleList from '../ArticleList/ArticleList';
@@ -51,8 +51,8 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
   const { data: articleCounts } = useArticleCounts();
   const refreshFeedMutation = useRefreshFeed();
   const markBulkReadMutation = useMarkArticlesBulkRead();
-  const deleteAllByTopicMutation = useDeleteAllArticlesByTopic();
-  const archiveAllByTopicMutation = useArchiveAllArticlesByTopic();
+  const deleteAllByPriorityMutation = useDeleteAllArticlesByPriority();
+  const archiveAllByPriorityMutation = useArchiveAllArticlesByPriority();
   const deleteAllUnimportantMutation = useDeleteAllUnimportant();
   const archiveAllUnimportantMutation = useArchiveAllUnimportant();
 
@@ -268,16 +268,16 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
     });
   };
 
-  const handleArchiveAllCategory = (topicId: number) => {
-    archiveAllByTopicMutation.mutate(
-      { topicId, feedIds: selectedFeedIds },
+  const handleArchiveAllByPriority = (priority: string) => {
+    archiveAllByPriorityMutation.mutate(
+      { priority, feedIds: selectedFeedIds },
       { onSuccess: () => setSelectedArticleIds(new Set()) }
     );
   };
 
-  const handleDeleteAllCategory = (topicId: number) => {
-    deleteAllByTopicMutation.mutate(
-      { topicId, feedIds: selectedFeedIds },
+  const handleDeleteAllByPriority = (priority: string) => {
+    deleteAllByPriorityMutation.mutate(
+      { priority, feedIds: selectedFeedIds },
       { onSuccess: () => setSelectedArticleIds(new Set()) }
     );
   };
@@ -480,16 +480,16 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                 </div>
               )}
 
-              {activeSection === 'unread' && topicsData && topicsData.length > 0 && (
+              {activeSection === 'unread' && (
                 <CategoryBulkActions
-                  topics={topicsData}
+                  priorityCounts={articleCounts?.by_priority ?? {}}
                   unimportantCount={articleCounts?.unimportant_count ?? 0}
-                  onDeleteAll={handleDeleteAllCategory}
-                  onArchiveAll={handleArchiveAllCategory}
+                  onDeleteAllByPriority={handleDeleteAllByPriority}
+                  onArchiveAllByPriority={handleArchiveAllByPriority}
                   onDeleteAllUnimportant={handleDeleteAllUnimportant}
                   onArchiveAllUnimportant={handleArchiveAllUnimportant}
-                  deletePending={deleteAllByTopicMutation.isPending || deleteAllUnimportantMutation.isPending}
-                  archivePending={archiveAllByTopicMutation.isPending || archiveAllUnimportantMutation.isPending}
+                  deletePending={deleteAllByPriorityMutation.isPending || deleteAllUnimportantMutation.isPending}
+                  archivePending={archiveAllByPriorityMutation.isPending || archiveAllUnimportantMutation.isPending}
                 />
               )}
 

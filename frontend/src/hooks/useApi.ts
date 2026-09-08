@@ -92,11 +92,11 @@ export const useMarkArticlesBulkRead = () => {
     });
 };
 
-export const useDeleteAllArticlesByTopic = () => {
+export const useDeleteAllArticlesByPriority = () => {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: ({ topicId, feedIds }: { topicId: number; feedIds?: number[] }) =>
-            articlesApi.deleteAllByTopic(topicId, feedIds),
+        mutationFn: ({ priority, feedIds }: { priority: string; feedIds?: number[] }) =>
+            articlesApi.deleteAllByPriority(priority, feedIds),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['articles'] });
             queryClient.invalidateQueries({ queryKey: ['articleCounts'] });
@@ -105,11 +105,11 @@ export const useDeleteAllArticlesByTopic = () => {
     });
 };
 
-export const useArchiveAllArticlesByTopic = () => {
+export const useArchiveAllArticlesByPriority = () => {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: ({ topicId, feedIds }: { topicId: number; feedIds?: number[] }) =>
-            articlesApi.archiveAllByTopic(topicId, feedIds),
+        mutationFn: ({ priority, feedIds }: { priority: string; feedIds?: number[] }) =>
+            articlesApi.archiveAllByPriority(priority, feedIds),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['articles'] });
             queryClient.invalidateQueries({ queryKey: ['articleCounts'] });
