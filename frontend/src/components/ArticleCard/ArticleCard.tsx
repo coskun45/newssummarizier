@@ -4,6 +4,7 @@ import { tr } from 'date-fns/locale';
 import type { Article } from '../../types';
 import { useSummaries, useArticle, useDeleteArticle, useSetArticleStarred } from '../../hooks/useApi';
 import ContentModal from '../ContentModal/ContentModal';
+import { copyToClipboard } from '../../utils/exportArticles';
 import './ArticleCard.css';
 
 const SUMMARY_ORDER = ['brief', 'standard', 'detailed'] as const;
@@ -37,12 +38,10 @@ function ArticleCard({ article, isSelected = false, onToggleSelect, onDeleted, i
   };
 
   const handleCopySummary = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
+    const ok = await copyToClipboard(text);
+    if (ok) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // clipboard unavailable — ignore
     }
   };
 
