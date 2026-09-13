@@ -142,10 +142,10 @@ function computeCounts(articles: MockArticle[]) {
   let starred_count = 0;
 
   for (const a of articles) {
-    const feedKey = String(a.feedId);
-    by_feed[feedKey] = (by_feed[feedKey] ?? 0) + 1;
-
     if (!a.is_read) {
+      const feedKey = String(a.feedId);
+      by_feed[feedKey] = (by_feed[feedKey] ?? 0) + 1;
+
       unread_count += 1;
       if (a.priority) by_priority[a.priority] = (by_priority[a.priority] ?? 0) + 1;
       if (a.importance === 'unimportant') unimportant_count += 1;

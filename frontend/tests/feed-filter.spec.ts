@@ -90,7 +90,7 @@ test('feed count badge matches articleCounts.by_feed', async ({ page }) => {
   await page.goto('/');
 
   const feedARow = page.locator('.topic-item').filter({ hasText: 'DW News' });
-  await expect(feedARow).toContainText('2');
+  await expect(feedARow).toContainText('1');
   const feedBRow = page.locator('.topic-item').filter({ hasText: 'Tech Feed' });
   await expect(feedBRow).toContainText('1');
 });
