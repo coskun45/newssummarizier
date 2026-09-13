@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 import type { DateFilterState } from '../../types';
 import './DateFilter.css';
 
@@ -24,7 +25,7 @@ function DateFilterSection({ title, value, onChange }: DateFilterSectionProps) {
         onClick={() => setOpen(v => !v)}
       >
         <span className="importance-label">{title}</span>
-        <span className="importance-chevron">{open ? '▲' : '▼'}</span>
+        <span className="importance-chevron">{open ? <ChevronUpIcon /> : <ChevronDownIcon />}</span>
       </button>
 
       {open && (

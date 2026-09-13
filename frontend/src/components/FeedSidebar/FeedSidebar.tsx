@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 import type { Feed } from '../../types';
 import './FeedSidebar.css';
 
@@ -32,7 +33,7 @@ function FeedSidebar({ feeds, selectedFeedIds, feedCounts, onFeedToggle, onClear
       >
         <span className="feed-accordion-label">
           RSS Beslemeleri</span>
-        <span className="importance-chevron">{open ? '▲' : '▼'}</span>
+        <span className="importance-chevron">{open ? <ChevronUpIcon /> : <ChevronDownIcon />}</span>
       </button>
 
       {open && (

@@ -1,45 +1,10 @@
-.settings-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1002;
-  animation: fadeIn 0.3s ease;
-}
-
 .settings-modal {
-  background: white;
-  border-radius: 12px;
   max-width: 700px;
-  width: 90%;
   max-height: 85vh;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-  animation: scaleIn 0.3s ease;
 }
 
-.settings-header {
-  padding: 1.5rem;
-  border-bottom: 1px solid #e2e8f0;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.settings-header h2 {
-  margin: 0;
-  font-size: 1.75rem;
-  color: #1a202c;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+.modal-shell-header h2 {
+  font-size: 1.6rem;
 }
 
 button {
@@ -52,16 +17,10 @@ button svg {
   flex-shrink: 0;
 }
 
-.settings-content {
-  padding: 1.5rem;
-  overflow-y: auto;
-  flex: 1;
-}
-
 .settings-section {
-  margin-bottom: 2rem;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
   overflow: hidden;
 }
 
@@ -73,66 +32,49 @@ button svg {
   cursor: pointer;
   user-select: none;
   padding: 1rem 1.5rem;
-  background: #e2e8f0;
+  background: var(--color-surface-alt);
   transition: background-color 0.2s;
 }
 
 .section-header:hover {
-  background: #cbd5e0;
+  background: var(--color-border);
 }
 
 .section-header h3 {
   margin: 0;
-  font-size: 1.25rem;
-  color: #1a202c;
+  font-size: 1.15rem;
+  color: var(--color-text-primary);
   font-weight: 700;
   display: flex;
   align-items: center;
   gap: 0.5rem;
 }
 
-.header-icon {
-  vertical-align: middle;
-  margin-right: 0.25rem;
-}
-
 .section-icon {
-  font-size: 1.1rem;
+  width: 1.1rem;
+  height: 1.1rem;
 }
 
 .collapse-icon {
-  display: inline-flex;
   width: 1rem;
-  font-size: 0.85rem;
-  transition: transform 0.2s;
+  height: 1rem;
+  flex-shrink: 0;
 }
 
 .section-content {
   padding: 1rem 1.5rem;
-  background: #f9fafb;
-  border-top: 1px solid #e2e8f0;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
   animation: slideDown 0.2s ease-in-out;
 }
 
 @keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.settings-section h3 {
-  margin: 0;
-  font-size: 1.25rem;
-  color: #2d3748;
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .section-description {
-  color: #4a5568;
+  color: var(--color-text-secondary);
   font-size: 0.875rem;
   margin: 0 0 1rem 0;
   line-height: 1.5;
@@ -158,26 +100,26 @@ button svg {
   align-items: center;
   gap: 0.75rem;
   padding: 0.75rem;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background 0.2s;
   position: relative;
 }
 
 .checkbox-label:hover {
-  background: #f7fafc;
+  background: var(--color-surface-alt);
 }
 
 .checkbox-label input[type="checkbox"] {
   width: 18px;
   height: 18px;
   cursor: pointer;
-  accent-color: #667eea;
+  accent-color: var(--color-primary);
   flex-shrink: 0;
 }
 
 .checkbox-text {
-  color: #1a202c;
+  color: var(--color-text-primary);
   font-size: 0.95rem;
   font-weight: 500;
   flex: 1;
@@ -195,9 +137,9 @@ button svg {
   height: 32px;
   border: none;
   background: transparent;
+  color: var(--color-text-secondary);
   cursor: pointer;
-  font-size: 1rem;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   transition: all 0.2s;
   padding: 0;
   display: flex;
@@ -206,13 +148,13 @@ button svg {
 }
 
 .edit-topic-button:hover {
-  background: #e2e8f0;
-  transform: scale(1.1);
+  background: var(--color-border);
+  color: var(--color-text-primary);
 }
 
 .delete-topic-button:hover:not(:disabled) {
-  background: #fee;
-  transform: scale(1.1);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
 }
 
 .delete-topic-button:disabled {
@@ -222,9 +164,9 @@ button svg {
 
 .edit-topic-form {
   padding: 1rem;
-  background: #f7fafc;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
+  background: var(--color-surface-alt);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -240,11 +182,9 @@ button svg {
 .save-edit-button {
   width: 36px;
   height: 36px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   border: none;
   cursor: pointer;
-  font-size: 1.25rem;
-  font-weight: bold;
   transition: all 0.2s;
   display: flex;
   align-items: center;
@@ -252,23 +192,21 @@ button svg {
 }
 
 .cancel-edit-button {
-  background: #e2e8f0;
-  color: #4a5568;
+  background: var(--color-surface-alt);
+  color: var(--color-text-secondary);
 }
 
 .cancel-edit-button:hover:not(:disabled) {
-  background: #cbd5e0;
-  transform: scale(1.05);
+  background: var(--color-border);
 }
 
 .save-edit-button {
-  background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+  background: var(--color-success-solid);
   color: white;
 }
 
 .save-edit-button:hover:not(:disabled) {
-  transform: scale(1.05);
-  box-shadow: 0 4px 12px rgba(72, 187, 120, 0.4);
+  filter: brightness(0.95);
 }
 
 .cancel-edit-button:disabled,
@@ -280,21 +218,21 @@ button svg {
 .clear-selection-button {
   margin-top: 0.75rem;
   padding: 0.5rem 1rem;
-  background: #f7fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  color: #4a5568;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
   font-size: 0.875rem;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .clear-selection-button:hover {
-  background: #e2e8f0;
+  background: var(--color-border);
 }
 
 .warning-text {
-  color: #e53e3e;
+  color: var(--color-danger);
   font-size: 0.875rem;
   margin-top: 0.5rem;
   font-weight: 500;
@@ -304,16 +242,18 @@ button svg {
 }
 
 .warning-text svg {
+  width: 1rem;
+  height: 1rem;
   flex-shrink: 0;
 }
 
 .add-topic-button {
   margin-top: 1rem;
-  padding: 0.75rem 1.25rem;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 0.65rem 1.1rem;
+  background: var(--color-primary);
   color: white;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
@@ -321,34 +261,33 @@ button svg {
 }
 
 .add-topic-button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  background: var(--color-primary-hover);
 }
 
 .add-topic-form {
   margin-top: 1rem;
   padding: 1.25rem;
-  background: #f7fafc;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
+  background: var(--color-surface-alt);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
 }
 
 .topic-input {
   width: 100%;
-  padding: 0.75rem;
+  padding: 0.6rem 0.85rem;
   margin-bottom: 0.75rem;
-  border: 1px solid #cbd5e0;
-  border-radius: 6px;
-  font-size: 0.95rem;
-  color: #2d3748;
-  background: white;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  color: var(--color-text-primary);
+  background: var(--color-surface);
   transition: border-color 0.2s;
 }
 
 .topic-input:focus {
   outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
 }
 
 .topic-input:disabled {
@@ -356,23 +295,13 @@ button svg {
   cursor: not-allowed;
 }
 
-/* Autocomplete dropdown styling */
-.topic-input:-webkit-autofill,
-.topic-input:-webkit-autofill:hover,
-.topic-input:-webkit-autofill:focus {
-  -webkit-text-fill-color: #2d3748;
-  -webkit-box-shadow: 0 0 0px 1000px #f7fafc inset;
-  transition: background-color 5000s ease-in-out 0s;
-}
-
-/* Browser autocomplete/datalist dropdown options */
 .topic-input::-webkit-calendar-picker-indicator {
   filter: invert(0.5);
 }
 
 option {
-  background: white;
-  color: #2d3748;
+  background: var(--color-surface);
+  color: var(--color-text-primary);
   padding: 0.5rem;
 }
 
@@ -384,8 +313,8 @@ option {
 
 .cancel-add-button,
 .confirm-add-button {
-  padding: 0.625rem 1.25rem;
-  border-radius: 6px;
+  padding: 0.55rem 1.1rem;
+  border-radius: var(--radius-sm);
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
@@ -394,22 +323,21 @@ option {
 }
 
 .cancel-add-button {
-  background: #e2e8f0;
-  color: #4a5568;
+  background: var(--color-surface-alt);
+  color: var(--color-text-secondary);
 }
 
 .cancel-add-button:hover:not(:disabled) {
-  background: #cbd5e0;
+  background: var(--color-border);
 }
 
 .confirm-add-button {
-  background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+  background: var(--color-success-solid);
   color: white;
 }
 
 .confirm-add-button:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(72, 187, 120, 0.4);
+  filter: brightness(0.95);
 }
 
 .cancel-add-button:disabled,
@@ -421,21 +349,13 @@ option {
 .loading {
   text-align: center;
   padding: 2rem;
-  color: #718096;
-}
-
-.settings-footer {
-  padding: 1.5rem;
-  border-top: 1px solid #e2e8f0;
-  display: flex;
-  gap: 1rem;
-  justify-content: flex-end;
+  color: var(--color-text-muted);
 }
 
 .cancel-button,
 .save-button {
-  padding: 0.75rem 1.5rem;
-  border-radius: 8px;
+  padding: 0.65rem 1.35rem;
+  border-radius: var(--radius-sm);
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
@@ -443,22 +363,21 @@ option {
 }
 
 .cancel-button {
-  background: #f7fafc;
-  color: #4a5568;
+  background: var(--color-surface-alt);
+  color: var(--color-text-secondary);
 }
 
 .cancel-button:hover {
-  background: #e2e8f0;
+  background: var(--color-border);
 }
 
 .save-button {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--color-primary);
   color: white;
 }
 
 .save-button:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  background: var(--color-primary-hover);
 }
 
 .save-button:disabled {
@@ -466,210 +385,21 @@ option {
   cursor: not-allowed;
 }
 
-.close-button {
-  background: transparent;
-  border: none;
-  font-size: 1.5rem;
-  color: #4a5568;
-  cursor: pointer;
-  padding: 0.25rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-  border-radius: 6px;
-}
-
-.close-button:hover {
-  background: #e2e8f0;
-  transform: scale(1.1);
-}
-
-/* Dark mode */
-@media (prefers-color-scheme: dark) {
-  .settings-modal {
-    background: #2d3748;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
-  }
-
-  .settings-header {
-    border-bottom-color: #4a5568;
-  }
-
-  .settings-header h2 {
-    color: #f7fafc;
-  }
-
-  .settings-section h3 {
-    color: #f7fafc;
-    font-weight: 700;
-  }
-
-  .checkbox-text {
-    color: #e2e8f0;
-  }
-
-  .section-header {
-    background: #374151;
-  }
-
-  .section-header:hover {
-    background: #4a5568;
-  }
-
-  .section-description {
-    color: #cbd5e0;
-  }
-
-  .section-content {
-    background: #1a202c;
-    border-top-color: #4a5568;
-  }
-
-  .settings-section {
-    border-color: #4a5568;
-  }
-
-  .section-header h3 {
-    color: #f7fafc;
-  }
-  .checkbox-label:hover {
-    background: #374151;
-  }
-
-  .edit-topic-button:hover {
-    background: #4a5568;
-  }
-
-  .delete-topic-button:hover:not(:disabled) {
-    background: #7f1d1d;
-  }
-
-  .edit-topic-form {
-    background: #374151;
-    border-color: #4a5568;
-  }
-
-  .edit-topic-form input {
-    background: #2d3748;
-    color: #e2e8f0;
-    border-color: #4a5568;
-  }
-
-  .edit-topic-form input::placeholder {
-    color: #a0aec0;
-  }
-
-  .cancel-edit-button {
-    background: #4a5568;
-    color: #e2e8f0;
-  }
-
-  .cancel-edit-button:hover:not(:disabled) {
-    background: #5a6778;
-  }
-
-  .save-edit-button {
-    box-shadow: 0 2px 8px rgba(72, 187, 120, 0.3);
-  }
-
-  .settings-footer {
-    border-top-color: #4a5568;
-  }
-
-  .cancel-button {
-    background: #374151;
-    color: #e2e8f0;
-  }
-
-  .cancel-button:hover {
-    background: #4a5568;
-  }
-
-  .clear-selection-button {
-    background: #374151;
-    border-color: #4a5568;
-    color: #e2e8f0;
-  }
-
-  .clear-selection-button:hover {
-    background: #4a5568;
-  }
-
-  .add-topic-form {
-    background: #374151;
-    border-color: #4a5568;
-  }
-
-  .add-topic-button {
-    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
-  }
-
-  .topic-input {
-    background: #2d3748;
-    border-color: #4a5568;
-    color: #e2e8f0;
-  }
-
-  .topic-input::placeholder {
-    color: #a0aec0;
-  }
-
-  .topic-input:focus {
-    border-color: #667eea;
-  }
-
-  /* Dark mode autocomplete styling */
-  .topic-input:-webkit-autofill,
-  .topic-input:-webkit-autofill:hover,
-  .topic-input:-webkit-autofill:focus {
-    -webkit-text-fill-color: #e2e8f0;
-    -webkit-box-shadow: 0 0 0px 1000px #374151 inset;
-  }
-
-  option {
-    background: #2d3748;
-    color: #e2e8f0;
-  }
-
-  .cancel-add-button {
-    background: #4a5568;
-    color: #e2e8f0;
-  }
-
-  .cancel-add-button:hover:not(:disabled) {
-    background: #5a6778;
-  }
-
-  .loading {
-    color: #a0aec0;
-  }
-
-  .close-button {
-    color: #e2e8f0;
-  }
-
-  .close-button:hover {
-    background: #374151;
-  }
-}
-
 /* Mobile responsive */
 @media (max-width: 768px) {
   .settings-modal {
-    width: 95%;
     max-height: 90vh;
   }
 
-  .settings-header h2 {
-    font-size: 1.5rem;
+  .modal-shell-header h2 {
+    font-size: 1.35rem;
   }
 
-  .settings-section h3 {
-    font-size: 1.1rem;
+  .section-header h3 {
+    font-size: 1.05rem;
   }
 
-  .settings-footer {
+  .modal-shell-footer {
     flex-direction: column;
   }
 
@@ -692,9 +422,9 @@ option {
   align-items: center;
   justify-content: space-between;
   padding: 0.55rem 0.75rem;
-  background: #f9fafb;
-  border: 1px solid #e5e7eb;
-  border-radius: 7px;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
 }
 
 .user-list-info {
@@ -710,29 +440,24 @@ option {
   flex-shrink: 0;
 }
 
-/* The feed/user rows stay light in BOTH color schemes, so pin the action-icon
-   colors explicitly instead of inheriting the scheme-dependent (white in dark
-   mode) text color — otherwise the icons are invisible until hovered. The
-   :not(:disabled) hover rules also out-specify the dark-mode hover overrides,
-   which would otherwise darken the hover background and hide the dark icon. */
 .user-list-item .edit-topic-button,
 .user-list-item .delete-topic-button {
-  color: #4a5568;
+  color: var(--color-text-secondary);
 }
 
 .user-list-item .edit-topic-button:hover {
-  background: #e2e8f0;
-  color: #1a202c;
+  background: var(--color-border);
+  color: var(--color-text-primary);
 }
 
 .user-list-item .delete-topic-button:hover:not(:disabled) {
-  background: #fee2e2;
-  color: #b91c1c;
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
 }
 
 .user-list-email {
   font-size: 0.9rem;
-  color: #111827;
+  color: var(--color-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -742,20 +467,22 @@ option {
   font-size: 0.72rem;
   font-weight: 600;
   padding: 0.18rem 0.55rem;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   flex-shrink: 0;
+  background: var(--color-surface-alt);
+  color: var(--color-text-secondary);
 }
 
 .user-role-admin {
-  background: #ede9fe;
-  color: #6d28d9;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
 }
 
 .user-role-user {
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: var(--color-info-soft);
+  color: var(--color-info);
 }
 
 .add-user-form {
@@ -763,16 +490,16 @@ option {
   flex-direction: column;
   gap: 0.6rem;
   padding: 0.85rem;
-  background: #f3f4f6;
-  border-radius: 8px;
-  border: 1px solid #e5e7eb;
+  background: var(--color-surface-alt);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
 }
 
 .add-user-title {
   margin: 0 0 0.2rem 0;
   font-size: 0.9rem;
   font-weight: 600;
-  color: #374151;
+  color: var(--color-text-secondary);
   display: flex;
   align-items: center;
   gap: 0.35rem;

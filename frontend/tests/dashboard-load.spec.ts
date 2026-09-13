@@ -25,7 +25,7 @@ test('shows empty state when no articles', async ({ page }) => {
 
   await page.goto('/');
 
-  await expect(page.getByText('📭 Makale bulunamadı')).toBeVisible();
+  await expect(page.getByText('Makale bulunamadı')).toBeVisible();
 });
 
 test('shows error state when articles request fails', async ({ page }) => {
@@ -38,7 +38,7 @@ test('shows error state when articles request fails', async ({ page }) => {
 
   await page.goto('/');
 
-  await expect(page.getByText('⚠️ Makaleler yüklenirken hata oluştu')).toBeVisible();
+  await expect(page.getByText('Makaleler yüklenirken hata oluştu')).toBeVisible();
 });
 
 test('shows loading state before response resolves', async ({ page }) => {
@@ -56,7 +56,7 @@ test('shows loading state before response resolves', async ({ page }) => {
 
   await page.goto('/');
 
-  await expect(page.getByText('⏳ Makaleler yükleniyor...')).toBeVisible();
+  await expect(page.getByRole('status', { name: 'Makaleler yükleniyor' })).toBeVisible();
   await expect(page.getByText('Slow Article')).toBeVisible({ timeout: 5000 });
 });
 
@@ -80,15 +80,15 @@ test('switches between unread/archive/important tabs and refetches with differen
     const u = new URL(req.url());
     return u.pathname === '/api/articles/' && u.searchParams.get('is_read') === 'true';
   });
-  // Scoped to the emoji: "Arşiv" is also a substring of the bulk-action
-  // buttons' "Arşive Gönder" text.
-  await page.getByRole('button', { name: /🗄️/ }).click();
+  // Scoped to the tab's aria-label: "Arşiv" is also a substring of the
+  // bulk-action buttons' "Arşive Gönder" text.
+  await page.getByRole('button', { name: 'Arşiv', exact: true }).click();
   await archiveReq;
   await expect(page.getByText('Archived Piece')).toBeVisible();
   await expect(page.getByText('Unread Piece')).not.toBeVisible();
 
   // "Favori" is also a substring of each ArticleCard's "Favorilere ekle" button.
-  await page.getByRole('button', { name: /⭐/ }).click();
+  await page.getByRole('button', { name: 'Favori', exact: true }).click();
   await expect(page.getByText('Starred Piece')).toBeVisible();
   await expect(page.getByText('Archived Piece')).not.toBeVisible();
 });
@@ -105,17 +105,31 @@ test('section tab badge counts reflect articleCounts', async ({ page }) => {
 
   await page.goto('/');
 
-  await expect(page.getByRole('button', { name: /📥/ })).toContainText('2');
-  await expect(page.getByRole('button', { name: /🗄️/ })).toContainText('1');
-  await expect(page.getByRole('button', { name: /⭐/ })).toContainText('1');
+  await expect(page.getByRole('button', { name: 'Okunmamışlar', exact: true })).toContainText('2');
+  await expect(page.getByRole('button', { name: 'Arşiv', exact: true })).toContainText('1');
+  await expect(page.getByRole('button', { name: 'Favori', exact: true })).toContainText('1');
 });
 
-test('header shows app version and logged-in user email', async ({ page }) => {
+test('header shows app version, and the user menu reveals email, theme toggle and logout', async ({ page }) => {
   await loginAs(page);
   await mockApi(page, { articles: [] });
 
   await page.goto('/');
 
   await expect(page.getByText('v1.0.0')).toBeVisible();
+
+  const avatar = page.getByRole('button', { name: new RegExp(`Kullanıcı menüsü: ${DEFAULT_USER.email}`) });
+  await expect(page.getByText(DEFAULT_USER.email)).not.toBeVisible();
+
+  await avatar.click();
+
   await expect(page.getByText(DEFAULT_USER.email)).toBeVisible();
+  const themeSelect = page.getByLabel('Tema');
+  await expect(themeSelect).toHaveValue('system');
+  await themeSelect.selectOption('dark');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+
+  await page.getByRole('button', { name: 'Çıkış Yap' }).click();
+
+  await expect(page.getByRole('heading', { name: 'News Summarizer' })).toBeVisible();
 });

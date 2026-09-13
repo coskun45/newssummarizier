@@ -13,14 +13,14 @@ function ContentModal({ isOpen, onClose, title, content }: ContentModalProps) {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2 className="modal-title">{title}</h2>
-          <button className="modal-close" onClick={onClose}>
+      <div className="modal-shell content-modal-shell" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-shell-header">
+          <h2>{title}</h2>
+          <button className="modal-close-btn" onClick={onClose} aria-label="Kapat">
             <XMarkIcon />
           </button>
         </div>
-        <div className="modal-body">
+        <div className="modal-shell-body">
           {content ? (
             <div className="content-text">
               {content.split('\n').map((paragraph, idx) => (
@@ -28,7 +28,7 @@ function ContentModal({ isOpen, onClose, title, content }: ContentModalProps) {
               ))}
             </div>
           ) : (
-            <p className="text-muted">İçerik mevcut değil</p>
+            <p className="text-muted content-empty">İçerik mevcut değil</p>
           )}
         </div>
       </div>

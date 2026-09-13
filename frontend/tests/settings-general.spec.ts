@@ -88,7 +88,7 @@ test('closing via backdrop click', async ({ page }) => {
   await page.goto('/');
 
   await openSettings(page);
-  await page.locator('.settings-overlay').click({ position: { x: 5, y: 5 } });
+  await page.locator('.modal-overlay').click({ position: { x: 5, y: 5 } });
 
   await expect(page.locator('.settings-modal')).not.toBeVisible();
 });

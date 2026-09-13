@@ -10,45 +10,24 @@
   padding: 0.5rem 0.75rem;
   background: none;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 0.95rem;
   font-weight: 700;
-  color: #0891b2;
+  color: var(--color-accent);
   text-align: left;
   transition: background-color 0.2s;
   margin-bottom: 0.1rem;
 }
 
 .importance-header:hover {
-  background-color: #f0f4ff;
+  background-color: var(--color-surface-alt);
 }
 
 .importance-header.active {
-  color: #2b6cb0;
-  background-color: #ebf4ff;
-  border-left: 3px solid #4299e1;
-}
-
-.unimportant-btn {
-  color: #9ca3af;
-}
-
-.unimportant-btn:hover {
-  background-color: #fff5f5;
-  color: #dc2626;
-}
-
-.unimportant-active {
-  background-color: #fff5f5 !important;
-  color: #dc2626 !important;
-  border-left: 3px solid #fc8181 !important;
-}
-
-.importance-divider {
-  height: 1px;
-  background: #e2e8f0;
-  margin: 0.25rem 0.75rem;
+  color: var(--color-primary);
+  background-color: var(--color-primary-soft);
+  border-left: 3px solid var(--color-primary);
 }
 
 .importance-label {
@@ -56,8 +35,13 @@
 }
 
 .importance-chevron {
-  font-size: 0.65rem;
-  color: #a0aec0;
+  display: inline-flex;
+  color: var(--color-text-muted);
+}
+
+.importance-chevron svg {
+  width: 14px;
+  height: 14px;
 }
 
 .importance-topics {
@@ -67,60 +51,35 @@
   padding-left: 0.5rem;
 }
 
-
 .topic-item {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   cursor: pointer;
   padding: 0.4rem 0.5rem;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   transition: background-color 0.2s;
 }
 
 .topic-item:hover {
-  background-color: #f7fafc;
+  background-color: var(--color-surface-alt);
 }
 
 .topic-item input[type='checkbox'] {
   cursor: pointer;
+  accent-color: var(--color-primary);
 }
 
 .topic-name {
   flex: 1;
   font-size: 0.875rem;
+  color: var(--color-text-primary);
 }
 
 .topic-count {
   font-size: 0.75rem;
-  color: #718096;
-  background: #edf2f7;
+  color: var(--color-text-secondary);
+  background: var(--color-surface-alt);
   padding: 0.125rem 0.5rem;
-  border-radius: 10px;
-}
-
-
-@media (prefers-color-scheme: dark) {
-  .importance-header {
-    color: #22d3ee;
-  }
-
-  .importance-header:hover {
-    background-color: #4a5568;
-  }
-
-  .importance-header.active {
-    background-color: #2a4365;
-    color: #90cdf4;
-    border-left-color: #63b3ed;
-  }
-
-  .topic-item:hover {
-    background-color: #4a5568;
-  }
-
-  .topic-count {
-    background: #4a5568;
-    color: #cbd5e0;
-  }
+  border-radius: var(--radius-full);
 }

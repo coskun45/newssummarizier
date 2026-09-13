@@ -11,7 +11,23 @@ import DateFilter from '../DateFilter/DateFilter';
 import SearchBar from '../SearchBar/SearchBar';
 import Pagination from '../Pagination/Pagination';
 import Settings from '../Settings/Settings';
-import { Cog6ToothIcon, ArrowPathIcon, ArrowRightStartOnRectangleIcon, FunnelIcon } from '@heroicons/react/24/outline';
+import UserMenu from '../UserMenu/UserMenu';
+import {
+  Cog6ToothIcon,
+  ArrowPathIcon,
+  FunnelIcon,
+  InboxIcon,
+  ArchiveBoxIcon,
+  ArchiveBoxArrowDownIcon,
+  CheckCircleIcon,
+  XMarkIcon,
+  DocumentArrowDownIcon,
+  ChatBubbleLeftRightIcon,
+  TrashIcon,
+  ExclamationTriangleIcon,
+  InformationCircleIcon,
+} from '@heroicons/react/24/outline';
+import { StarIcon } from '@heroicons/react/24/solid';
 import type { AuthUser, DateFilterState } from '../../types';
 import './Dashboard.css';
 
@@ -211,7 +227,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
       return;
     }
     downloadArticlesAsWord(items);
-    showExportNotice(`📄 ${items.length} makale Word olarak indirildi.`);
+    showExportNotice(`${items.length} makale Word olarak indirildi.`);
   };
 
   const handleExportWhatsApp = async () => {
@@ -223,7 +239,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
     const ok = await copyToClipboard(buildWhatsAppMessage(items));
     showExportNotice(
       ok
-        ? `💬 ${items.length} makale panoya kopyalandı — WhatsApp'a yapıştırabilirsiniz.`
+        ? `${items.length} makale panoya kopyalandı — WhatsApp'a yapıştırabilirsiniz.`
         : 'Panoya kopyalanamadı.'
     );
   };
@@ -329,13 +345,17 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                 )}
               </button>
               {refreshStatus === 'running' && (
-                <span className="refresh-message refresh-message--processing">⏳ Makaleler işleniyor...</span>
+                <span className="refresh-message refresh-message--processing">
+                  <ArrowPathIcon className="spin-icon" /> Makaleler işleniyor...
+                </span>
               )}
               {typeof refreshStatus === 'object' && (
                 <span className="refresh-message">
-                  {refreshStatus.new_articles > 0
-                    ? `✅ ${refreshStatus.new_articles} yeni makale eklendi (${refreshStatus.processed} işlendi)`
-                    : `ℹ️ ${refreshStatus.processed} makale işlendi, yeni makale yok`}
+                  {refreshStatus.new_articles > 0 ? (
+                    <><CheckCircleIcon /> {refreshStatus.new_articles} yeni makale eklendi ({refreshStatus.processed} işlendi)</>
+                  ) : (
+                    <><InformationCircleIcon /> {refreshStatus.processed} makale işlendi, yeni makale yok</>
+                  )}
                 </span>
               )}
 
@@ -347,16 +367,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                 <Cog6ToothIcon />
               </button>
 
-              <div className="user-info">
-                <span className="user-email" title={currentUser.email}>{currentUser.email}</span>
-                <button
-                  className="logout-button"
-                  onClick={onLogout}
-                  title="Çıkış Yap"
-                >
-                  <ArrowRightStartOnRectangleIcon />
-                </button>
-              </div>
+              <UserMenu email={currentUser.email} onLogout={onLogout} />
             </div>
           </div>
         </div>
@@ -433,8 +444,9 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                 <button
                   className={`section-tab${activeSection === 'unread' ? ' section-tab--active' : ''}`}
                   onClick={() => handleSectionChange('unread')}
+                  aria-label="Okunmamışlar"
                 >
-                  📥 Okunmamışlar
+                  <InboxIcon /> Okunmamışlar
                   {(articleCounts?.unread_count ?? 0) > 0 && (
                     <span className="section-tab-badge">{articleCounts!.unread_count}</span>
                   )}
@@ -442,8 +454,9 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                 <button
                   className={`section-tab${activeSection === 'archive' ? ' section-tab--active' : ''}`}
                   onClick={() => handleSectionChange('archive')}
+                  aria-label="Arşiv"
                 >
-                  🗄️ Arşiv
+                  <ArchiveBoxIcon /> Arşiv
                   {(articleCounts?.read_count ?? 0) > 0 && (
                     <span className="section-tab-badge section-tab-badge--archive">{articleCounts!.read_count}</span>
                   )}
@@ -451,8 +464,9 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                 <button
                   className={`section-tab${activeSection === 'important' ? ' section-tab--active' : ''}`}
                   onClick={() => handleSectionChange('important')}
+                  aria-label="Favori"
                 >
-                  ⭐ Favori
+                  <StarIcon /> Favori
                   {(articleCounts?.starred_count ?? 0) > 0 && (
                     <span className="section-tab-badge section-tab-badge--important">{articleCounts!.starred_count}</span>
                   )}
@@ -466,7 +480,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                     onClick={handleMarkAll}
                     disabled={markBulkReadMutation.isPending}
                   >
-                    📦 Tümünü Arşive Gönder
+                    <ArchiveBoxArrowDownIcon /> Tümünü Arşive Gönder
                   </button>
                   {selectedArticleIds.size > 0 && (
                     <button
@@ -474,7 +488,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                       onClick={handleMarkSelected}
                       disabled={markBulkReadMutation.isPending}
                     >
-                      📦 Seçilenleri Arşive Gönder ({selectedArticleIds.size})
+                      <ArchiveBoxArrowDownIcon /> Seçilenleri Arşive Gönder ({selectedArticleIds.size})
                     </button>
                   )}
                 </div>
@@ -499,14 +513,14 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                     className="btn btn-outline btn-sm"
                     onClick={() => handleSelectAll(articlesData.articles.map((a) => a.id))}
                   >
-                    ☑️ Tümünü Seç
+                    <CheckCircleIcon /> Tümünü Seç
                   </button>
                   {selectedArticleIds.size > 0 && (
                     <button
                       className="btn btn-outline btn-sm"
                       onClick={() => setSelectedArticleIds(new Set())}
                     >
-                      ✖ Seçimi Temizle ({selectedArticleIds.size})
+                      <XMarkIcon /> Seçimi Temizle ({selectedArticleIds.size})
                     </button>
                   )}
                   <button
@@ -515,7 +529,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                     disabled={selectedArticleIds.size === 0}
                     title="Seçili makaleleri özetleriyle birlikte Word olarak indir"
                   >
-                    📄 Word indir
+                    <DocumentArrowDownIcon /> Word indir
                   </button>
                   <button
                     className="btn btn-primary btn-sm"
@@ -523,7 +537,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                     disabled={selectedArticleIds.size === 0}
                     title="Seçili makaleleri özetleriyle WhatsApp mesajı olarak panoya kopyala"
                   >
-                    💬 WhatsApp
+                    <ChatBubbleLeftRightIcon /> WhatsApp
                   </button>
                   <button
                     className="btn btn-outline btn-sm"
@@ -531,7 +545,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                     disabled={unstarAllMutation.isPending}
                     title="Favori listesini tamamen temizle"
                   >
-                    🗑️ Listeyi Temizle
+                    <TrashIcon /> Listeyi Temizle
                   </button>
                   {exportNotice && <span className="refresh-message refresh-message--processing">{exportNotice}</span>}
                 </div>
@@ -539,17 +553,25 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
 
               {error && (
                 <div className="error-message">
-                  <p>⚠️ Makaleler yüklenirken hata oluştu</p>
+                  <p><ExclamationTriangleIcon /> Makaleler yüklenirken hata oluştu</p>
                 </div>
               )}
 
               {isLoading ? (
-                <div className="loading-state">
-                  <p>⏳ Makaleler yükleniyor...</p>
+                <div className="skeleton-list" role="status" aria-label="Makaleler yükleniyor">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="skeleton-card">
+                      <div className="skeleton skeleton-line skeleton-line--title" />
+                      <div className="skeleton skeleton-line skeleton-line--meta" />
+                      <div className="skeleton skeleton-line skeleton-line--body" />
+                      <div className="skeleton skeleton-line skeleton-line--body-short" />
+                    </div>
+                  ))}
                 </div>
               ) : articlesData && articlesData.articles.length === 0 ? (
                 <div className="empty-state">
-                  <p>📭 Makale bulunamadı</p>
+                  <InboxIcon className="empty-state-icon" />
+                  <p>Makale bulunamadı</p>
                   <p className="text-small text-muted">
                     {selectedTopics.length > 0 || searchQuery
                       ? 'Farklı filtreler deneyin'

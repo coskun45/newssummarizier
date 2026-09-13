@@ -7,7 +7,7 @@ paths:
 # React Components
 
 ## Structure
-- **One component per folder, co-located with its CSS** — `src/components/<Name>/<Name>.tsx` + `<Name>.css`, imported as `import './<Name>.css'`. Follow this layout for every new component.
+- **One component per folder, co-located with its CSS** — `src/components/<Name>/<Name>.tsx` + `<Name>.css`, imported as `import './<Name>.css'`. Follow this layout for every new component. Exception: shared design tokens and generic UI primitives (buttons, badges, inputs, modal shell, skeletons) live in `src/styles/` instead — see [[styling]].
 - **Components are typed function declarations** with an explicit `interface <Name>Props` and default values in the destructured params (`function ArticleCard({ article, isSelected = false }: ArticleCardProps)`). Default-export the component.
 - **Domain types live in `src/types/index.ts`** — import them with `import type { ... }`. Don't redefine API shapes locally; keep them in sync with the backend Pydantic response models (see backend `api-routes`).
 

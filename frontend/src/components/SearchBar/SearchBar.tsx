@@ -1,4 +1,4 @@
-import { XMarkIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import './SearchBar.css';
 
 interface SearchBarProps {
@@ -9,6 +9,7 @@ interface SearchBarProps {
 function SearchBar({ value, onChange }: SearchBarProps) {
   return (
     <div className="search-bar">
+      <MagnifyingGlassIcon className="search-icon" />
       <input
         type="text"
         placeholder="Makalelerde ara..."

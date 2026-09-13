@@ -1,11 +1,7 @@
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: var(--font-sans);
   line-height: 1.5;
   font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -22,18 +18,11 @@
 body {
   margin: 0;
   min-height: 100vh;
+  transition: background-color 0.15s, color 0.15s;
 }
 
 #root {
   min-height: 100vh;
-}
-
-/* Light mode */
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
 }
 
 /* Utility classes */
@@ -44,7 +33,7 @@ body {
 }
 
 .text-muted {
-  opacity: 0.7;
+  color: var(--color-text-muted);
 }
 
 .text-small {
@@ -52,7 +41,7 @@ body {
 }
 
 .text-error {
-  color: #ef4444;
+  color: var(--color-danger);
 }
 
 .mb-1 {

@@ -1,8 +1,15 @@
 import { useEffect, useState } from 'react';
-import type { ToastEventDetail } from '../../lib/toast';
+import { CheckCircleIcon, XCircleIcon, InformationCircleIcon } from '@heroicons/react/24/solid';
+import type { ToastEventDetail, ToastVariant } from '../../lib/toast';
 import './ToastContainer.css';
 
 const AUTO_DISMISS_MS = 5000;
+
+const ICONS: Record<ToastVariant, typeof CheckCircleIcon> = {
+    success: CheckCircleIcon,
+    error: XCircleIcon,
+    info: InformationCircleIcon,
+};
 
 function ToastContainer() {
     const [toasts, setToasts] = useState<ToastEventDetail[]>([]);
@@ -27,16 +34,20 @@ function ToastContainer() {
 
     return (
         <div className="toast-container" role="region" aria-live="polite">
-            {toasts.map((toast) => (
-                <div
-                    key={toast.id}
-                    className={`toast toast--${toast.variant}`}
-                    role="alert"
-                    onClick={() => dismiss(toast.id)}
-                >
-                    {toast.message}
-                </div>
-            ))}
+            {toasts.map((toast) => {
+                const Icon = ICONS[toast.variant];
+                return (
+                    <div
+                        key={toast.id}
+                        className={`toast toast--${toast.variant}`}
+                        role="alert"
+                        onClick={() => dismiss(toast.id)}
+                    >
+                        <Icon className="toast-icon" />
+                        <span>{toast.message}</span>
+                    </div>
+                );
+            })}
         </div>
     );
 }

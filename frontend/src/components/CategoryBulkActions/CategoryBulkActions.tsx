@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ArchiveBoxArrowDownIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { PRIORITIES, type PriorityOption } from '../../constants/priorities';
 import './CategoryBulkActions.css';
 
@@ -46,7 +47,7 @@ function CategoryBulkActions({
                   disabled={empty || archivePending}
                   title={`${p.label} önceliğindeki tüm haberleri arşive gönder`}
                 >
-                  📦 Tümünü Arşive Gönder
+                  <ArchiveBoxArrowDownIcon /> Tümünü Arşive Gönder
                 </button>
                 <button
                   className="btn btn-outline btn-sm category-bulk-delete"
@@ -54,7 +55,7 @@ function CategoryBulkActions({
                   disabled={empty || deletePending}
                   title={`${p.label} önceliğindeki tüm haberleri sil`}
                 >
-                  🗑️ Tümünü Sil
+                  <TrashIcon /> Tümünü Sil
                 </button>
               </div>
             </div>
@@ -73,7 +74,7 @@ function CategoryBulkActions({
               disabled={unimportantCount === 0 || archivePending}
               title="Tüm önemsiz haberleri arşive gönder"
             >
-              📦 Tümünü Arşive Gönder
+              <ArchiveBoxArrowDownIcon /> Tümünü Arşive Gönder
             </button>
             <button
               className="btn btn-outline btn-sm category-bulk-delete"
@@ -81,7 +82,7 @@ function CategoryBulkActions({
               disabled={unimportantCount === 0 || deletePending}
               title="Tüm önemsiz haberleri sil"
             >
-              🗑️ Tümünü Sil
+              <TrashIcon /> Tümünü Sil
             </button>
           </div>
         </div>

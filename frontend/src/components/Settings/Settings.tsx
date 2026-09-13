@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSettings, useUpdateSettings, useTopics, useCreateTopic, useUpdateTopic, useDeleteTopic, useUsers, useCreateUser, useDeleteUser, useFeeds, useCreateFeed, useUpdateFeed, useDeleteFeed } from '../../hooks/useApi';
 import PromptEditor from '../PromptEditor/PromptEditor';
-import { Cog6ToothIcon, FolderIcon, DocumentTextIcon, SparklesIcon, PencilIcon, TrashIcon, CheckIcon, XMarkIcon, PlusIcon, ChevronDownIcon, ChevronRightIcon, UsersIcon, RssIcon } from '@heroicons/react/24/outline';
+import { Cog6ToothIcon, FolderIcon, DocumentTextIcon, SparklesIcon, PencilIcon, TrashIcon, CheckIcon, XMarkIcon, PlusIcon, ChevronDownIcon, ChevronRightIcon, UsersIcon, RssIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import type { AuthUser } from '../../types';
 import './Settings.css';
 
@@ -238,14 +238,14 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
   if (!isOpen) return null;
 
   return (
-    <div className="settings-overlay" onClick={onClose}>
-      <div className="settings-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="settings-header">
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-shell settings-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-shell-header">
           <h2><Cog6ToothIcon className="header-icon" /> Ayarlar</h2>
-          <button className="close-button" onClick={onClose}><XMarkIcon /></button>
+          <button className="modal-close-btn" onClick={onClose} aria-label="Kapat"><XMarkIcon /></button>
         </div>
 
-        <div className="settings-content">
+        <div className="modal-shell-body settings-content">
           {settingsLoading ? (
             <div className="loading">Ayarlar yükleniyor...</div>
           ) : (
@@ -577,7 +577,7 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
                   </label>
                 </div>
                 {enabledSummaryTypes.length === 0 && (
-                  <p className="warning-text">⚠️ En az bir tür seçilmelidir</p>
+                  <p className="warning-text"><ExclamationTriangleIcon /> En az bir tür seçilmelidir</p>
                 )}
                 </div>
                 )}
@@ -685,7 +685,7 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
                           <option value="user">user</option>
                           <option value="admin">admin</option>
                         </select>
-                        {userError && <p className="warning-text">⚠️ {userError}</p>}
+                        {userError && <p className="warning-text"><ExclamationTriangleIcon /> {userError}</p>}
                         <button
                           className="confirm-add-button"
                           onClick={handleAddUser}
@@ -702,7 +702,7 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
           )}
         </div>
 
-        <div className="settings-footer">
+        <div className="modal-shell-footer">
           <button className="cancel-button" onClick={onClose}>
             İptal
           </button>

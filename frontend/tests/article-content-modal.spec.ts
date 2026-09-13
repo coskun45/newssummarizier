@@ -19,8 +19,7 @@ test('opens with fetched content and closes via the close button', async ({ page
 
   await expect(page.getByText('This is the cleaned article body.')).toBeVisible();
 
-  // ContentModal's close button has no accessible name (icon-only) — CSS-selector exception.
-  await page.locator('.modal-close').click();
+  await page.getByRole('button', { name: 'Kapat' }).click();
   await expect(page.locator('.modal-overlay')).not.toBeVisible();
 });
 

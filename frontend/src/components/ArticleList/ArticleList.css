@@ -6,9 +6,9 @@
 
 .article-list-select-all {
   padding: 6px 14px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
 }
@@ -18,13 +18,13 @@
   align-items: center;
   gap: 8px;
   font-size: 0.85rem;
-  color: #4a5568;
+  color: var(--color-text-secondary);
   cursor: pointer;
   user-select: none;
 }
 
 .select-all-label input[type="checkbox"] {
-  accent-color: #667eea;
+  accent-color: var(--color-primary);
   width: 16px;
   height: 16px;
   cursor: pointer;

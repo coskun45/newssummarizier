@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 import type { Topic } from '../../types';
 import { PRIORITIES } from '../../constants/priorities';
 import './TopicFilter.css';
@@ -47,7 +48,7 @@ function TopicFilter({ topics, selectedTopics, onTopicToggle, importanceMode, on
         onClick={handlePriorityClick}
       >
         <span className="importance-label">Önem Seviyesi</span>
-        <span className="importance-chevron">{openPriority ? '▲' : '▼'}</span>
+        <span className="importance-chevron">{openPriority ? <ChevronUpIcon /> : <ChevronDownIcon />}</span>
       </button>
 
       {openPriority && (
@@ -87,7 +88,7 @@ function TopicFilter({ topics, selectedTopics, onTopicToggle, importanceMode, on
         onClick={handleCategoriesClick}
       >
         <span className="importance-label">Kategoriler</span>
-        <span className="importance-chevron">{openCategories ? '▲' : '▼'}</span>
+        <span className="importance-chevron">{openCategories ? <ChevronUpIcon /> : <ChevronDownIcon />}</span>
       </button>
 
       {openCategories && (

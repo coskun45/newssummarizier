@@ -1,6 +1,7 @@
 import { useState, FormEvent } from 'react';
 import { authApi } from '../../services/api';
 import type { AuthUser } from '../../types';
+import ThemeToggle from '../ThemeToggle/ThemeToggle';
 import './Login.css';
 
 interface LoginProps {
@@ -37,6 +38,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
 
     return (
         <div className="login-page">
+            <ThemeToggle className="login-theme-toggle" />
             <div className="login-card">
                 <div className="login-header">
                     <h1>News Summarizer</h1>
