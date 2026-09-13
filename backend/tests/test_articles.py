@@ -447,7 +447,7 @@ def test_get_article_counts_by_priority_excludes_read_and_null_priority(client, 
     assert response.json()["by_priority"] == {"high": 1}
 
 
-def test_get_article_counts_by_feed_includes_read_and_unread(client, auth_headers, db_session):
+def test_get_counts_by_feed_excludes_read_articles(client, auth_headers, db_session):
     feed = _make_feed(db_session)
     _make_article(db_session, feed.id, url="https://example.com/h1", is_read=True)
     _make_article(db_session, feed.id, url="https://example.com/h2", is_read=False)
@@ -455,7 +455,19 @@ def test_get_article_counts_by_feed_includes_read_and_unread(client, auth_header
     response = client.get("/api/articles/counts", headers=auth_headers)
 
     assert response.status_code == 200
-    assert response.json()["by_feed"][str(feed.id)] == 2
+    # Only the unread article counts toward the feed total.
+    assert response.json()["by_feed"][str(feed.id)] == 1
+
+
+def test_get_counts_by_feed_omits_feed_with_only_read_articles(client, auth_headers, db_session):
+    feed = _make_feed(db_session)
+    _make_article(db_session, feed.id, url="https://example.com/j1", is_read=True)
+
+    response = client.get("/api/articles/counts", headers=auth_headers)
+
+    assert response.status_code == 200
+    # A feed whose articles are all read is absent from by_feed (grouped count of 0).
+    assert str(feed.id) not in response.json()["by_feed"]
 
 
 def test_get_article_counts_unread_read_starred_totals(client, auth_headers, db_session):

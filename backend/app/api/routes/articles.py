@@ -337,6 +337,8 @@ async def get_article_counts(db: Session = Depends(get_db)):
     feed_rows = db.query(
         models.Article.feed_id,
         func.count(models.Article.id)
+    ).filter(
+        models.Article.is_read.is_(False),
     ).group_by(models.Article.feed_id).all()
 
     unimportant_count = db.query(func.count(models.Article.id)).filter(
