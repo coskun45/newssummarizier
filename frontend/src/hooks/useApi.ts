@@ -255,6 +255,12 @@ export const useCreateFeed = () => {
     });
 };
 
+export const useTestFeedConnection = () => {
+    return useMutation({
+        mutationFn: (url: string) => feedsApi.test(url),
+    });
+};
+
 export const useDeleteFeed = () => {
     const queryClient = useQueryClient();
     return useMutation({

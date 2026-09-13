@@ -247,6 +247,22 @@ button svg {
   flex-shrink: 0;
 }
 
+.success-text {
+  color: var(--color-success);
+  font-size: 0.875rem;
+  margin-top: 0.5rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.success-text svg {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+}
+
 .add-topic-button {
   margin-top: 1rem;
   padding: 0.65rem 1.1rem;
@@ -342,6 +358,37 @@ option {
 
 .cancel-add-button:disabled,
 .confirm-add-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.test-connection-button {
+  padding: 0.55rem 1.1rem;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid var(--color-primary);
+  background: transparent;
+  color: var(--color-primary);
+  font-size: 0.875rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  align-self: flex-start;
+}
+
+.test-connection-button svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.test-connection-button:hover:not(:disabled) {
+  background: var(--color-primary);
+  color: white;
+}
+
+.test-connection-button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }

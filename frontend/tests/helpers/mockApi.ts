@@ -275,6 +275,9 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
       state.feeds.push(feed);
       return json(feed);
     }
+    if (method === 'POST' && path === '/feeds/test') {
+      return json({ status: 'ok' });
+    }
     let m = path.match(/^\/feeds\/(\d+)$/);
     if (m) {
       const feedId = parseInt(m[1], 10);

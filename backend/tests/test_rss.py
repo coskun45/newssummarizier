@@ -26,6 +26,50 @@ def _reject_unsafe_url():
     )
 
 
+# ==================== POST /test (test_feed) ====================
+
+def test_test_feed_requires_auth(client):
+    response = client.post("/api/feeds/test", json={"url": "https://example.com/feed"})
+    assert response.status_code == 401
+
+
+def test_test_feed_success_does_not_persist(client, auth_headers, db_session):
+    entry = _FakeEntry(published="Sat, 13 Sep 2026 12:47:00 +0000")
+
+    with _no_op_safe_url(), patch(
+        "app.agents.tools.feedparser.parse", return_value=_FakeFeed([entry])
+    ):
+        response = client.post(
+            "/api/feeds/test", json={"url": "https://example.com/feed"}, headers=auth_headers
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    assert db_session.query(models.Feed).count() == 0
+
+
+def test_test_feed_rejects_unreachable_feed(client, auth_headers, db_session):
+    with _no_op_safe_url(), patch(
+        "app.agents.tools.feedparser.parse", side_effect=Exception("connection refused")
+    ):
+        response = client.post(
+            "/api/feeds/test", json={"url": "https://example.com/feed"}, headers=auth_headers
+        )
+
+    assert response.status_code == 400
+
+
+def test_test_feed_rejects_unsafe_url(client, auth_headers, db_session):
+    with _reject_unsafe_url():
+        response = client.post(
+            "/api/feeds/test",
+            json={"url": "https://169.254.169.254/feed"},
+            headers=auth_headers,
+        )
+
+    assert response.status_code == 400
+
+
 # ==================== GET / (list_feeds) ====================
 
 def test_list_feeds_requires_auth(client):
@@ -86,7 +130,11 @@ def test_create_feed_requires_admin(client, auth_headers):
 
 
 def test_create_feed_success(client, admin_headers, db_session):
-    with _no_op_safe_url():
+    entry = _FakeEntry(published="Sat, 13 Sep 2026 12:47:00 +0000")
+
+    with _no_op_safe_url(), patch(
+        "app.agents.tools.feedparser.parse", return_value=_FakeFeed([entry])
+    ):
         response = client.post(
             "/api/feeds/",
             json={"url": "https://example.com/new-feed", "title": "New Feed"},
@@ -97,6 +145,32 @@ def test_create_feed_success(client, admin_headers, db_session):
     body = response.json()
     assert body["url"] == "https://example.com/new-feed"
     assert body["title"] == "New Feed"
+
+
+def test_create_feed_rejects_unreachable_feed(client, admin_headers, db_session):
+    with _no_op_safe_url(), patch(
+        "app.agents.tools.feedparser.parse", side_effect=Exception("connection refused")
+    ):
+        response = client.post(
+            "/api/feeds/", json={"url": "https://example.com/unreachable"}, headers=admin_headers
+        )
+
+    assert response.status_code == 400
+    assert db_session.query(models.Feed).count() == 0
+
+
+def test_create_feed_rejects_non_rss_content(client, admin_headers, db_session):
+    bad_feed = _FakeFeed([])
+    bad_feed.bozo = True
+    bad_feed.bozo_exception = Exception("not well-formed XML")
+
+    with _no_op_safe_url(), patch("app.agents.tools.feedparser.parse", return_value=bad_feed):
+        response = client.post(
+            "/api/feeds/", json={"url": "https://example.com/not-a-feed"}, headers=admin_headers
+        )
+
+    assert response.status_code == 400
+    assert db_session.query(models.Feed).count() == 0
 
 
 def test_create_feed_rejects_unsafe_url(client, admin_headers, db_session):
@@ -159,6 +233,40 @@ def test_update_feed_rejects_duplicate_url_on_change(client, admin_headers, db_s
     assert response.status_code == 400
     assert response.json()["detail"] == "Feed already exists"
     mock_safe.assert_called_once()
+
+
+def test_update_feed_tests_connection_on_url_change_success(client, admin_headers, db_session):
+    feed = _make_feed(db_session, url="https://example.com/old-url")
+    entry = _FakeEntry(published="Sat, 13 Sep 2026 12:47:00 +0000")
+
+    with _no_op_safe_url(), patch(
+        "app.agents.tools.feedparser.parse", return_value=_FakeFeed([entry])
+    ):
+        response = client.put(
+            f"/api/feeds/{feed.id}",
+            json={"url": "https://example.com/new-url"},
+            headers=admin_headers,
+        )
+
+    assert response.status_code == 200
+    assert response.json()["url"] == "https://example.com/new-url"
+
+
+def test_update_feed_rejects_unreachable_url_change(client, admin_headers, db_session):
+    feed = _make_feed(db_session, url="https://example.com/old-url")
+
+    with _no_op_safe_url(), patch(
+        "app.agents.tools.feedparser.parse", side_effect=Exception("connection refused")
+    ):
+        response = client.put(
+            f"/api/feeds/{feed.id}",
+            json={"url": "https://example.com/new-url"},
+            headers=admin_headers,
+        )
+
+    assert response.status_code == 400
+    db_session.refresh(feed)
+    assert feed.url == "https://example.com/old-url"
 
 
 # ==================== POST /{feed_id}/refresh ====================

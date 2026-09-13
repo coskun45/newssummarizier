@@ -56,67 +56,101 @@ def _extract_author(entry) -> Optional[str]:
     return None
 
 
-async def fetch_rss_feed(feed_url: str) -> List[Dict[str, Any]]:
+async def _fetch_and_parse(feed_url: str):
     """
-    Fetch and parse RSS feed.
-    
-    Args:
-        feed_url: URL of the RSS feed
-        
+    Fetch and parse a feed URL with feedparser, off the event loop and bounded by a timeout.
+
     Returns:
-        List of article dictionaries
-        
+        The parsed feedparser result (has `.bozo`, `.entries`, optionally `.status`).
+
     Raises:
-        RSSFetchError: If feed fetching fails
+        RSSFetchError: If the fetch fails or times out.
     """
     try:
         logger.info(f"Fetching RSS feed: {feed_url}")
 
         # feedparser.parse() is a blocking, timeout-less network call — run it off the event
         # loop and bound it so a stalled feed server can't hang the whole app.
-        feed = await asyncio.wait_for(
+        return await asyncio.wait_for(
             asyncio.to_thread(feedparser.parse, feed_url),
             timeout=NETWORK_CALL_TIMEOUT_SECONDS,
         )
-
-        if feed.bozo:
-            logger.warning(f"RSS feed has parsing issues: {feed.bozo_exception}")
-        
-        articles = []
-        for entry in feed.entries:
-            try:
-                # Extract article data
-                article = {
-                    "url": entry.get("link", ""),
-                    "title": entry.get("title", ""),
-                    "author": _extract_author(entry),
-                    "published_at": None,
-                    "raw_content": entry.get("description", "") or entry.get("summary", ""),
-                }
-                
-                # Parse publication date. Feeds without an explicit offset parse as
-                # naive - assume UTC rather than leaving it ambiguous (aware values
-                # are normalized to UTC downstream by UTCDateTime on storage).
-                if hasattr(entry, "published"):
-                    try:
-                        parsed = date_parser.parse(entry.published)
-                        if parsed.tzinfo is None:
-                            parsed = parsed.replace(tzinfo=timezone.utc)
-                        article["published_at"] = parsed
-                    except Exception as e:
-                        logger.warning(f"Failed to parse date: {e}")
-                
-                articles.append(article)
-            except Exception as e:
-                logger.error(f"Error parsing feed entry: {e}")
-                continue
-        
-        logger.info(f"Successfully fetched {len(articles)} articles from RSS feed")
-        return articles
-        
     except Exception as e:
         logger.error(f"Failed to fetch RSS feed: {e}")
         raise RSSFetchError(f"Failed to fetch RSS feed: {str(e)}")
+
+
+async def test_feed_connection(feed_url: str) -> None:
+    """
+    Verify that a feed URL is reachable and returns parseable RSS/Atom content.
+
+    Used to gate feed creation/URL updates so a broken or non-feed URL is rejected up front
+    instead of only surfacing errors on the next scheduled/manual refresh.
+
+    Raises:
+        RSSFetchError: If the connection fails, times out, or the response isn't a usable feed.
+    """
+    feed = await _fetch_and_parse(feed_url)
+
+    status = getattr(feed, "status", None)
+    if status is not None and status >= 400:
+        raise RSSFetchError(f"Feed URL returned HTTP {status}")
+
+    # `bozo` alone is too strict (feedparser sets it for minor issues on otherwise-valid
+    # feeds); combined with zero entries it's a strong signal the URL isn't an RSS/Atom feed.
+    if feed.bozo and not feed.entries:
+        raise RSSFetchError(f"URL does not appear to be a valid RSS/Atom feed: {feed.bozo_exception}")
+
+
+async def fetch_rss_feed(feed_url: str) -> List[Dict[str, Any]]:
+    """
+    Fetch and parse RSS feed.
+
+    Args:
+        feed_url: URL of the RSS feed
+
+    Returns:
+        List of article dictionaries
+
+    Raises:
+        RSSFetchError: If feed fetching fails
+    """
+    feed = await _fetch_and_parse(feed_url)
+
+    if feed.bozo:
+        logger.warning(f"RSS feed has parsing issues: {feed.bozo_exception}")
+
+    articles = []
+    for entry in feed.entries:
+        try:
+            # Extract article data
+            article = {
+                "url": entry.get("link", ""),
+                "title": entry.get("title", ""),
+                "author": _extract_author(entry),
+                "published_at": None,
+                "raw_content": entry.get("description", "") or entry.get("summary", ""),
+            }
+
+            # Parse publication date. Feeds without an explicit offset parse as
+            # naive - assume UTC rather than leaving it ambiguous (aware values
+            # are normalized to UTC downstream by UTCDateTime on storage).
+            if hasattr(entry, "published"):
+                try:
+                    parsed = date_parser.parse(entry.published)
+                    if parsed.tzinfo is None:
+                        parsed = parsed.replace(tzinfo=timezone.utc)
+                    article["published_at"] = parsed
+                except Exception as e:
+                    logger.warning(f"Failed to parse date: {e}")
+
+            articles.append(article)
+        except Exception as e:
+            logger.error(f"Error parsing feed entry: {e}")
+            continue
+
+    logger.info(f"Successfully fetched {len(articles)} articles from RSS feed")
+    return articles
 
 
 def _read_robots_txt(robots_url: str, url: str) -> bool:

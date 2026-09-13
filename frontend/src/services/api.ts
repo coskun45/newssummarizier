@@ -93,6 +93,11 @@ export const feedsApi = {
         return response.data;
     },
 
+    test: async (url: string): Promise<{ status: string }> => {
+        const response = await api.post('/feeds/test', { url });
+        return response.data;
+    },
+
     update: async (
         feedId: number,
         data: { url?: string; title?: string; description?: string; is_active?: boolean }

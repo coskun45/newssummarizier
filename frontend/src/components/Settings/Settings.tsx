@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useSettings, useUpdateSettings, useTopics, useCreateTopic, useUpdateTopic, useDeleteTopic, useUsers, useCreateUser, useDeleteUser, useFeeds, useCreateFeed, useUpdateFeed, useDeleteFeed } from '../../hooks/useApi';
+import { useSettings, useUpdateSettings, useTopics, useCreateTopic, useUpdateTopic, useDeleteTopic, useUsers, useCreateUser, useDeleteUser, useFeeds, useCreateFeed, useUpdateFeed, useDeleteFeed, useTestFeedConnection } from '../../hooks/useApi';
 import PromptEditor from '../PromptEditor/PromptEditor';
-import { Cog6ToothIcon, FolderIcon, DocumentTextIcon, SparklesIcon, PencilIcon, TrashIcon, CheckIcon, XMarkIcon, PlusIcon, ChevronDownIcon, ChevronRightIcon, UsersIcon, RssIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
+import { Cog6ToothIcon, FolderIcon, DocumentTextIcon, SparklesIcon, PencilIcon, TrashIcon, CheckIcon, XMarkIcon, PlusIcon, ChevronDownIcon, ChevronRightIcon, UsersIcon, RssIcon, ExclamationTriangleIcon, SignalIcon } from '@heroicons/react/24/outline';
 import type { AuthUser } from '../../types';
 import './Settings.css';
 
@@ -25,6 +25,7 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
   const { mutate: createFeed, isPending: isCreatingFeed } = useCreateFeed();
   const { mutate: updateFeed, isPending: isUpdatingFeed } = useUpdateFeed();
   const { mutate: deleteFeed, isPending: isDeletingFeed } = useDeleteFeed();
+  const { mutate: testFeedConnection, isPending: isTestingFeed } = useTestFeedConnection();
 
   const [enabledTopicIds, setEnabledTopicIds] = useState<number[]>([]);
   const [enabledSummaryTypes, setEnabledSummaryTypes] = useState<string[]>([]);
@@ -48,6 +49,9 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
   const [editingFeedId, setEditingFeedId] = useState<number | null>(null);
   const [editFeedUrl, setEditFeedUrl] = useState('');
   const [editFeedTitle, setEditFeedTitle] = useState('');
+  const [feedError, setFeedError] = useState('');
+  const [addFeedTested, setAddFeedTested] = useState(false);
+  const [editFeedTested, setEditFeedTested] = useState(false);
 
   // Accordion state for sections
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -177,14 +181,33 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
     }
   };
 
-  const handleAddFeed = () => {
+  const handleTestAddFeedConnection = () => {
     if (!newFeedUrl.trim()) return;
+    setFeedError('');
+    testFeedConnection(newFeedUrl.trim(), {
+      onSuccess: () => setAddFeedTested(true),
+      onError: (err: unknown) => {
+        setAddFeedTested(false);
+        const axiosErr = err as { response?: { data?: { detail?: string } } };
+        setFeedError(axiosErr.response?.data?.detail ?? 'Bağlantı testi başarısız oldu.');
+      },
+    });
+  };
+
+  const handleAddFeed = () => {
+    if (!newFeedUrl.trim() || !addFeedTested) return;
+    setFeedError('');
     createFeed({ url: newFeedUrl.trim(), title: newFeedTitle.trim() || undefined }, {
       onSuccess: () => {
         setNewFeedUrl('');
         setNewFeedTitle('');
+        setAddFeedTested(false);
         setShowAddFeed(false);
-      }
+      },
+      onError: (err: unknown) => {
+        const axiosErr = err as { response?: { data?: { detail?: string } } };
+        setFeedError(axiosErr.response?.data?.detail ?? 'Besleme eklenirken hata oluştu.');
+      },
     });
   };
 
@@ -195,25 +218,49 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
   };
 
   const handleEditFeed = (feedId: number, url: string, title?: string | null) => {
+    setFeedError('');
+    setEditFeedTested(false);
     setEditingFeedId(feedId);
     setEditFeedUrl(url);
     setEditFeedTitle(title || '');
   };
 
   const handleCancelFeedEdit = () => {
+    setFeedError('');
+    setEditFeedTested(false);
     setEditingFeedId(null);
     setEditFeedUrl('');
     setEditFeedTitle('');
   };
 
+  const handleTestEditFeedConnection = () => {
+    if (!editFeedUrl.trim()) return;
+    setFeedError('');
+    testFeedConnection(editFeedUrl.trim(), {
+      onSuccess: () => setEditFeedTested(true),
+      onError: (err: unknown) => {
+        setEditFeedTested(false);
+        const axiosErr = err as { response?: { data?: { detail?: string } } };
+        setFeedError(axiosErr.response?.data?.detail ?? 'Bağlantı testi başarısız oldu.');
+      },
+    });
+  };
+
   const handleSaveFeedEdit = () => {
-    if (editingFeedId && editFeedUrl.trim()) {
+    const editingFeed = feeds?.find(f => f.id === editingFeedId);
+    const urlChanged = !editingFeed || editFeedUrl.trim() !== editingFeed.url;
+    if (editingFeedId && editFeedUrl.trim() && (!urlChanged || editFeedTested)) {
+      setFeedError('');
       updateFeed({
         feedId: editingFeedId,
         url: editFeedUrl.trim(),
         title: editFeedTitle.trim() || undefined
       }, {
-        onSuccess: handleCancelFeedEdit
+        onSuccess: handleCancelFeedEdit,
+        onError: (err: unknown) => {
+          const axiosErr = err as { response?: { data?: { detail?: string } } };
+          setFeedError(axiosErr.response?.data?.detail ?? 'Besleme güncellenirken hata oluştu.');
+        },
       });
     }
   };
@@ -275,7 +322,7 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
                               className="topic-input"
                               placeholder="RSS URL"
                               value={editFeedUrl}
-                              onChange={(e) => setEditFeedUrl(e.target.value)}
+                              onChange={(e) => { setEditFeedUrl(e.target.value); setEditFeedTested(false); }}
                               disabled={isUpdatingFeed}
                             />
                             <input
@@ -286,6 +333,20 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
                               onChange={(e) => setEditFeedTitle(e.target.value)}
                               disabled={isUpdatingFeed}
                             />
+                            <button
+                              type="button"
+                              className="test-connection-button"
+                              onClick={handleTestEditFeedConnection}
+                              disabled={isTestingFeed || isUpdatingFeed || !editFeedUrl.trim()}
+                            >
+                              <SignalIcon /> {isTestingFeed ? 'Test ediliyor...' : 'Bağlantıyı Test Et'}
+                            </button>
+                            {editFeedTested && !feedError && (
+                              <p className="success-text"><CheckIcon /> Bağlantı başarılı</p>
+                            )}
+                            {feedError && (
+                              <p className="warning-text"><ExclamationTriangleIcon /> {feedError}</p>
+                            )}
                             <div className="add-topic-buttons">
                               <button
                                 className="cancel-add-button"
@@ -297,7 +358,11 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
                               <button
                                 className="confirm-add-button"
                                 onClick={handleSaveFeedEdit}
-                                disabled={isUpdatingFeed || !editFeedUrl.trim()}
+                                disabled={
+                                  isUpdatingFeed ||
+                                  !editFeedUrl.trim() ||
+                                  (editFeedUrl.trim() !== feed.url && !editFeedTested)
+                                }
                               >
                                 {isUpdatingFeed ? 'Kaydediliyor...' : 'Kaydet'}
                               </button>
@@ -331,7 +396,7 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
                       ))}
                     </div>
                     {!showAddFeed ? (
-                      <button className="add-topic-button" onClick={() => setShowAddFeed(true)}>
+                      <button className="add-topic-button" onClick={() => { setFeedError(''); setAddFeedTested(false); setShowAddFeed(true); }}>
                         <PlusIcon /> Yeni besleme ekle
                       </button>
                     ) : (
@@ -341,7 +406,7 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
                           className="topic-input"
                           placeholder="RSS URL (ör. https://example.com/feed.xml)"
                           value={newFeedUrl}
-                          onChange={(e) => setNewFeedUrl(e.target.value)}
+                          onChange={(e) => { setNewFeedUrl(e.target.value); setAddFeedTested(false); }}
                           disabled={isCreatingFeed}
                         />
                         <input
@@ -352,10 +417,24 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
                           onChange={(e) => setNewFeedTitle(e.target.value)}
                           disabled={isCreatingFeed}
                         />
+                        <button
+                          type="button"
+                          className="test-connection-button"
+                          onClick={handleTestAddFeedConnection}
+                          disabled={isTestingFeed || isCreatingFeed || !newFeedUrl.trim()}
+                        >
+                          <SignalIcon /> {isTestingFeed ? 'Test ediliyor...' : 'Bağlantıyı Test Et'}
+                        </button>
+                        {addFeedTested && !feedError && (
+                          <p className="success-text"><CheckIcon /> Bağlantı başarılı</p>
+                        )}
+                        {feedError && (
+                          <p className="warning-text"><ExclamationTriangleIcon /> {feedError}</p>
+                        )}
                         <div className="add-topic-buttons">
                           <button
                             className="cancel-add-button"
-                            onClick={() => { setShowAddFeed(false); setNewFeedUrl(''); setNewFeedTitle(''); }}
+                            onClick={() => { setFeedError(''); setAddFeedTested(false); setShowAddFeed(false); setNewFeedUrl(''); setNewFeedTitle(''); }}
                             disabled={isCreatingFeed}
                           >
                             İptal
@@ -363,7 +442,8 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
                           <button
                             className="confirm-add-button"
                             onClick={handleAddFeed}
-                            disabled={isCreatingFeed || !newFeedUrl.trim()}
+                            disabled={isCreatingFeed || !newFeedUrl.trim() || !addFeedTested}
+                            title={!addFeedTested ? 'Önce bağlantıyı test edin' : undefined}
                           >
                             {isCreatingFeed ? 'Ekleniyor...' : 'Ekle'}
                           </button>

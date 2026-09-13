@@ -9,6 +9,8 @@ from app.db.database import get_db
 from app.db import crud, models
 from app.api.deps import require_admin
 from app.core.url_safety import assert_safe_feed_url
+from app.agents.tools import test_feed_connection
+from app.core.exceptions import RSSFetchError
 from datetime import datetime
 
 router = APIRouter()
@@ -27,6 +29,11 @@ class FeedUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     is_active: Optional[bool] = None
+
+
+class FeedTestRequest(BaseModel):
+    """Feed connection test request."""
+    url: HttpUrl
 
 
 class FeedResponse(BaseModel):
@@ -59,6 +66,12 @@ async def create_feed(
     if existing_feed:
         raise HTTPException(status_code=400, detail="Feed already exists")
 
+    # Test the connection before persisting — reject unreachable/non-feed URLs up front.
+    try:
+        await test_feed_connection(str(feed.url))
+    except RSSFetchError as e:
+        raise HTTPException(status_code=400, detail=f"Feed connection test failed: {e}")
+
     # Create feed
     db_feed = crud.create_feed(
         db=db,
@@ -68,6 +81,22 @@ async def create_feed(
     )
     
     return db_feed
+
+
+@router.post("/test")
+async def test_feed(payload: FeedTestRequest):
+    """
+    Test that a feed URL is reachable and returns valid RSS/Atom content, without persisting
+    anything. Used by the UI to gate feed creation/editing on a successful connection test.
+    """
+    assert_safe_feed_url(str(payload.url))
+
+    try:
+        await test_feed_connection(str(payload.url))
+    except RSSFetchError as e:
+        raise HTTPException(status_code=400, detail=f"Feed connection test failed: {e}")
+
+    return {"status": "ok"}
 
 
 @router.get("/", response_model=List[FeedResponse])
@@ -113,6 +142,12 @@ async def update_feed(
         existing = crud.get_feed_by_url(db, new_url)
         if existing and existing.id != feed_id:
             raise HTTPException(status_code=400, detail="Feed already exists")
+
+        # Test the connection before persisting the new URL.
+        try:
+            await test_feed_connection(new_url)
+        except RSSFetchError as e:
+            raise HTTPException(status_code=400, detail=f"Feed connection test failed: {e}")
 
     updated = crud.update_feed(
         db,
