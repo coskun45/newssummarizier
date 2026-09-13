@@ -61,6 +61,11 @@ files). The essentials:
 - **New feature/requirement** → follow the `/implement-requirement` skill (bottom-up across layers,
   including a required test — `backend/tests/` pytest and/or `frontend/tests/` Playwright — for what
   you build).
+- **Bug fix** → always add or extend a regression test (`backend/tests/` pytest and/or
+  `frontend/tests/` Playwright) that reproduces it — write it so it would have failed against the
+  old, buggy behavior, then confirm it passes after the fix. A bug isn't done being fixed until a
+  test exists that would catch it coming back. Do this for every fix, however small; only skip it
+  if the change is truly untestable (e.g. a comment/typo fix).
 - **Learned a new recurring convention/gotcha** → record it with the `/add-rule` skill into
   `.claude/rules/` (do not bloat this file).
 - **Before a PR** → run the `/update-docs` skill to sync `README.md` + `backend/.env.example`.
