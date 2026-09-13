@@ -4,10 +4,13 @@ Tests for app/api/routes/rss.py (feed CRUD + manual refresh).
 `assert_safe_feed_url` (SSRF guard, real DNS lookup) and the background
 refresh task are mocked so these tests never touch the network.
 """
+import asyncio
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException
 
+from app.agents.tools import fetch_rss_feed
 from app.db import models
 from tests.conftest import _make_feed
 
@@ -220,3 +223,49 @@ def test_delete_feed_success(client, admin_headers, db_session):
 def test_delete_feed_404_when_missing(client, admin_headers):
     response = client.delete("/api/feeds/999999", headers=admin_headers)
     assert response.status_code == 404
+
+
+# ==================== fetch_rss_feed (published_at timezone normalization) ====================
+# Regression coverage for a bug where some articles rendered with a "17 dakika
+# sonra" (future) relative time: a non-UTC feed offset survived un-normalized
+# into a column SQLite stores as naive, producing a wrong wall-clock value.
+
+class _FakeEntry:
+    def __init__(self, published, link="https://example.com/a", title="A"):
+        self.published = published
+        self._data = {"link": link, "title": title}
+
+    def get(self, key, default=None):
+        return self._data.get(key, default)
+
+
+class _FakeFeed:
+    def __init__(self, entries):
+        self.bozo = False
+        self.entries = entries
+
+
+def test_fetch_rss_feed_keeps_non_utc_offset_as_the_correct_instant():
+    # Offset -> UTC normalization happens centrally at storage time (UTCDateTime
+    # in app/db/database.py), not here — this only needs to stay aware and
+    # resolve to the right absolute instant, which datetime equality checks
+    # regardless of which offset it's expressed in.
+    entry = _FakeEntry(published="Sat, 13 Sep 2026 12:47:00 +0200")
+
+    with patch("app.agents.tools.feedparser.parse", return_value=_FakeFeed([entry])):
+        articles = asyncio.run(fetch_rss_feed("https://example.com/feed"))
+
+    published_at = articles[0]["published_at"]
+    assert published_at.tzinfo is not None
+    assert published_at == datetime(2026, 9, 13, 10, 47, tzinfo=timezone.utc)
+
+
+def test_fetch_rss_feed_assumes_utc_for_naive_published_date():
+    entry = _FakeEntry(published="Sat, 13 Sep 2026 12:47:00")
+
+    with patch("app.agents.tools.feedparser.parse", return_value=_FakeFeed([entry])):
+        articles = asyncio.run(fetch_rss_feed("https://example.com/feed"))
+
+    published_at = articles[0]["published_at"]
+    assert published_at.tzinfo == timezone.utc
+    assert published_at.hour == 12 and published_at.minute == 47

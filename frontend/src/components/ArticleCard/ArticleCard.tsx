@@ -14,6 +14,16 @@ const SUMMARY_LABELS: Record<(typeof SUMMARY_ORDER)[number], string> = {
   detailed: 'Detaylı',
 };
 
+function formatPublishedAt(publishedAt: string): string {
+  const publishedDate = new Date(publishedAt);
+  // Guard against clock skew between the feed/server and the browser - a
+  // just-published article should never render as being in the future.
+  if (publishedDate.getTime() > Date.now()) {
+    return 'az önce';
+  }
+  return formatDistanceToNow(publishedDate, { addSuffix: true, locale: tr });
+}
+
 interface ArticleCardProps {
   article: Article;
   isSelected?: boolean;
@@ -61,9 +71,7 @@ function ArticleCard({ article, isSelected = false, onToggleSelect, onDeleted, i
     showContent ? article.id : null
   );
 
-  const timeAgo = article.published_at
-    ? formatDistanceToNow(new Date(article.published_at), { addSuffix: true, locale: tr })
-    : null;
+  const timeAgo = article.published_at ? formatPublishedAt(article.published_at) : null;
 
   return (
     <div className={`article-card${!article.is_read ? ' article-card--unread' : ''}${isSelected ? ' article-card--selected' : ''}${(!isArchiveView && onToggleSelect) ? ' article-card--selectable' : ''}`}>

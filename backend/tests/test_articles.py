@@ -3,7 +3,7 @@ Tests for app/api/routes/articles.py — every endpoint except the
 priority-scoped bulk delete/archive routes, plus the unimportant-scoped
 bulk routes, listing/filtering, read/star toggles, counts, and detail views.
 """
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from app.db import models, crud
 from tests.conftest import _make_feed, _make_article, _make_topic, _make_article_topic, _make_summary
@@ -125,6 +125,25 @@ def test_list_articles_default_orders_by_published_desc(client, auth_headers, db
     body = response.json()
     assert body["total"] == 3
     assert [a["id"] for a in body["articles"]] == [newest.id, middle.id, oldest.id]
+
+
+def test_list_articles_published_at_round_trips_as_utc(client, auth_headers, db_session):
+    """Regression test: a non-UTC published_at must come back from the API as
+    explicit UTC, not a naive/local-ambiguous string (see UTCDateTime in
+    app/db/database.py) — otherwise the frontend can render it as being in the
+    future ("... sonra") depending on the browser's timezone."""
+    feed = _make_feed(db_session)
+    cest = timezone(timedelta(hours=2))
+    _make_article(db_session, feed.id, url="https://example.com/cest",
+                   published_at=datetime(2026, 9, 13, 12, 47, tzinfo=cest))
+
+    response = client.get("/api/articles/", headers=auth_headers)
+
+    assert response.status_code == 200
+    published_at = response.json()["articles"][0]["published_at"]
+    assert published_at.endswith("+00:00") or published_at.endswith("Z")
+    parsed = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
+    assert parsed == datetime(2026, 9, 13, 10, 47, tzinfo=timezone.utc)
 
 
 def test_list_articles_limit_over_100_returns_422(client, auth_headers):

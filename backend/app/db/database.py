@@ -1,9 +1,11 @@
 """
 Database connection and session management.
 """
+from datetime import timezone
 from sqlalchemy import create_engine, event
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.types import TypeDecorator, DateTime as _DateTime
 from app.core.config import settings
 
 _is_sqlite = "sqlite" in settings.database_url
@@ -31,6 +33,28 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Create declarative base
 Base = declarative_base()
+
+
+class UTCDateTime(TypeDecorator):
+    """DateTime that always round-trips as timezone-aware UTC.
+
+    SQLite has no native timezone-aware storage - SQLAlchemy's DateTime silently
+    drops tzinfo on write and never restores it on read. This normalizes any
+    incoming aware datetime to UTC before storage and re-attaches UTC tzinfo on
+    read, so every value flowing through the ORM is unambiguous UTC end-to-end.
+    """
+    impl = _DateTime
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is not None and value.tzinfo is not None:
+            value = value.astimezone(timezone.utc).replace(tzinfo=None)
+        return value
+
+    def process_result_value(self, value, dialect):
+        if value is not None and value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value
 
 
 def get_db():

@@ -1,10 +1,10 @@
 """
 SQLAlchemy database models.
 """
-from sqlalchemy import Column, Integer, String, Text, Float, Boolean, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, Float, Boolean, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from app.db.database import Base
+from app.db.database import Base, UTCDateTime
 
 
 class Feed(Base):
@@ -15,10 +15,10 @@ class Feed(Base):
     url = Column(String, unique=True, nullable=False, index=True)
     title = Column(String)
     description = Column(Text)
-    last_fetched = Column(DateTime(timezone=True))
+    last_fetched = Column(UTCDateTime())
     fetch_interval = Column(Integer, default=3600)  # seconds
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(UTCDateTime(), server_default=func.now())
     
     # Relationships
     articles = relationship("Article", back_populates="feed", cascade="all, delete-orphan")
@@ -33,8 +33,8 @@ class Article(Base):
     url = Column(String, unique=True, nullable=False, index=True)
     title = Column(String, nullable=False)
     author = Column(String)
-    published_at = Column(DateTime(timezone=True))
-    fetched_at = Column(DateTime(timezone=True), server_default=func.now())
+    published_at = Column(UTCDateTime())
+    fetched_at = Column(UTCDateTime(), server_default=func.now())
     raw_content = Column(Text)  # Full HTML/text content
     cleaned_content = Column(Text)  # Extracted main content
     status = Column(String, default="pending", index=True)  # pending, scraped, summarized, failed, filtered
@@ -61,7 +61,7 @@ class Summary(Base):
     model_used = Column(String)  # gpt-4, gpt-3.5-turbo, etc.
     tokens_used = Column(Integer)
     cost = Column(Float)  # Track API costs
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(UTCDateTime(), server_default=func.now())
     
     # Relationships
     article = relationship("Article", back_populates="summaries")
@@ -103,7 +103,7 @@ class ProcessingLog(Base):
     status = Column(String)  # success, error, skipped
     message = Column(Text)
     error_details = Column(Text)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(UTCDateTime(), server_default=func.now())
     
     # Relationships
     article = relationship("Article", back_populates="logs")
@@ -117,8 +117,8 @@ class SystemPrompt(Base):
     prompt_type = Column(String, unique=True, nullable=False)  # 'classification', 'summarization'
     prompt_text = Column(Text, nullable=False)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_at = Column(UTCDateTime(), server_default=func.now())
+    updated_at = Column(UTCDateTime(), server_default=func.now(), onupdate=func.now())
 
 
 class Settings(Base):
@@ -127,7 +127,7 @@ class Settings(Base):
 
     key = Column(String, primary_key=True)
     value = Column(Text)
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at = Column(UTCDateTime(), server_default=func.now(), onupdate=func.now())
 
 
 class DeletedArticleUrl(Base):
@@ -136,7 +136,7 @@ class DeletedArticleUrl(Base):
     __tablename__ = "deleted_article_urls"
 
     url = Column(String, primary_key=True)
-    deleted_at = Column(DateTime(timezone=True), server_default=func.now())
+    deleted_at = Column(UTCDateTime(), server_default=func.now())
 
 
 class User(Base):
@@ -148,4 +148,4 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     role = Column(String, nullable=False, default="user")  # "admin" or "user"
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(UTCDateTime(), server_default=func.now())

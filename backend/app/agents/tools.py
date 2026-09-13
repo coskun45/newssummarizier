@@ -7,6 +7,7 @@ import trafilatura
 from trafilatura.metadata import extract_metadata
 import aiohttp
 import logging
+from datetime import timezone
 from typing import List, Dict, Any, Optional, Tuple
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
@@ -93,10 +94,15 @@ async def fetch_rss_feed(feed_url: str) -> List[Dict[str, Any]]:
                     "raw_content": entry.get("description", "") or entry.get("summary", ""),
                 }
                 
-                # Parse publication date
+                # Parse publication date. Feeds without an explicit offset parse as
+                # naive - assume UTC rather than leaving it ambiguous (aware values
+                # are normalized to UTC downstream by UTCDateTime on storage).
                 if hasattr(entry, "published"):
                     try:
-                        article["published_at"] = date_parser.parse(entry.published)
+                        parsed = date_parser.parse(entry.published)
+                        if parsed.tzinfo is None:
+                            parsed = parsed.replace(tzinfo=timezone.utc)
+                        article["published_at"] = parsed
                     except Exception as e:
                         logger.warning(f"Failed to parse date: {e}")
                 
