@@ -81,17 +81,32 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
     };
   }, []);
 
-  const startPolling = (feedId: number) => {
+  // Polls every feed in the batch until each has finished (done/error), then reports
+  // aggregated totals. A single feed's slow/failed refresh must not block the others
+  // from being reflected once they finish.
+  const startPolling = (feedIds: number[]) => {
     if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
+    const pending = new Set(feedIds);
+    let totalNewArticles = 0;
+    let totalProcessed = 0;
     pollingIntervalRef.current = setInterval(async () => {
       try {
-        const result = await feedsApi.getRefreshStatus(feedId);
-        if (result.status === 'done' || result.status === 'error') {
+        const results = await Promise.all(
+          Array.from(pending).map((id) => feedsApi.getRefreshStatus(id).then((r) => ({ id, r })))
+        );
+        for (const { id, r } of results) {
+          if (r.status === 'done' || r.status === 'error') {
+            totalNewArticles += r.new_articles ?? 0;
+            totalProcessed += r.processed ?? 0;
+            pending.delete(id);
+          }
+        }
+        if (pending.size === 0) {
           clearInterval(pollingIntervalRef.current!);
           pollingIntervalRef.current = null;
           queryClient.invalidateQueries({ queryKey: ['articles'] });
           queryClient.invalidateQueries({ queryKey: ['articleCounts'] });
-          setRefreshStatus({ new_articles: result.new_articles ?? 0, processed: result.processed ?? 0 });
+          setRefreshStatus({ new_articles: totalNewArticles, processed: totalProcessed });
           if (refreshStatusTimerRef.current) clearTimeout(refreshStatusTimerRef.current);
           refreshStatusTimerRef.current = setTimeout(() => setRefreshStatus('idle'), 5000);
         }
@@ -105,8 +120,12 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
   const topicFeedId = selectedFeedIds.length === 1 ? selectedFeedIds[0] : null;
   const { data: topicsData } = useTopics(topicFeedId);
 
-  // Use first selected feed for manual refresh, or fall back to first feed
-  const activeFeedId = selectedFeedIds[0] ?? (feedsData && feedsData.length > 0 ? feedsData[0].id : null);
+  // Manual refresh targets whichever feeds are selected in the sidebar filter, or every
+  // active feed when none are ("Tüm Beslemeler"). It must not silently default to a single
+  // feed — with 40+ feeds in production that left every feed but one unrefreshable by hand.
+  const refreshTargetFeedIds = selectedFeedIds.length > 0
+    ? selectedFeedIds
+    : (feedsData ?? []).map((f) => f.id);
 
   // Debounce search
   useEffect(() => {
@@ -329,12 +348,11 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
               <button
                 className="check-button"
                 onClick={() => {
-                  if (!activeFeedId) return;
+                  if (refreshTargetFeedIds.length === 0) return;
                   setRefreshStatus('running');
-                  refreshFeedMutation.mutate(activeFeedId, {
-                    onSuccess: () => startPolling(activeFeedId),
-                    onError: () => setRefreshStatus('idle'),
-                  });
+                  Promise.all(refreshTargetFeedIds.map((id) => refreshFeedMutation.mutateAsync(id)))
+                    .then(() => startPolling(refreshTargetFeedIds))
+                    .catch(() => setRefreshStatus('idle'));
                 }}
                 disabled={refreshStatus === 'running'}
               >

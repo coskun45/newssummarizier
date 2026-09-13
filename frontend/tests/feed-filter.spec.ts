@@ -77,6 +77,49 @@ test('clicking "Tüm Beslemeler" clears the selection', async ({ page }) => {
   await expect(page.getByLabel('Tüm Beslemeler')).toBeChecked();
 });
 
+test('"Şimdi Yenile" refreshes every feed when none is selected, not just the first one', async ({ page }) => {
+  await loginAs(page);
+  await mockApi(page, { feeds: [FEED_A, FEED_B], articles: [] });
+
+  const refreshedFeedIds: number[] = [];
+  await page.route(
+    (url) => /\/api\/feeds\/\d+\/refresh$/.test(url.pathname),
+    (route) => {
+      const match = route.request().url().match(/\/feeds\/(\d+)\/refresh$/);
+      if (match) refreshedFeedIds.push(parseInt(match[1], 10));
+      route.fallback();
+    }
+  );
+  await page.goto('/');
+
+  await page.getByRole('button', { name: 'Şimdi Yenile' }).click();
+
+  await expect.poll(() => [...refreshedFeedIds].sort((a, b) => a - b)).toEqual(
+    [FEED_A.id, FEED_B.id].sort((a, b) => a - b)
+  );
+});
+
+test('"Şimdi Yenile" only refreshes the selected feed when one is filtered', async ({ page }) => {
+  await loginAs(page);
+  await mockApi(page, { feeds: [FEED_A, FEED_B], articles: [] });
+
+  const refreshedFeedIds: number[] = [];
+  await page.route(
+    (url) => /\/api\/feeds\/\d+\/refresh$/.test(url.pathname),
+    (route) => {
+      const match = route.request().url().match(/\/feeds\/(\d+)\/refresh$/);
+      if (match) refreshedFeedIds.push(parseInt(match[1], 10));
+      route.fallback();
+    }
+  );
+  await page.goto('/');
+
+  await page.getByLabel('Tech Feed').click();
+  await page.getByRole('button', { name: 'Şimdi Yenile' }).click();
+
+  await expect.poll(() => refreshedFeedIds).toEqual([FEED_B.id]);
+});
+
 test('feed count badge matches articleCounts.by_feed', async ({ page }) => {
   await loginAs(page);
   await mockApi(page, {
