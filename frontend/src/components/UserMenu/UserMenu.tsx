@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRightStartOnRectangleIcon } from '@heroicons/react/24/outline';
-import { useTheme } from '../../contexts/ThemeContext';
-import type { Theme } from '../../contexts/ThemeContext';
+import { useTheme } from '../../hooks/useTheme';
+import type { Theme } from '../../contexts/theme-context';
 import './UserMenu.css';
 
 const THEME_LABELS: Record<Theme, string> = {

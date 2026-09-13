@@ -1,6 +1,6 @@
 import { SunIcon, MoonIcon, ComputerDesktopIcon } from '@heroicons/react/24/outline';
-import { useTheme } from '../../contexts/ThemeContext';
-import type { Theme } from '../../contexts/ThemeContext';
+import { useTheme } from '../../hooks/useTheme';
+import type { Theme } from '../../contexts/theme-context';
 import './ThemeToggle.css';
 
 const ORDER: Theme[] = ['light', 'dark', 'system'];
