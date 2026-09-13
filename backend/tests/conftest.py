@@ -7,6 +7,8 @@ The `client` fixture never enters the app's lifespan (no `with TestClient(...)`)
 so `init_db()`/`seed_database()`/the APScheduler never touch the real
 `news_summary.db` or start background jobs during tests.
 """
+import itertools
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -102,12 +104,15 @@ def _make_feed(db_session, url="https://example.com/feed", *, title="Test Feed",
     return feed
 
 
+_article_url_counter = itertools.count()
+
+
 def _make_article(db_session, feed_id, *, title="Test Article", url=None, priority=None,
                    importance=None, is_read=False, is_starred=False, status="pending",
                    published_at=None, raw_content=None, cleaned_content=None, author=None):
     article = models.Article(
         feed_id=feed_id,
-        url=url or f"https://example.com/article-{priority}-{is_read}-{id(object())}",
+        url=url or f"https://example.com/article-{next(_article_url_counter)}",
         title=title,
         author=author,
         published_at=published_at,
