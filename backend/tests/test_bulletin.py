@@ -262,6 +262,38 @@ def test_generate_bulletin_uses_only_user_defined_categories(client, auth_header
     assert leaked == []
 
 
+def test_generate_bulletin_respects_display_order(client, auth_headers, db_session, monkeypatch):
+    """The bundled template's Heading1 paragraphs sit in a fixed physical
+    order (AMERIKA before AVRUPA). Regression test for a reported issue where
+    the generated report's index/table-of-contents always followed that
+    fixed template order instead of the user-configured display_order."""
+    async def classify_by_display_order(db, articles, category_names):
+        return [
+            {"article_id": a.id, "top_category": category_names[i], "subcategory": "Alt Başlık", "type": "haber"}
+            for i, a in enumerate(articles)
+        ]
+
+    monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", classify_by_display_order)
+    monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
+
+    # AMERIKA precedes AVRUPA in the template's physical layout, but the
+    # user has configured the opposite display_order here.
+    _make_bulletin_category(db_session, name="AMERIKA", display_order=1)
+    _make_bulletin_category(db_session, name="AVRUPA", display_order=0)
+    feed = _make_feed(db_session)
+    now = datetime.now(timezone.utc)
+    _make_article(db_session, feed.id, title="Avrupa Haberi", published_at=now - timedelta(hours=1))
+    _make_article(db_session, feed.id, title="Amerika Haberi", published_at=now - timedelta(hours=2))
+
+    response = client.post("/api/bulletin/generate", json={}, headers=auth_headers)
+
+    assert response.status_code == 200
+    document = DocxDocument(io.BytesIO(response.content))
+    heading1_texts = [p.text.strip() for p in document.paragraphs if p.style.style_id == "Heading1" and p.text.strip()]
+
+    assert heading1_texts.index("AVRUPA") < heading1_texts.index("AMERIKA")
+
+
 def test_generate_bulletin_too_many_articles_returns_400(client, auth_headers, db_session, monkeypatch):
     monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", _fake_classify)
     monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
@@ -305,3 +337,310 @@ def test_generate_bulletin_uses_classification_cache(client, auth_headers, db_se
     second = client.post("/api/bulletin/generate", json={}, headers=auth_headers)
     assert second.status_code == 200
     assert call_count["n"] == 1  # second run served entirely from the classification cache
+
+
+# ==================== POST /generate — favorites ====================
+
+def test_generate_bulletin_include_favorites_only(client, auth_headers, db_session, monkeypatch):
+    monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", _fake_classify)
+    monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
+
+    _make_bulletin_category(db_session, name="AVRUPA")
+    feed = _make_feed(db_session)
+    now = datetime.now(timezone.utc)
+    _make_article(
+        db_session, feed.id, title="Favori Haber", is_starred=True,
+        published_at=now - timedelta(hours=1),
+    )
+    _make_article(
+        db_session, feed.id, title="Normal Haber", is_starred=False,
+        published_at=now - timedelta(hours=1),
+    )
+
+    response = client.post(
+        "/api/bulletin/generate", json={"include_favorites": True}, headers=auth_headers
+    )
+
+    assert response.status_code == 200
+    document = DocxDocument(io.BytesIO(response.content))
+    paragraph_texts = [p.text for p in document.paragraphs if p.text.strip()]
+    assert any("Favori Haber" in t for t in paragraph_texts)
+    assert not any("Normal Haber" in t for t in paragraph_texts)
+
+
+def test_generate_bulletin_priorities_and_favorites_union(client, auth_headers, db_session, monkeypatch):
+    monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", _fake_classify)
+    monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
+
+    _make_bulletin_category(db_session, name="AVRUPA")
+    feed = _make_feed(db_session)
+    now = datetime.now(timezone.utc)
+    _make_article(
+        db_session, feed.id, title="Yuksek Oncelik", priority="high", is_starred=False,
+        published_at=now - timedelta(hours=1),
+    )
+    _make_article(
+        db_session, feed.id, title="Favori Dusuk Oncelik", priority="low", is_starred=True,
+        published_at=now - timedelta(hours=1),
+    )
+    _make_article(
+        db_session, feed.id, title="Orta Oncelik Disarida", priority="med", is_starred=False,
+        published_at=now - timedelta(hours=1),
+    )
+
+    response = client.post(
+        "/api/bulletin/generate",
+        json={"priorities": ["high"], "include_favorites": True},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    document = DocxDocument(io.BytesIO(response.content))
+    paragraph_texts = [p.text for p in document.paragraphs if p.text.strip()]
+    assert any("Yuksek Oncelik" in t for t in paragraph_texts)
+    assert any("Favori Dusuk Oncelik" in t for t in paragraph_texts)
+    assert not any("Orta Oncelik Disarida" in t for t in paragraph_texts)
+
+
+def test_generate_bulletin_dedup_when_article_matches_both(client, auth_headers, db_session, monkeypatch):
+    """An article that is both a matching priority AND starred must appear
+    exactly once in the bulletin, not twice."""
+    monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", _fake_classify)
+    monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
+
+    _make_bulletin_category(db_session, name="AVRUPA")
+    feed = _make_feed(db_session)
+    now = datetime.now(timezone.utc)
+    _make_article(
+        db_session, feed.id, title="Hem Yuksek Hem Favori", priority="high", is_starred=True,
+        published_at=now - timedelta(hours=1),
+    )
+
+    response = client.post(
+        "/api/bulletin/generate",
+        json={"priorities": ["high"], "include_favorites": True},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    document = DocxDocument(io.BytesIO(response.content))
+    paragraph_texts = [p.text for p in document.paragraphs if p.text.strip()]
+    # The digest ("GÜNDEM ÖZETİ") and the category listing are two distinct
+    # sections that both legitimately reference every selected article once —
+    # so the real assertion is "not selected twice into the category listing",
+    # which is where a broken union (fetching the article via two separate
+    # queries instead of one OR'd query) would show up as a duplicate entry.
+    category_entries = [t for t in paragraph_texts if "Hem Yuksek Hem Favori" in t and "(example.com)" in t]
+    assert len(category_entries) == 1
+
+
+def test_generate_bulletin_include_favorites_defaults_false(client, auth_headers, db_session, monkeypatch):
+    monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", _fake_classify)
+    monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
+
+    _make_bulletin_category(db_session, name="AVRUPA")
+    feed = _make_feed(db_session)
+    now = datetime.now(timezone.utc)
+    # Starred but priority doesn't match anything requested, and the request
+    # doesn't mention include_favorites at all (mirrors test_generate_bulletin_success).
+    _make_article(
+        db_session, feed.id, title="Favori Ama Istenmedi", priority="low", is_starred=True,
+        published_at=now - timedelta(hours=1),
+    )
+
+    response = client.post(
+        "/api/bulletin/generate", json={"priorities": ["high"]}, headers=auth_headers
+    )
+
+    assert response.status_code == 400  # nothing matches priority "high" and favorites weren't requested
+
+
+# ==================== GET /preview-count ====================
+
+def test_preview_count_requires_auth(client):
+    response = client.get("/api/bulletin/preview-count")
+    assert response.status_code == 401
+
+
+def test_preview_count_defaults_to_last_24h_all_priorities(client, auth_headers, db_session):
+    feed = _make_feed(db_session)
+    now = datetime.now(timezone.utc)
+    _make_article(db_session, feed.id, title="Icerde 1", published_at=now - timedelta(hours=1))
+    _make_article(db_session, feed.id, title="Icerde 2", published_at=now - timedelta(hours=2))
+    _make_article(db_session, feed.id, title="Disarda", published_at=now - timedelta(hours=48))
+
+    response = client.get("/api/bulletin/preview-count", headers=auth_headers)
+
+    assert response.status_code == 200
+    assert response.json() == {"count": 2}
+
+
+def test_preview_count_filters_by_priorities(client, auth_headers, db_session):
+    feed = _make_feed(db_session)
+    now = datetime.now(timezone.utc)
+    _make_article(db_session, feed.id, priority="high", published_at=now - timedelta(hours=1))
+    _make_article(db_session, feed.id, priority="low", published_at=now - timedelta(hours=1))
+
+    response = client.get(
+        "/api/bulletin/preview-count", params={"priorities": "high"}, headers=auth_headers
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"count": 1}
+
+
+def test_preview_count_include_favorites_unions_with_priorities(client, auth_headers, db_session):
+    feed = _make_feed(db_session)
+    now = datetime.now(timezone.utc)
+    _make_article(db_session, feed.id, priority="high", is_starred=False, published_at=now - timedelta(hours=1))
+    _make_article(db_session, feed.id, priority="low", is_starred=True, published_at=now - timedelta(hours=1))
+    _make_article(db_session, feed.id, priority="med", is_starred=False, published_at=now - timedelta(hours=1))
+
+    response = client.get(
+        "/api/bulletin/preview-count",
+        params={"priorities": "high", "include_favorites": "true"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"count": 2}
+
+
+def test_preview_count_dedup_when_overlapping(client, auth_headers, db_session):
+    """A naive 'count matches + count starred' implementation would double-count
+    an article that satisfies both — the real union must count it once."""
+    feed = _make_feed(db_session)
+    now = datetime.now(timezone.utc)
+    _make_article(db_session, feed.id, priority="high", is_starred=True, published_at=now - timedelta(hours=1))
+
+    response = client.get(
+        "/api/bulletin/preview-count",
+        params={"priorities": "high", "include_favorites": "true"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"count": 1}
+
+
+def test_preview_count_rejects_invalid_priority(client, auth_headers):
+    response = client.get(
+        "/api/bulletin/preview-count", params={"priorities": "urgent"}, headers=auth_headers
+    )
+    assert response.status_code == 400
+
+
+def test_preview_count_zero_when_no_matches(client, auth_headers, db_session):
+    feed = _make_feed(db_session)
+    now = datetime.now(timezone.utc)
+    _make_article(db_session, feed.id, priority="low", published_at=now - timedelta(hours=1))
+
+    response = client.get(
+        "/api/bulletin/preview-count", params={"priorities": "high"}, headers=auth_headers
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"count": 0}
+
+
+def test_preview_count_works_without_categories(client, auth_headers, db_session):
+    feed = _make_feed(db_session)
+    now = datetime.now(timezone.utc)
+    _make_article(db_session, feed.id, published_at=now - timedelta(hours=1))
+
+    response = client.get("/api/bulletin/preview-count", headers=auth_headers)
+
+    assert response.status_code == 200
+    assert response.json() == {"count": 1}
+
+
+# ==================== POST /generate — template artifact regressions ====================
+
+def test_generate_bulletin_no_blank_heading1_paragraphs(client, auth_headers, db_session, monkeypatch):
+    """The bundled template contains several empty Heading1 paragraphs used as
+    layout spacers (a Google Docs export artifact). An earlier version of the
+    stray-heading cleanup keyed template headings by normalized text in a
+    dict, so multiple blank headings collided under the same '' key and all
+    but one silently survived un-removed in the output — orphaned blank
+    Heading1 paragraphs that broke Word's İçindekiler (Table of Contents)
+    generation on open."""
+    monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", _fake_classify)
+    monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
+
+    # A category name unrelated to the template's own defaults forces every
+    # bundled Heading1 (including its blank spacers) through the stray-removal path.
+    _make_bulletin_category(db_session, name="Teknoloji")
+    feed = _make_feed(db_session)
+    now = datetime.now(timezone.utc)
+    _make_article(db_session, feed.id, title="Yapay Zeka Haberi", published_at=now - timedelta(hours=1))
+
+    response = client.post("/api/bulletin/generate", json={}, headers=auth_headers)
+
+    assert response.status_code == 200
+    document = DocxDocument(io.BytesIO(response.content))
+    blank_heading1s = [
+        p for p in document.paragraphs if p.style.style_id == "Heading1" and not p.text.strip()
+    ]
+    assert blank_heading1s == []
+
+
+def test_generate_bulletin_update_fields_precedes_compat_in_settings(client, auth_headers, db_session, monkeypatch):
+    """word/settings.xml's CT_Settings content model is a strict, ordered
+    sequence. updateFields was previously inserted as the very first child,
+    ahead of elements the schema requires first (embedTrueTypeFonts,
+    defaultTabStop) — an out-of-order settings.xml that Word's settings
+    parser can reject or silently repair. It must be positioned immediately
+    before w:compat."""
+    monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", _fake_classify)
+    monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
+
+    _make_bulletin_category(db_session, name="AVRUPA")
+    feed = _make_feed(db_session)
+    now = datetime.now(timezone.utc)
+    _make_article(db_session, feed.id, title="Test Haberi", published_at=now - timedelta(hours=1))
+
+    response = client.post("/api/bulletin/generate", json={}, headers=auth_headers)
+
+    assert response.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+        settings_xml = zf.read("word/settings.xml").decode("utf-8")
+    update_fields_idx = settings_xml.index("<w:updateFields")
+    # Must come after elements the schema requires first (an earlier version
+    # inserted updateFields as the very first child of <w:settings>, ahead of
+    # these) and before w:compat.
+    assert settings_xml.index("<w:defaultTabStop") < update_fields_idx
+    assert update_fields_idx < settings_xml.index("<w:compat")
+
+
+def test_generate_bulletin_toc_field_is_locale_independent(client, auth_headers, db_session, monkeypatch):
+    """The bundled template's TOC field originally selected entries purely
+    via \\t, a literal English-only style-name list ("Heading 1,1,Heading
+    2,2,..."). \\t matches a paragraph by its LOCALIZED style display name,
+    and Word does not translate "Heading 1" for that comparison on a
+    non-English install (confirmed via Word COM automation on a German
+    installation: the paragraph's outline level was correctly 1, but its
+    style name is "Überschrift 1", so \\t alone matched nothing and the TOC
+    came back with zero entries) — reproducing exactly the "no heading style
+    applied" dialog reported against a real generated bulletin. \\o "1-6"
+    additionally matches by outline level, which is locale-independent."""
+    monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", _fake_classify)
+    monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
+
+    _make_bulletin_category(db_session, name="AVRUPA")
+    feed = _make_feed(db_session)
+    now = datetime.now(timezone.utc)
+    _make_article(db_session, feed.id, title="Test Haberi", published_at=now - timedelta(hours=1))
+
+    response = client.post("/api/bulletin/generate", json={}, headers=auth_headers)
+
+    assert response.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+        document_xml = zf.read("word/document.xml").decode("utf-8")
+    toc_instr_start = document_xml.index("<w:instrText")
+    toc_instr_end = document_xml.index("</w:instrText>", toc_instr_start)
+    # instrText may be split across sibling elements; the TOC's own opening
+    # instrText run is the first one in the document (inside the bundled
+    # İçindekiler content control), so this is enough to check its content.
+    toc_instr_text = document_xml[toc_instr_start:toc_instr_end]
+    assert "TOC" in toc_instr_text
+    assert '\\o "1-6"' in toc_instr_text or "\\o &quot;1-6&quot;" in toc_instr_text

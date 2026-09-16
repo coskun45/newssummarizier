@@ -5,10 +5,9 @@ import { mockApi, makeFeed } from './helpers/mockApi';
 const FEED = makeFeed({ id: 301, title: 'Existing Feed', url: 'https://example.com/existing.xml' });
 
 async function openFeedsSection(page: import('@playwright/test').Page) {
-  await page.getByTitle('Ayarlar').click();
-  const modal = page.locator('.settings-modal');
-  await modal.getByText('RSS Beslemeleri').click();
-  return modal;
+  await page.getByRole('button', { name: 'Ayarlar' }).click();
+  await page.getByRole('button', { name: 'RSS Beslemeleri' }).click();
+  return page.locator('.settings-category');
 }
 
 test('adding a feed tests the connection, then sends POST and clears the form', async ({ page }) => {

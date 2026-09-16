@@ -5,9 +5,9 @@ import { mockApi, makeTopic } from './helpers/mockApi';
 const TOPIC = makeTopic({ id: 401, name: 'Existing Topic' });
 
 async function openSettings(page: import('@playwright/test').Page) {
-  await page.getByTitle('Ayarlar').click();
-  // "Kategoriler" section is expanded by default in Settings.
-  return page.locator('.settings-modal');
+  await page.getByRole('button', { name: 'Ayarlar' }).click();
+  await page.getByRole('button', { name: 'Kategoriler' }).click();
+  return page.locator('.settings-category');
 }
 
 test('adding a topic sends POST and clears the form', async ({ page }) => {

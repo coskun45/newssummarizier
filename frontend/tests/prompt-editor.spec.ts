@@ -3,10 +3,9 @@ import { loginAs } from './helpers/auth';
 import { mockApi, makePrompt } from './helpers/mockApi';
 
 async function openClassificationEditor(page: import('@playwright/test').Page) {
-  await page.getByTitle('Ayarlar').click();
-  const modal = page.locator('.settings-modal');
-  await modal.getByText('Sistem Promptları').click();
-  return modal.locator('.prompt-editor').filter({ hasText: 'Sınıflandırma Promptu' });
+  await page.getByRole('button', { name: 'Ayarlar' }).click();
+  await page.getByRole('button', { name: 'Sistem Promptları' }).click();
+  return page.locator('.prompt-editor').filter({ hasText: 'Sınıflandırma Promptu' });
 }
 
 test('shows the loaded prompt text and active/inactive badge', async ({ page }) => {

@@ -237,6 +237,26 @@ function matchesArticleFilters(a: MockArticle, params: URLSearchParams): boolean
   return true;
 }
 
+/** Mirrors the backend's bulletin candidate selection: priority match OR
+ * (if include_favorites) starred, defaulting to the last 24h when no date
+ * range is given — kept in sync with crud.get/count_bulletin_candidate_articles. */
+function computeBulletinPreviewCount(articles: MockArticle[], params: URLSearchParams): number {
+  const rawPriorities = params.get('priorities');
+  const priorities = rawPriorities ? rawPriorities.split(',').filter(Boolean) : [];
+  const includeFavorites = params.get('include_favorites') === 'true';
+
+  const to = params.get('published_to') ?? new Date().toISOString();
+  const from = params.get('published_from') ?? new Date(new Date(to).getTime() - 24 * 60 * 60 * 1000).toISOString();
+
+  return articles.filter((a) => {
+    if (!a.published_at || a.published_at < from || a.published_at > to) return false;
+    if (priorities.length === 0 && !includeFavorites) return true;
+    const priorityMatches = priorities.length > 0 && !!a.priority && priorities.includes(a.priority);
+    const starredMatches = includeFavorites && a.is_starred;
+    return priorityMatches || starredMatches;
+  }).length;
+}
+
 /**
  * Install a single dispatching route handler for every /api/* request,
  * backed by a mutable in-memory state so write requests (star/delete/bulk
@@ -592,6 +612,11 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
         state.bulletinCategories = state.bulletinCategories.filter((c) => c.id !== categoryId);
         return json({ status: 'success' });
       }
+    }
+
+    // ---- bulletin preview count ----
+    if (method === 'GET' && path === '/bulletin/preview-count') {
+      return json({ count: computeBulletinPreviewCount(state.articles, params) });
     }
 
     // ---- bulletin generate ----

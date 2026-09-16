@@ -3,10 +3,9 @@ import { loginAs, DEFAULT_USER, ADMIN_USER } from './helpers/auth';
 import { mockApi, makeUser } from './helpers/mockApi';
 
 async function openUsersSection(page: import('@playwright/test').Page) {
-  await page.getByTitle('Ayarlar').click();
-  const modal = page.locator('.settings-modal');
-  await modal.getByText('Kullanıcı Yönetimi').click();
-  return modal;
+  await page.getByRole('button', { name: 'Ayarlar' }).click();
+  await page.getByRole('button', { name: 'Kullanıcı Yönetimi' }).click();
+  return page.locator('.settings-category');
 }
 
 test('section is not visible for a non-admin user', async ({ page }) => {
@@ -14,8 +13,8 @@ test('section is not visible for a non-admin user', async ({ page }) => {
   await mockApi(page, { articles: [] });
   await page.goto('/');
 
-  await page.getByTitle('Ayarlar').click();
-  await expect(page.locator('.settings-modal').getByText('Kullanıcı Yönetimi')).not.toBeVisible();
+  await page.getByRole('button', { name: 'Ayarlar' }).click();
+  await expect(page.getByRole('button', { name: 'Kullanıcı Yönetimi' })).not.toBeVisible();
 });
 
 test('section is visible for an admin user', async ({ page }) => {

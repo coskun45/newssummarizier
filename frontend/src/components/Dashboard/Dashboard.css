@@ -48,6 +48,32 @@ button svg {
   align-items: center;
 }
 
+.header-nav {
+  display: flex;
+  gap: 1.75rem;
+}
+
+.header-nav-item {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 1rem;
+  font-weight: 600;
+  padding: 0.35rem 0.05rem;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.header-nav-item:hover {
+  color: #fff;
+}
+
+.header-nav-item--active {
+  color: #fff;
+  border-bottom-color: #fff;
+}
+
 .settings-button {
   background: rgba(255, 255, 255, 0.15);
   color: white;
@@ -74,54 +100,16 @@ button svg {
   font-weight: 700;
 }
 
-.check-button,
-.refresh-button {
-  background: rgba(255, 255, 255, 0.18);
-  color: white;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  padding: 0.7rem 1.25rem;
-  border-radius: var(--radius-sm);
-  font-size: 0.95rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  white-space: nowrap;
-  backdrop-filter: blur(10px);
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.check-button svg,
-.refresh-button svg,
 .settings-button svg {
   flex-shrink: 0;
-}
-
-.check-button:hover:not(:disabled),
-.refresh-button:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.32);
-  border-color: rgba(255, 255, 255, 0.5);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-sm);
-}
-
-.check-button:active:not(:disabled),
-.refresh-button:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-.check-button:disabled,
-.refresh-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
 }
 
 .refresh-message {
   font-size: 0.82rem;
   font-weight: 500;
-  color: #fff;
-  background: rgba(255, 255, 255, 0.18);
+  color: var(--color-text-secondary);
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   padding: 4px 10px;
   white-space: nowrap;
@@ -272,6 +260,30 @@ button svg {
   margin-bottom: 0;
 }
 
+/* News toolbar (search + refresh, top of the Haberler view) */
+.news-toolbar {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.news-toolbar-search {
+  flex: 1;
+  min-width: 0;
+}
+
+.news-toolbar-search .search-bar {
+  margin-bottom: 0;
+}
+
+.news-toolbar-refresh {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  margin-bottom: 1.5rem;
+}
+
 /* Section tabs */
 .section-tabs {
   display: flex;
@@ -370,8 +382,12 @@ button svg {
     width: 100%;
   }
 
-  .check-button,
-  .refresh-button {
+  .header-nav {
     width: 100%;
+    justify-content: center;
+  }
+
+  .news-toolbar {
+    flex-wrap: wrap;
   }
 }

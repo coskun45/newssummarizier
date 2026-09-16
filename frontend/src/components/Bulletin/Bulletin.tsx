@@ -20,10 +20,11 @@ import {
   useDeleteBulletinCategory,
   useReorderBulletinCategories,
   useGenerateBulletin,
+  useBulletinPreviewCount,
 } from '../../hooks/useApi';
 import { downloadBlob } from '../../utils/downloadFile';
 import { PRIORITIES } from '../../constants/priorities';
-import type { DateFilterState } from '../../types';
+import type { BulletinGenerateRequest, DateFilterState } from '../../types';
 import './Bulletin.css';
 
 const EMPTY_DATE_FILTER: DateFilterState = { preset: null, customFrom: '', customTo: '' };
@@ -67,6 +68,7 @@ async function extractErrorMessage(err: unknown): Promise<string> {
 function BulletinPanel() {
   const [dateFilter, setDateFilter] = useState<DateFilterState>(EMPTY_DATE_FILTER);
   const [selectedPriorities, setSelectedPriorities] = useState<string[]>([]);
+  const [includeFavorites, setIncludeFavorites] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
   const [editCategoryName, setEditCategoryName] = useState('');
@@ -83,6 +85,16 @@ function BulletinPanel() {
   const togglePriority = (value: string) => {
     setSelectedPriorities((prev) => (prev.includes(value) ? prev.filter((p) => p !== value) : [...prev, value]));
   };
+
+  const resolvedRange = resolveDateRange(dateFilter);
+  const bulletinParams: BulletinGenerateRequest = {
+    published_from: resolvedRange.from,
+    published_to: resolvedRange.to,
+    priorities: selectedPriorities.length > 0 ? selectedPriorities : undefined,
+    include_favorites: includeFavorites || undefined,
+  };
+  const { data: previewCountData, isFetching: previewCountLoading, isError: previewCountError } =
+    useBulletinPreviewCount(bulletinParams);
 
   const handleAddCategory = () => {
     const name = newCategoryName.trim();
@@ -121,13 +133,8 @@ function BulletinPanel() {
   const handleGenerate = async () => {
     setErrorMessage(null);
     setStatusMessage(null);
-    const range = resolveDateRange(dateFilter);
     try {
-      const blob = await generateMutation.mutateAsync({
-        published_from: range.from,
-        published_to: range.to,
-        priorities: selectedPriorities.length > 0 ? selectedPriorities : undefined,
-      });
+      const blob = await generateMutation.mutateAsync(bulletinParams);
       const stamp = format(new Date(), 'yyyy-MM-dd', { locale: tr });
       downloadBlob(blob, `bulten-${stamp}.docx`);
       setStatusMessage('Bülten oluşturuldu ve indirildi.');
@@ -152,7 +159,8 @@ function BulletinPanel() {
         <section className="bulletin-section">
           <h3 className="bulletin-section-title">Önem Seviyesi</h3>
           <p className="bulletin-section-description">
-            Seçim yapılmazsa tüm önem seviyelerindeki haberler dahil edilir.
+            Seçim yapılmazsa tüm önem seviyelerindeki haberler dahil edilir. Favoriler işaretlenirse,
+            önem seviyesinden bağımsız olarak favori haberler de bültene eklenir.
           </p>
           <div className="checkbox-group">
             {PRIORITIES.map((p) => (
@@ -165,6 +173,14 @@ function BulletinPanel() {
                 <span>{p.label}</span>
               </label>
             ))}
+            <label className="bulletin-checkbox-label">
+              <input
+                type="checkbox"
+                checked={includeFavorites}
+                onChange={() => setIncludeFavorites((prev) => !prev)}
+              />
+              <span>Favoriler</span>
+            </label>
           </div>
         </section>
 
@@ -276,6 +292,13 @@ function BulletinPanel() {
       </div>
 
       <div className="bulletin-generate-bar">
+        {!previewCountError && (
+          <span className="bulletin-preview-count">
+            {previewCountLoading
+              ? 'Haber sayısı hesaplanıyor…'
+              : `Bu seçimlerle ${previewCountData?.count ?? 0} haber özeti bültende yer alacak.`}
+          </span>
+        )}
         <button
           className="btn btn-primary btn-lg"
           onClick={handleGenerate}

@@ -1,17 +1,18 @@
 import { useState, useEffect } from 'react';
 import { useSettings, useUpdateSettings, useTopics, useCreateTopic, useUpdateTopic, useDeleteTopic, useUsers, useCreateUser, useDeleteUser, useFeeds, useCreateFeed, useUpdateFeed, useDeleteFeed, useTestFeedConnection } from '../../hooks/useApi';
 import PromptEditor from '../PromptEditor/PromptEditor';
-import { Cog6ToothIcon, FolderIcon, DocumentTextIcon, SparklesIcon, PencilIcon, TrashIcon, CheckIcon, XMarkIcon, PlusIcon, ChevronDownIcon, ChevronRightIcon, UsersIcon, RssIcon, ExclamationTriangleIcon, SignalIcon } from '@heroicons/react/24/outline';
+import { FolderIcon, DocumentTextIcon, SparklesIcon, PencilIcon, TrashIcon, CheckIcon, XMarkIcon, PlusIcon, UsersIcon, RssIcon, ExclamationTriangleIcon, SignalIcon } from '@heroicons/react/24/outline';
 import type { AuthUser } from '../../types';
 import './Settings.css';
 
+export type SettingsCategory = 'feeds' | 'topics' | 'summaryTypes' | 'prompts' | 'users';
+
 interface SettingsProps {
-  isOpen: boolean;
-  onClose: () => void;
+  category: SettingsCategory;
   currentUser: AuthUser;
 }
 
-function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
+function Settings({ category, currentUser }: SettingsProps) {
   const { data: settings, isLoading: settingsLoading } = useSettings();
   const { data: topics } = useTopics();
   const { mutate: updateSettings, isPending: isSaving } = useUpdateSettings();
@@ -52,22 +53,6 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
   const [feedError, setFeedError] = useState('');
   const [addFeedTested, setAddFeedTested] = useState(false);
   const [editFeedTested, setEditFeedTested] = useState(false);
-
-  // Accordion state for sections
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-    feeds: false,
-    topics: true,
-    summaryTypes: false,
-    prompts: false,
-    users: false,
-  });
-
-  const toggleSection = (section: string) => {
-    setExpandedSections(prev => ({
-      ...prev,
-      [section]: !prev[section]
-    }));
-  };
 
   // Initialize form when settings load
   useEffect(() => {
@@ -275,41 +260,19 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
       enabled_topics: enabledTopicIds.join(','),
       enabled_summary_types: enabledSummaryTypes.join(','),
       feed_refresh_interval: settings?.feed_refresh_interval || 1800
-    }, {
-      onSuccess: () => {
-        onClose();
-      }
     });
   };
 
-  if (!isOpen) return null;
+  if (settingsLoading) {
+    return <div className="loading">Ayarlar yükleniyor...</div>;
+  }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-shell settings-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-shell-header">
-          <h2><Cog6ToothIcon className="header-icon" /> Ayarlar</h2>
-          <button className="modal-close-btn" onClick={onClose} aria-label="Kapat"><XMarkIcon /></button>
-        </div>
-
-        <div className="modal-shell-body settings-content">
-          {settingsLoading ? (
-            <div className="loading">Ayarlar yükleniyor...</div>
-          ) : (
-            <>
-              {/* RSS Feeds Section */}
-              <div className="settings-section">
-                <div
-                  className="section-header"
-                  onClick={() => toggleSection('feeds')}
-                >
-                  <h3>
-                    {expandedSections.feeds ? <ChevronDownIcon className="collapse-icon" /> : <ChevronRightIcon className="collapse-icon" />}
-                    <RssIcon className="section-icon" /> RSS Beslemeleri
-                  </h3>
-                </div>
-                {expandedSections.feeds && (
-                  <div className="section-content">
+    <div className="settings-page-content">
+      {category === 'feeds' && (
+        <div className="settings-category">
+          <h2 className="settings-content-title"><RssIcon className="section-icon" /> RSS Beslemeleri</h2>
+          <div className="section-content">
                     <p className="section-description">
                       RSS besleme kaynaklarını yönetin.
                     </p>
@@ -450,27 +413,18 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
                         </div>
                       </div>
                     )}
-                  </div>
-                )}
-              </div>
+          </div>
+        </div>
+      )}
 
-              {/* Topics Section */}
-              <div className="settings-section">
-                <div 
-                  className="section-header" 
-                  onClick={() => toggleSection('topics')}
-                >
-                  <h3>
-                    {expandedSections.topics ? <ChevronDownIcon className="collapse-icon" /> : <ChevronRightIcon className="collapse-icon" />}
-                    <FolderIcon className="section-icon" /> Kategoriler
-                  </h3>
-                </div>
-                {expandedSections.topics && (
-                <div className="section-content">
-                <p className="section-description">
-                  Sınıflandırma için kullanılacak kategorileri seçin.
-                  Boş seçim = tüm kategoriler.
-                </p>
+      {category === 'topics' && (
+        <div className="settings-category">
+          <h2 className="settings-content-title"><FolderIcon className="section-icon" /> Kategoriler</h2>
+          <div className="section-content">
+            <p className="section-description">
+              Sınıflandırma için kullanılacak kategorileri seçin.
+              Boş seçim = tüm kategoriler.
+            </p>
                 <div className="checkbox-group">
                   {topics?.map(topic => (
                     <div key={topic.id} className="topic-item">
@@ -603,27 +557,27 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
                     </div>
                   </div>
                 )}
-                </div>
-                )}
-              </div>
+            </div>
+            <div className="settings-save-row">
+              <button
+                className="save-button"
+                onClick={handleSave}
+                disabled={isSaving || enabledSummaryTypes.length === 0}
+              >
+                {isSaving ? 'Kaydediliyor...' : 'Ayarları kaydet'}
+              </button>
+            </div>
+          </div>
+      )}
 
-              {/* Summary Types Section */}
-              <div className="settings-section">
-                <div 
-                  className="section-header" 
-                  onClick={() => toggleSection('summaryTypes')}
-                >
-                  <h3>
-                    {expandedSections.summaryTypes ? <ChevronDownIcon className="collapse-icon" /> : <ChevronRightIcon className="collapse-icon" />}
-                    <DocumentTextIcon className="section-icon" /> Özet Türleri
-                  </h3>
-                </div>
-                {expandedSections.summaryTypes && (
-                <div className="section-content">
-                <p className="section-description">
-                  Hangi özet türlerinin oluşturulacağını seçin.
-                  Birden fazla seçim mümkün.
-                </p>
+      {category === 'summaryTypes' && (
+        <div className="settings-category">
+          <h2 className="settings-content-title"><DocumentTextIcon className="section-icon" /> Özet Türleri</h2>
+          <div className="section-content">
+            <p className="section-description">
+              Hangi özet türlerinin oluşturulacağını seçin.
+              Birden fazla seçim mümkün.
+            </p>
                 <div className="checkbox-group">
                   <label className="checkbox-label">
                     <input
@@ -659,55 +613,45 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
                 {enabledSummaryTypes.length === 0 && (
                   <p className="warning-text"><ExclamationTriangleIcon /> En az bir tür seçilmelidir</p>
                 )}
-                </div>
-                )}
-              </div>
+            </div>
+            <div className="settings-save-row">
+              <button
+                className="save-button"
+                onClick={handleSave}
+                disabled={isSaving || enabledSummaryTypes.length === 0}
+              >
+                {isSaving ? 'Kaydediliyor...' : 'Ayarları kaydet'}
+              </button>
+            </div>
+          </div>
+      )}
 
-              {/* System Prompts Section */}
-              <div className="settings-section">
-                <div
-                  className="section-header"
-                  onClick={() => toggleSection('prompts')}
-                >
-                  <h3>
-                    {expandedSections.prompts ? <ChevronDownIcon className="collapse-icon" /> : <ChevronRightIcon className="collapse-icon" />}
-                    <SparklesIcon className="section-icon" /> Sistem Promptları
-                  </h3>
-                </div>
-                {expandedSections.prompts && (
-                <div className="section-content">
-                <p className="section-description">
-                  Yapay zeka sınıflandırma ve özetleme için kullanılan sistem promptlarını düzenleyin.
-                </p>
+      {category === 'prompts' && (
+        <div className="settings-category">
+          <h2 className="settings-content-title"><SparklesIcon className="section-icon" /> Sistem Promptları</h2>
+          <div className="section-content">
+            <p className="section-description">
+              Yapay zeka sınıflandırma ve özetleme için kullanılan sistem promptlarını düzenleyin.
+            </p>
 
-                <PromptEditor
-                  promptType="classification"
-                  label="Sınıflandırma Promptu"
-                  description="Bu prompt makaleleri otomatik olarak kategorilere ayırmak için kullanılır."
-                />
+            <PromptEditor
+              promptType="classification"
+              label="Sınıflandırma Promptu"
+              description="Bu prompt makaleleri otomatik olarak kategorilere ayırmak için kullanılır."
+            />
 
-                <PromptEditor
-                  promptType="summarization"
-                  label="Özetleme Promptu"
-                  description="Bu prompt makale özetleri oluşturmak için kullanılır."
-                />
-                </div>
-                )}
-              </div>
+            <PromptEditor
+              promptType="summarization"
+              label="Özetleme Promptu"
+              description="Bu prompt makale özetleri oluşturmak için kullanılır."
+            />
+          </div>
+        </div>
+      )}
 
-              {/* User Management Section - Admin Only */}
-              {currentUser.role === 'admin' && (
-                <div className="settings-section">
-                  <div
-                    className="section-header"
-                    onClick={() => toggleSection('users')}
-                  >
-                    <h3>
-                      {expandedSections.users ? <ChevronDownIcon className="collapse-icon" /> : <ChevronRightIcon className="collapse-icon" />}
-                      <UsersIcon className="section-icon" /> Kullanıcı Yönetimi
-                    </h3>
-                  </div>
-                  {expandedSections.users && (
+      {category === 'users' && currentUser.role === 'admin' && (
+                <div className="settings-category">
+                  <h2 className="settings-content-title"><UsersIcon className="section-icon" /> Kullanıcı Yönetimi</h2>
                     <div className="section-content">
                       <p className="section-description">
                         Kullanıcı hesaplarını yönetin. Yalnızca yöneticiler bu ayarları görebilir.
@@ -775,26 +719,8 @@ function Settings({ isOpen, onClose, currentUser }: SettingsProps) {
                         </button>
                       </div>
                     </div>
-                  )}
                 </div>
-              )}
-            </>
-          )}
-        </div>
-
-        <div className="modal-shell-footer">
-          <button className="cancel-button" onClick={onClose}>
-            İptal
-          </button>
-          <button
-            className="save-button"
-            onClick={handleSave}
-            disabled={isSaving || enabledSummaryTypes.length === 0}
-          >
-            {isSaving ? 'Kaydediliyor...' : 'Ayarları kaydet'}
-          </button>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

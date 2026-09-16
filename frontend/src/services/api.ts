@@ -17,6 +17,7 @@ import type {
     LoginResponse,
     BulletinCategory,
     BulletinGenerateRequest,
+    BulletinPreviewCountResponse,
 } from '../types';
 
 const API_BASE_URL = '/api';
@@ -338,6 +339,18 @@ export const bulletinApi = {
 
     generate: async (payload: BulletinGenerateRequest): Promise<Blob> => {
         const response = await api.post('/bulletin/generate', payload, { responseType: 'blob' });
+        return response.data;
+    },
+
+    previewCount: async (params: BulletinGenerateRequest): Promise<BulletinPreviewCountResponse> => {
+        const response = await api.get('/bulletin/preview-count', {
+            params: {
+                published_from: params.published_from,
+                published_to: params.published_to,
+                priorities: params.priorities && params.priorities.length > 0 ? params.priorities.join(',') : undefined,
+                include_favorites: params.include_favorites,
+            },
+        });
         return response.data;
     },
 };

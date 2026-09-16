@@ -101,6 +101,11 @@
   flex-wrap: wrap;
 }
 
+.bulletin-preview-count {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+}
+
 .bulletin-status-message {
   font-size: 0.875rem;
   color: var(--color-text-secondary);

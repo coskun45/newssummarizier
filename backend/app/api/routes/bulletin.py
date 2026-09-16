@@ -113,11 +113,66 @@ async def delete_bulletin_category(
 VALID_PRIORITIES = {"high", "med", "low"}
 
 
+def _validate_priorities(priorities: Optional[List[str]]) -> None:
+    if priorities:
+        invalid = set(priorities) - VALID_PRIORITIES
+        if invalid:
+            raise HTTPException(status_code=400, detail=f"Invalid priorities: {', '.join(sorted(invalid))}")
+
+
+def _resolve_bulletin_date_range(
+    published_from: Optional[datetime], published_to: Optional[datetime]
+):
+    """Shared 'default to the last 24h if unset' logic so /generate and
+    /preview-count always agree on what 'no date filter' means."""
+    to_ = published_to or datetime.now(timezone.utc)
+    from_ = published_from or (to_ - timedelta(hours=24))
+    return from_, to_
+
+
+def _parse_comma_priorities(raw: Optional[str]) -> Optional[List[str]]:
+    if not raw:
+        return None
+    return [p for p in raw.split(",") if p]
+
+
 class BulletinGenerateRequest(BaseModel):
     """Request body for generating a bulletin report."""
     published_from: Optional[datetime] = None
     published_to: Optional[datetime] = None
     priorities: Optional[List[str]] = None
+    include_favorites: bool = False
+
+
+class BulletinPreviewCountResponse(BaseModel):
+    """Response body for the live, informational article-count preview."""
+    count: int
+
+
+@router.get("/preview-count", response_model=BulletinPreviewCountResponse)
+async def preview_bulletin_count(
+    published_from: Optional[datetime] = None,
+    published_to: Optional[datetime] = None,
+    priorities: Optional[str] = None,
+    include_favorites: bool = False,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Live, read-only count of articles a bulletin would include for the given
+    filters. Purely informational — does not require categories to exist and
+    returns 0 (not a 400) when nothing matches, unlike /generate."""
+    priority_list = _parse_comma_priorities(priorities)
+    _validate_priorities(priority_list)
+    from_, to_ = _resolve_bulletin_date_range(published_from, published_to)
+
+    count = crud.count_bulletin_candidate_articles(
+        db,
+        start_date=from_,
+        end_date=to_,
+        priorities=priority_list,
+        include_favorites=include_favorites,
+    )
+    return BulletinPreviewCountResponse(count=count)
 
 
 @router.post("/generate")
@@ -129,23 +184,20 @@ async def generate_bulletin(
     """Generate and stream back a Word (.docx) bulletin report for the given
     filters. Top-level categories come from the server's saved list, not the
     request, so the UI and the generated document can't drift apart."""
-    if body.priorities:
-        invalid = set(body.priorities) - VALID_PRIORITIES
-        if invalid:
-            raise HTTPException(status_code=400, detail=f"Invalid priorities: {', '.join(sorted(invalid))}")
+    _validate_priorities(body.priorities)
 
     categories = crud.get_bulletin_categories(db)
     if not categories:
         raise HTTPException(status_code=400, detail="En az bir üst düzey kategori tanımlanmalı")
 
-    published_to = body.published_to or datetime.now(timezone.utc)
-    published_from = body.published_from or (published_to - timedelta(hours=24))
+    published_from, published_to = _resolve_bulletin_date_range(body.published_from, body.published_to)
 
-    articles = crud.get_articles(
+    articles = crud.get_bulletin_candidate_articles(
         db,
         start_date=published_from,
         end_date=published_to,
         priorities=body.priorities,
+        include_favorites=body.include_favorites,
         limit=settings.bulletin_max_articles + 1,
     )
     if len(articles) > settings.bulletin_max_articles:

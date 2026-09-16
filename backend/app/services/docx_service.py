@@ -170,7 +170,37 @@ def _enable_auto_update_fields(document: Document) -> None:
         return
     update_fields = OxmlElement("w:updateFields")
     update_fields.set(qn("w:val"), "true")
-    settings_element.insert(0, update_fields)
+    # CT_Settings is a strict, ordered sequence — updateFields must sit right
+    # before compat/docVars/rsids (inserting at index 0, ahead of elements
+    # like embedTrueTypeFonts/defaultTabStop that the schema requires first,
+    # produces an out-of-order settings.xml that Word's stricter settings
+    # parser can reject or repair, silently dropping the flag it's meant to
+    # set). Anchor on w:compat, which is present in every template we ship
+    # against; fall back to appending if a template ever lacks one.
+    compat = settings_element.find(qn("w:compat"))
+    if compat is not None:
+        compat.addprevious(update_fields)
+    else:
+        settings_element.append(update_fields)
+
+
+def _fix_toc_field_locale_independence(document: Document) -> None:
+    """The bundled template's TOC field selects entries purely via \\t — a
+    literal, English-only style-name list (" TOC \\h \\u \\z \\n \\t \"Heading
+    1,1,Heading 2,2,...\"") with no \\o switch. \\t matches a paragraph by its
+    LOCALIZED style display name string, and Word does not translate
+    "Heading 1" for that comparison on a non-English install (e.g. German's
+    "Überschrift 1", confirmed via Word COM automation — outline level is
+    correctly 1, but the name string doesn't match). With no \\o fallback,
+    the field then finds zero entries on a non-English Word even though our
+    Heading1/Heading2 paragraphs are entirely correct — and updating it
+    interactively prompts to create a brand new table instead of populating
+    the existing one. \\o "1-6" additionally matches by outline level, which
+    is locale-independent, so add it alongside \\t rather than replacing it."""
+    for instr_text in document.element.body.iter(qn("w:instrText")):
+        text = instr_text.text or ""
+        if text.strip().startswith("TOC") and "\\o" not in text and "\\t" in text:
+            instr_text.text = text.replace("\\t", '\\o "1-6" \\t', 1)
 
 
 def _rebuild_category_sections(
@@ -194,7 +224,8 @@ def _rebuild_category_sections(
     digest_anchor: Optional[Paragraph] = None
     existing_by_name: Dict[str, Paragraph] = {}
     for heading_p, children in _heading1_spans(document):
-        if _normalize(heading_p.text) == _normalize(ONE_CIKAN_BASLIKLAR_LABEL):
+        normalized = _normalize(heading_p.text)
+        if normalized == _normalize(ONE_CIKAN_BASLIKLAR_LABEL):
             for child in children:
                 _remove_paragraph(child)
             _set_paragraph_text(heading_p, GUNDEM_OZETI_LABEL)
@@ -204,7 +235,17 @@ def _rebuild_category_sections(
         # last real edition — fresh ones are generated for this run below.
         for child in children:
             _remove_paragraph(child)
-        existing_by_name[_normalize(heading_p.text)] = heading_p
+        if not normalized:
+            # The bundled template has several blank Heading1 paragraphs used
+            # as layout spacers (a Google Docs export artifact) — not a real
+            # category. Drop them outright instead of keying them into
+            # existing_by_name under the same '' key, where each new one
+            # would silently overwrite the last and strand the rest as
+            # orphaned empty headings in the output (never reachable by the
+            # stray-cleanup loop below, since only the dict's survivor is).
+            _remove_paragraph(heading_p)
+            continue
+        existing_by_name[normalized] = heading_p
 
     if digest_anchor is None:
         if title_paragraph is not None:
@@ -230,6 +271,15 @@ def _rebuild_category_sections(
             _remove_paragraph(stray)
             del existing_by_name[key]
 
+    # Categories keep their original template position unless explicitly
+    # relocated here — reusing an existing Heading1 anchor "in place" would
+    # silently ignore the user's configured display_order (the bundled
+    # template's own heading order is fixed/hardcoded). `tail` tracks the
+    # last-placed paragraph so every category heading, reused or brand new,
+    # ends up physically positioned in `category_order` sequence — which is
+    # what the TOC field (recomputed via `_enable_auto_update_fields`) reads.
+    tail = digest_anchor if digest_anchor is not None else title_paragraph
+
     for name in ordered_names:
         groups = categorized.get(name)
         anchor = existing_by_name.get(_normalize(name))
@@ -241,17 +291,20 @@ def _rebuild_category_sections(
             continue
 
         if anchor is None:
-            anchor = document.add_paragraph(name, style=heading1_style)
+            anchor = _insert_paragraph_after(tail, name, heading1_style)
+        elif tail is not None:
+            tail._p.addnext(anchor._p)
 
+        tail = anchor
         for subcategory, items in groups.items():
-            anchor = _insert_paragraph_after(anchor, subcategory, heading2_style)
+            tail = _insert_paragraph_after(tail, subcategory, heading2_style)
             for item in items:
                 article_type = item.get("article_type")
                 icon = _ICON_BY_TYPE.get(article_type, "📌")
                 source = item.get("source")
                 suffix = f" ({source})" if source and article_type != "haber_detayi" else ""
                 text = f"{icon} {item['synopsis']}{suffix}"
-                anchor = _insert_paragraph_after(anchor, text, normal_style)
+                tail = _insert_paragraph_after(tail, text, normal_style)
 
 
 def render_bulletin_docx(
@@ -282,6 +335,7 @@ def render_bulletin_docx(
         _rebuild_category_sections(
             document, styles_by_id, title_paragraph, digest_items, categorized, category_order
         )
+        _fix_toc_field_locale_independence(document)
         _enable_auto_update_fields(document)
 
         buffer = io.BytesIO()

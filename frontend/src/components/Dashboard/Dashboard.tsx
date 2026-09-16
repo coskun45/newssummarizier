@@ -10,7 +10,8 @@ import FeedSidebar from '../FeedSidebar/FeedSidebar';
 import DateFilter from '../DateFilter/DateFilter';
 import SearchBar from '../SearchBar/SearchBar';
 import Pagination from '../Pagination/Pagination';
-import Settings from '../Settings/Settings';
+import Settings, { type SettingsCategory } from '../Settings/Settings';
+import SettingsNav from '../Settings/SettingsNav';
 import UserMenu from '../UserMenu/UserMenu';
 import BulletinPanel from '../Bulletin/Bulletin';
 import {
@@ -27,7 +28,6 @@ import {
   TrashIcon,
   ExclamationTriangleIcon,
   InformationCircleIcon,
-  NewspaperIcon,
 } from '@heroicons/react/24/outline';
 import { StarIcon } from '@heroicons/react/24/solid';
 import type { AuthUser, DateFilterState } from '../../types';
@@ -47,12 +47,13 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
   const [selectedPriority, setSelectedPriority] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [showSettings, setShowSettings] = useState(false);
   const [selectedFeedIds, setSelectedFeedIds] = useState<number[]>([]);
   const emptyDate: DateFilterState = { preset: null, customFrom: '', customTo: '' };
   const [publishedFilter, setPublishedFilter] = useState<DateFilterState>(emptyDate);
   const [fetchedFilter, setFetchedFilter] = useState<DateFilterState>(emptyDate);
-  const [activeSection, setActiveSection] = useState<'unread' | 'archive' | 'important' | 'bulletin'>('unread');
+  const [activeView, setActiveView] = useState<'news' | 'bulletin' | 'settings'>('news');
+  const [settingsCategory, setSettingsCategory] = useState<SettingsCategory>('feeds');
+  const [activeSection, setActiveSection] = useState<'unread' | 'archive' | 'important'>('unread');
   const [selectedArticleIds, setSelectedArticleIds] = useState<Set<number>>(new Set());
   const [exportNotice, setExportNotice] = useState<string | null>(null);
   const exportNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -213,7 +214,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [feedsData]);
 
-  const handleSectionChange = (section: 'unread' | 'archive' | 'important' | 'bulletin') => {
+  const handleSectionChange = (section: 'unread' | 'archive' | 'important') => {
     setActiveSection(section);
     setSelectedArticleIds(new Set());
   };
@@ -335,8 +336,6 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
 
   return (
     <div className="dashboard">
-      <Settings isOpen={showSettings} onClose={() => setShowSettings(false)} currentUser={currentUser} />
-
       {/* Header */}
       <header className="dashboard-header">
         <div className="container">
@@ -345,48 +344,27 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
               <h1>Haber Özetleyici</h1>
               {appInfo && <span className="app-version">v{appInfo.version}</span>}
             </div>
+            <nav className="header-nav">
+              <button
+                className={`header-nav-item${activeView === 'news' ? ' header-nav-item--active' : ''}`}
+                onClick={() => setActiveView('news')}
+              >
+                Haberler
+              </button>
+              <button
+                className={`header-nav-item${activeView === 'bulletin' ? ' header-nav-item--active' : ''}`}
+                onClick={() => setActiveView('bulletin')}
+              >
+                Bülten
+              </button>
+              <button
+                className={`header-nav-item${activeView === 'settings' ? ' header-nav-item--active' : ''}`}
+                onClick={() => setActiveView('settings')}
+              >
+                Ayarlar
+              </button>
+            </nav>
             <div className="header-buttons">
-
-              <button
-                className="check-button"
-                onClick={() => {
-                  if (refreshTargetFeedIds.length === 0) return;
-                  setRefreshStatus('running');
-                  Promise.all(refreshTargetFeedIds.map((id) => refreshFeedMutation.mutateAsync(id)))
-                    .then(() => startPolling(refreshTargetFeedIds))
-                    .catch(() => setRefreshStatus('idle'));
-                }}
-                disabled={refreshStatus === 'running'}
-              >
-                {refreshStatus === 'running' ? (
-                  <><ArrowPathIcon className="spin-icon" /> İşleniyor...</>
-                ) : (
-                  <><ArrowPathIcon /> Şimdi Yenile</>
-                )}
-              </button>
-              {refreshStatus === 'running' && (
-                <span className="refresh-message refresh-message--processing">
-                  <ArrowPathIcon className="spin-icon" /> Makaleler işleniyor...
-                </span>
-              )}
-              {typeof refreshStatus === 'object' && (
-                <span className="refresh-message">
-                  {refreshStatus.new_articles > 0 ? (
-                    <><CheckCircleIcon /> {refreshStatus.new_articles} yeni makale eklendi ({refreshStatus.processed} işlendi)</>
-                  ) : (
-                    <><InformationCircleIcon /> {refreshStatus.processed} makale işlendi, yeni makale yok</>
-                  )}
-                </span>
-              )}
-
-              <button
-                className="settings-button"
-                onClick={() => setShowSettings(true)}
-                title="Ayarlar"
-              >
-                <Cog6ToothIcon />
-              </button>
-
               <UserMenu email={currentUser.email} onLogout={onLogout} />
             </div>
           </div>
@@ -397,9 +375,9 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
       <div className="dashboard-content">
         <div className="container">
           <div className="dashboard-grid">
-            {/* Left Sidebar — not shown for the Bülten tab, which is a report
+            {/* Left Sidebar — not shown for the Bülten view, which is a report
                 generator, not an article browser, and has its own config form */}
-            {activeSection !== 'bulletin' && (
+            {activeView === 'news' && (
             <aside className="dashboard-sidebar">
               <h2 className="sidebar-section-title">
                 <FunnelIcon className="sidebar-section-icon" /> Filtreleme
@@ -459,182 +437,230 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
             </aside>
             )}
 
+            {activeView === 'settings' && (
+            <aside className="dashboard-sidebar">
+              <h2 className="sidebar-section-title">
+                <Cog6ToothIcon className="sidebar-section-icon" /> Ayarlar
+              </h2>
+              <SettingsNav
+                activeCategory={settingsCategory}
+                onCategoryChange={setSettingsCategory}
+                isAdmin={currentUser.role === 'admin'}
+              />
+            </aside>
+            )}
+
             {/* Main Content Area */}
             <main className="dashboard-main">
-              {activeSection !== 'bulletin' && <SearchBar value={searchQuery} onChange={setSearchQuery} />}
+              {activeView === 'bulletin' && <BulletinPanel />}
 
-              <div className="section-tabs">
-                <button
-                  className={`section-tab${activeSection === 'unread' ? ' section-tab--active' : ''}`}
-                  onClick={() => handleSectionChange('unread')}
-                  aria-label="Okunmamışlar"
-                >
-                  <InboxIcon /> Okunmamışlar
-                  {(articleCounts?.unread_count ?? 0) > 0 && (
-                    <span className="section-tab-badge">{articleCounts!.unread_count}</span>
-                  )}
-                </button>
-                <button
-                  className={`section-tab${activeSection === 'archive' ? ' section-tab--active' : ''}`}
-                  onClick={() => handleSectionChange('archive')}
-                  aria-label="Arşiv"
-                >
-                  <ArchiveBoxIcon /> Arşiv
-                  {(articleCounts?.read_count ?? 0) > 0 && (
-                    <span className="section-tab-badge section-tab-badge--archive">{articleCounts!.read_count}</span>
-                  )}
-                </button>
-                <button
-                  className={`section-tab${activeSection === 'important' ? ' section-tab--active' : ''}`}
-                  onClick={() => handleSectionChange('important')}
-                  aria-label="Favori"
-                >
-                  <StarIcon /> Favori
-                  {(articleCounts?.starred_count ?? 0) > 0 && (
-                    <span className="section-tab-badge section-tab-badge--important">{articleCounts!.starred_count}</span>
-                  )}
-                </button>
-                <button
-                  className={`section-tab${activeSection === 'bulletin' ? ' section-tab--active' : ''}`}
-                  onClick={() => handleSectionChange('bulletin')}
-                  aria-label="Bülten"
-                >
-                  <NewspaperIcon /> Bülten
-                </button>
-              </div>
-
-              {activeSection === 'bulletin' && <BulletinPanel />}
-
-              {activeSection === 'unread' && articlesData && articlesData.articles.length > 0 && (
-                <div className="bulk-action-bar">
-                  <button
-                    className="btn btn-outline btn-sm"
-                    onClick={handleMarkAll}
-                    disabled={markBulkReadMutation.isPending}
-                  >
-                    <ArchiveBoxArrowDownIcon /> Tümünü Arşive Gönder
-                  </button>
-                  {selectedArticleIds.size > 0 && (
-                    <button
-                      className="btn btn-primary btn-sm"
-                      onClick={handleMarkSelected}
-                      disabled={markBulkReadMutation.isPending}
-                    >
-                      <ArchiveBoxArrowDownIcon /> Seçilenleri Arşive Gönder ({selectedArticleIds.size})
-                    </button>
-                  )}
-                </div>
+              {activeView === 'settings' && (
+                <Settings category={settingsCategory} currentUser={currentUser} />
               )}
 
-              {activeSection === 'unread' && (
-                <CategoryBulkActions
-                  priorityCounts={articleCounts?.by_priority ?? {}}
-                  unimportantCount={articleCounts?.unimportant_count ?? 0}
-                  onDeleteAllByPriority={handleDeleteAllByPriority}
-                  onArchiveAllByPriority={handleArchiveAllByPriority}
-                  onDeleteAllUnimportant={handleDeleteAllUnimportant}
-                  onArchiveAllUnimportant={handleArchiveAllUnimportant}
-                  deletePending={deleteAllByPriorityMutation.isPending || deleteAllUnimportantMutation.isPending}
-                  archivePending={archiveAllByPriorityMutation.isPending || archiveAllUnimportantMutation.isPending}
-                />
-              )}
-
-              {activeSection === 'important' && articlesData && articlesData.articles.length > 0 && (
-                <div className="bulk-action-bar">
-                  <button
-                    className="btn btn-outline btn-sm"
-                    onClick={() => handleSelectAll(articlesData.articles.map((a) => a.id))}
-                  >
-                    <CheckCircleIcon /> Tümünü Seç
-                  </button>
-                  {selectedArticleIds.size > 0 && (
-                    <button
-                      className="btn btn-outline btn-sm"
-                      onClick={() => setSelectedArticleIds(new Set())}
-                    >
-                      <XMarkIcon /> Seçimi Temizle ({selectedArticleIds.size})
-                    </button>
-                  )}
-                  <button
-                    className="btn btn-primary btn-sm"
-                    onClick={handleExportWord}
-                    disabled={selectedArticleIds.size === 0}
-                    title="Seçili makaleleri özetleriyle birlikte Word olarak indir"
-                  >
-                    <DocumentArrowDownIcon /> Word indir
-                  </button>
-                  <button
-                    className="btn btn-primary btn-sm"
-                    onClick={handleExportWhatsApp}
-                    disabled={selectedArticleIds.size === 0}
-                    title="Seçili makaleleri özetleriyle WhatsApp mesajı olarak panoya kopyala"
-                  >
-                    <ChatBubbleLeftRightIcon /> WhatsApp
-                  </button>
-                  <button
-                    className="btn btn-outline btn-sm"
-                    onClick={handleClearImportant}
-                    disabled={unstarAllMutation.isPending}
-                    title="Favori listesini tamamen temizle"
-                  >
-                    <TrashIcon /> Listeyi Temizle
-                  </button>
-                  {exportNotice && <span className="refresh-message refresh-message--processing">{exportNotice}</span>}
-                </div>
-              )}
-
-              {activeSection !== 'bulletin' && error && (
-                <div className="error-message">
-                  <p><ExclamationTriangleIcon /> Makaleler yüklenirken hata oluştu</p>
-                </div>
-              )}
-
-              {activeSection !== 'bulletin' && (isLoading ? (
-                <div className="skeleton-list" role="status" aria-label="Makaleler yükleniyor">
-                  {Array.from({ length: 4 }).map((_, i) => (
-                    <div key={i} className="skeleton-card">
-                      <div className="skeleton skeleton-line skeleton-line--title" />
-                      <div className="skeleton skeleton-line skeleton-line--meta" />
-                      <div className="skeleton skeleton-line skeleton-line--body" />
-                      <div className="skeleton skeleton-line skeleton-line--body-short" />
+              {activeView === 'news' && (
+                <>
+                  <div className="news-toolbar">
+                    <div className="news-toolbar-search">
+                      <SearchBar value={searchQuery} onChange={setSearchQuery} />
                     </div>
-                  ))}
-                </div>
-              ) : articlesData && articlesData.articles.length === 0 ? (
-                <div className="empty-state">
-                  <InboxIcon className="empty-state-icon" />
-                  <p>Makale bulunamadı</p>
-                  <p className="text-small text-muted">
-                    {selectedTopics.length > 0 || searchQuery
-                      ? 'Farklı filtreler deneyin'
-                      : 'Makaleler yükleniyor...'}
-                  </p>
-                </div>
-              ) : (
-                articlesData && (
-                  <>
-                    <div className="results-count">
+                    <div className="news-toolbar-refresh">
+                      <button
+                        className="btn btn-outline btn-icon"
+                        onClick={() => {
+                          if (refreshTargetFeedIds.length === 0) return;
+                          setRefreshStatus('running');
+                          Promise.all(refreshTargetFeedIds.map((id) => refreshFeedMutation.mutateAsync(id)))
+                            .then(() => startPolling(refreshTargetFeedIds))
+                            .catch(() => setRefreshStatus('idle'));
+                        }}
+                        disabled={refreshStatus === 'running'}
+                        title="Haberleri Güncelle"
+                      >
+                        <ArrowPathIcon className={refreshStatus === 'running' ? 'spin-icon' : undefined} />
+                      </button>
+                      {refreshStatus === 'running' && (
+                        <span className="refresh-message refresh-message--processing">
+                          <ArrowPathIcon className="spin-icon" /> Makaleler işleniyor...
+                        </span>
+                      )}
+                      {typeof refreshStatus === 'object' && (
+                        <span className="refresh-message">
+                          {refreshStatus.new_articles > 0 ? (
+                            <><CheckCircleIcon /> {refreshStatus.new_articles} yeni makale eklendi ({refreshStatus.processed} işlendi)</>
+                          ) : (
+                            <><InformationCircleIcon /> {refreshStatus.processed} makale işlendi, yeni makale yok</>
+                          )}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="section-tabs">
+                    <button
+                      className={`section-tab${activeSection === 'unread' ? ' section-tab--active' : ''}`}
+                      onClick={() => handleSectionChange('unread')}
+                      aria-label="Okunmamışlar"
+                    >
+                      <InboxIcon /> Okunmamışlar
+                      {(articleCounts?.unread_count ?? 0) > 0 && (
+                        <span className="section-tab-badge">{articleCounts!.unread_count}</span>
+                      )}
+                    </button>
+                    <button
+                      className={`section-tab${activeSection === 'archive' ? ' section-tab--active' : ''}`}
+                      onClick={() => handleSectionChange('archive')}
+                      aria-label="Arşiv"
+                    >
+                      <ArchiveBoxIcon /> Arşiv
+                      {(articleCounts?.read_count ?? 0) > 0 && (
+                        <span className="section-tab-badge section-tab-badge--archive">{articleCounts!.read_count}</span>
+                      )}
+                    </button>
+                    <button
+                      className={`section-tab${activeSection === 'important' ? ' section-tab--active' : ''}`}
+                      onClick={() => handleSectionChange('important')}
+                      aria-label="Favori"
+                    >
+                      <StarIcon /> Favori
+                      {(articleCounts?.starred_count ?? 0) > 0 && (
+                        <span className="section-tab-badge section-tab-badge--important">{articleCounts!.starred_count}</span>
+                      )}
+                    </button>
+                  </div>
+
+                  {activeSection === 'unread' && articlesData && articlesData.articles.length > 0 && (
+                    <div className="bulk-action-bar">
+                      <button
+                        className="btn btn-outline btn-sm"
+                        onClick={handleMarkAll}
+                        disabled={markBulkReadMutation.isPending}
+                      >
+                        <ArchiveBoxArrowDownIcon /> Tümünü Arşive Gönder
+                      </button>
+                      {selectedArticleIds.size > 0 && (
+                        <button
+                          className="btn btn-primary btn-sm"
+                          onClick={handleMarkSelected}
+                          disabled={markBulkReadMutation.isPending}
+                        >
+                          <ArchiveBoxArrowDownIcon /> Seçilenleri Arşive Gönder ({selectedArticleIds.size})
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {activeSection === 'unread' && (
+                    <CategoryBulkActions
+                      priorityCounts={articleCounts?.by_priority ?? {}}
+                      unimportantCount={articleCounts?.unimportant_count ?? 0}
+                      onDeleteAllByPriority={handleDeleteAllByPriority}
+                      onArchiveAllByPriority={handleArchiveAllByPriority}
+                      onDeleteAllUnimportant={handleDeleteAllUnimportant}
+                      onArchiveAllUnimportant={handleArchiveAllUnimportant}
+                      deletePending={deleteAllByPriorityMutation.isPending || deleteAllUnimportantMutation.isPending}
+                      archivePending={archiveAllByPriorityMutation.isPending || archiveAllUnimportantMutation.isPending}
+                    />
+                  )}
+
+                  {activeSection === 'important' && articlesData && articlesData.articles.length > 0 && (
+                    <div className="bulk-action-bar">
+                      <button
+                        className="btn btn-outline btn-sm"
+                        onClick={() => handleSelectAll(articlesData.articles.map((a) => a.id))}
+                      >
+                        <CheckCircleIcon /> Tümünü Seç
+                      </button>
+                      {selectedArticleIds.size > 0 && (
+                        <button
+                          className="btn btn-outline btn-sm"
+                          onClick={() => setSelectedArticleIds(new Set())}
+                        >
+                          <XMarkIcon /> Seçimi Temizle ({selectedArticleIds.size})
+                        </button>
+                      )}
+                      <button
+                        className="btn btn-primary btn-sm"
+                        onClick={handleExportWord}
+                        disabled={selectedArticleIds.size === 0}
+                        title="Seçili makaleleri özetleriyle birlikte Word olarak indir"
+                      >
+                        <DocumentArrowDownIcon /> Word indir
+                      </button>
+                      <button
+                        className="btn btn-primary btn-sm"
+                        onClick={handleExportWhatsApp}
+                        disabled={selectedArticleIds.size === 0}
+                        title="Seçili makaleleri özetleriyle WhatsApp mesajı olarak panoya kopyala"
+                      >
+                        <ChatBubbleLeftRightIcon /> WhatsApp
+                      </button>
+                      <button
+                        className="btn btn-outline btn-sm"
+                        onClick={handleClearImportant}
+                        disabled={unstarAllMutation.isPending}
+                        title="Favori listesini tamamen temizle"
+                      >
+                        <TrashIcon /> Listeyi Temizle
+                      </button>
+                      {exportNotice && <span className="refresh-message refresh-message--processing">{exportNotice}</span>}
+                    </div>
+                  )}
+
+                  {error && (
+                    <div className="error-message">
+                      <p><ExclamationTriangleIcon /> Makaleler yüklenirken hata oluştu</p>
+                    </div>
+                  )}
+
+                  {isLoading ? (
+                    <div className="skeleton-list" role="status" aria-label="Makaleler yükleniyor">
+                      {Array.from({ length: 4 }).map((_, i) => (
+                        <div key={i} className="skeleton-card">
+                          <div className="skeleton skeleton-line skeleton-line--title" />
+                          <div className="skeleton skeleton-line skeleton-line--meta" />
+                          <div className="skeleton skeleton-line skeleton-line--body" />
+                          <div className="skeleton skeleton-line skeleton-line--body-short" />
+                        </div>
+                      ))}
+                    </div>
+                  ) : articlesData && articlesData.articles.length === 0 ? (
+                    <div className="empty-state">
+                      <InboxIcon className="empty-state-icon" />
+                      <p>Makale bulunamadı</p>
                       <p className="text-small text-muted">
-                        {articlesData.total} makale bulundu
+                        {selectedTopics.length > 0 || searchQuery
+                          ? 'Farklı filtreler deneyin'
+                          : 'Makaleler yükleniyor...'}
                       </p>
                     </div>
-                    <ArticleList
-                      articles={articlesData.articles}
-                      selectedIds={selectedArticleIds}
-                      onToggleSelect={handleToggleSelect}
-                      onSelectAll={handleSelectAll}
-                      onDeleted={handleArticleDeleted}
-                      isArchiveView={activeSection === 'archive'}
-                      selectable={activeSection !== 'archive'}
-                    />
-                    <Pagination
-                      currentPage={page}
-                      totalPages={totalPages}
-                      onPageChange={goToPage}
-                    />
-                  </>
-                )
-              ))}
+                  ) : (
+                    articlesData && (
+                      <>
+                        <div className="results-count">
+                          <p className="text-small text-muted">
+                            {articlesData.total} makale bulundu
+                          </p>
+                        </div>
+                        <ArticleList
+                          articles={articlesData.articles}
+                          selectedIds={selectedArticleIds}
+                          onToggleSelect={handleToggleSelect}
+                          onSelectAll={handleSelectAll}
+                          onDeleted={handleArticleDeleted}
+                          isArchiveView={activeSection === 'archive'}
+                          selectable={activeSection !== 'archive'}
+                        />
+                        <Pagination
+                          currentPage={page}
+                          totalPages={totalPages}
+                          onPageChange={goToPage}
+                        />
+                      </>
+                    )
+                  )}
+                </>
+              )}
             </main>
           </div>
         </div>

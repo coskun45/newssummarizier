@@ -92,7 +92,7 @@ test('"Şimdi Yenile" refreshes every feed when none is selected, not just the f
   );
   await page.goto('/');
 
-  await page.getByRole('button', { name: 'Şimdi Yenile' }).click();
+  await page.getByRole('button', { name: 'Haberleri Güncelle' }).click();
 
   await expect.poll(() => [...refreshedFeedIds].sort((a, b) => a - b)).toEqual(
     [FEED_A.id, FEED_B.id].sort((a, b) => a - b)
@@ -115,7 +115,7 @@ test('"Şimdi Yenile" only refreshes the selected feed when one is filtered', as
   await page.goto('/');
 
   await page.getByLabel('Tech Feed').click();
-  await page.getByRole('button', { name: 'Şimdi Yenile' }).click();
+  await page.getByRole('button', { name: 'Haberleri Güncelle' }).click();
 
   await expect.poll(() => refreshedFeedIds).toEqual([FEED_B.id]);
 });

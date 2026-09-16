@@ -145,4 +145,9 @@ export interface BulletinGenerateRequest {
     published_from?: string;
     published_to?: string;
     priorities?: string[];
+    include_favorites?: boolean;
+}
+
+export interface BulletinPreviewCountResponse {
+    count: number;
 }

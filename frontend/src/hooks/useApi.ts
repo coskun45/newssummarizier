@@ -376,3 +376,11 @@ export const useGenerateBulletin = () => {
         mutationFn: (payload: BulletinGenerateRequest) => bulletinApi.generate(payload),
     });
 };
+
+export const useBulletinPreviewCount = (params: BulletinGenerateRequest) => {
+    return useQuery({
+        queryKey: ['bulletinPreviewCount', params],
+        queryFn: () => bulletinApi.previewCount(params),
+        placeholderData: keepPreviousData,
+    });
+};

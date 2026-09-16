@@ -297,6 +297,65 @@ def count_articles(
     return query.scalar()
 
 
+def _bulletin_candidate_filter(query, priorities: List[str] = None, include_favorites: bool = False):
+    """Union filter for bulletin candidates: articles matching any of `priorities`
+    OR (if include_favorites) starred articles. Deliberately separate from
+    get_articles'/count_articles' is_starred, which is always AND'd with other
+    filters for the general article browser — don't reuse this for those."""
+    if priorities and include_favorites:
+        return query.filter(or_(models.Article.priority.in_(priorities), models.Article.is_starred.is_(True)))
+    if priorities:
+        return query.filter(models.Article.priority.in_(priorities))
+    if include_favorites:
+        return query.filter(models.Article.is_starred.is_(True))
+    return query
+
+
+def get_bulletin_candidate_articles(
+    db: Session,
+    start_date: datetime = None,
+    end_date: datetime = None,
+    priorities: List[str] = None,
+    include_favorites: bool = False,
+    skip: int = 0,
+    limit: int = 100,
+) -> List[models.Article]:
+    """Articles eligible for bulletin generation: within the date range AND
+    (priority-matched OR starred, per include_favorites)."""
+    query = db.query(models.Article).options(
+        selectinload(models.Article.summaries),
+        selectinload(models.Article.topics).selectinload(models.ArticleTopic.topic)
+    )
+    query = _bulletin_candidate_filter(query, priorities, include_favorites)
+
+    if start_date:
+        query = query.filter(models.Article.published_at >= start_date)
+    if end_date:
+        query = query.filter(models.Article.published_at <= end_date)
+
+    query = query.order_by(desc(models.Article.published_at))
+    return query.offset(skip).limit(limit).all()
+
+
+def count_bulletin_candidate_articles(
+    db: Session,
+    start_date: datetime = None,
+    end_date: datetime = None,
+    priorities: List[str] = None,
+    include_favorites: bool = False,
+) -> int:
+    """Count version of get_bulletin_candidate_articles, for the live preview count."""
+    query = db.query(func.count(models.Article.id))
+    query = _bulletin_candidate_filter(query, priorities, include_favorites)
+
+    if start_date:
+        query = query.filter(models.Article.published_at >= start_date)
+    if end_date:
+        query = query.filter(models.Article.published_at <= end_date)
+
+    return query.scalar()
+
+
 def update_article_status(db: Session, article_id: int, status: str) -> Optional[models.Article]:
     """Update article status."""
     article = get_article(db, article_id)

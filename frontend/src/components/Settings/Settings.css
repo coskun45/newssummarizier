@@ -1,12 +1,3 @@
-.settings-modal {
-  max-width: 700px;
-  max-height: 85vh;
-}
-
-.modal-shell-header h2 {
-  font-size: 1.6rem;
-}
-
 button {
   display: inline-flex;
   align-items: center;
@@ -17,32 +8,22 @@ button svg {
   flex-shrink: 0;
 }
 
-.settings-section {
-  margin-bottom: 1.5rem;
+/* Settings page (rendered in dashboard-main when the Ayarlar view is active) */
+.settings-page-content {
+  max-width: 760px;
+}
+
+.settings-category {
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  overflow: hidden;
+  padding: 1.5rem;
+  box-shadow: var(--shadow-sm);
 }
 
-.settings-section:last-child {
-  margin-bottom: 0;
-}
-
-.section-header {
-  cursor: pointer;
-  user-select: none;
-  padding: 1rem 1.5rem;
-  background: var(--color-surface-alt);
-  transition: background-color 0.2s;
-}
-
-.section-header:hover {
-  background: var(--color-border);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 1.15rem;
+.settings-content-title {
+  margin: 0 0 1rem 0;
+  font-size: 1.25rem;
   color: var(--color-text-primary);
   font-weight: 700;
   display: flex;
@@ -55,22 +36,52 @@ button svg {
   height: 1.1rem;
 }
 
-.collapse-icon {
-  width: 1rem;
-  height: 1rem;
-  flex-shrink: 0;
-}
-
-.section-content {
-  padding: 1rem 1.5rem;
-  background: var(--color-surface);
+.settings-save-row {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
   border-top: 1px solid var(--color-border);
-  animation: slideDown 0.2s ease-in-out;
+  display: flex;
+  justify-content: flex-end;
 }
 
-@keyframes slideDown {
-  from { opacity: 0; transform: translateY(-10px); }
-  to { opacity: 1; transform: translateY(0); }
+/* Settings nav (rendered in dashboard-sidebar when the Ayarlar view is active) */
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.65rem 0.75rem;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.settings-nav-item:hover {
+  background: var(--color-surface-alt);
+  color: var(--color-text-primary);
+}
+
+.settings-nav-item--active {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-weight: 700;
+}
+
+.settings-nav-icon {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex-shrink: 0;
 }
 
 .section-description {
@@ -79,10 +90,6 @@ button svg {
   margin: 0 0 1rem 0;
   line-height: 1.5;
   font-weight: 500;
-}
-
-.section-content .section-description {
-  margin-top: 0;
 }
 
 .checkbox-group {
@@ -399,7 +406,6 @@ option {
   color: var(--color-text-muted);
 }
 
-.cancel-button,
 .save-button {
   padding: 0.65rem 1.35rem;
   border-radius: var(--radius-sm);
@@ -407,18 +413,6 @@ option {
   cursor: pointer;
   transition: all 0.2s;
   border: none;
-}
-
-.cancel-button {
-  background: var(--color-surface-alt);
-  color: var(--color-text-secondary);
-}
-
-.cancel-button:hover {
-  background: var(--color-border);
-}
-
-.save-button {
   background: var(--color-primary);
   color: white;
 }
@@ -434,24 +428,11 @@ option {
 
 /* Mobile responsive */
 @media (max-width: 768px) {
-  .settings-modal {
-    max-height: 90vh;
+  .settings-content-title {
+    font-size: 1.1rem;
   }
 
-  .modal-shell-header h2 {
-    font-size: 1.35rem;
-  }
-
-  .section-header h3 {
-    font-size: 1.05rem;
-  }
-
-  .modal-shell-footer {
-    flex-direction: column;
-  }
-
-  .cancel-button,
-  .save-button {
+  .settings-save-row .save-button {
     width: 100%;
   }
 }
