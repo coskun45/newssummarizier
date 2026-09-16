@@ -1,11 +1,10 @@
 import { useState } from 'react';
-import { formatDistanceToNow } from 'date-fns';
-import { tr } from 'date-fns/locale';
 import type { Article } from '../../types';
 import { useSummaries, useArticle, useDeleteArticle, useSetArticleStarred } from '../../hooks/useApi';
 import ContentModal from '../ContentModal/ContentModal';
 import { copyToClipboard } from '../../utils/exportArticles';
 import { withAlpha } from '../../utils/color';
+import { formatPublishedAt } from '../../utils/formatDate';
 import {
   TrashIcon,
   StarIcon as StarIconOutline,
@@ -23,16 +22,6 @@ const SUMMARY_LABELS: Record<(typeof SUMMARY_ORDER)[number], string> = {
   standard: 'Standart',
   detailed: 'Detaylı',
 };
-
-function formatPublishedAt(publishedAt: string): string {
-  const publishedDate = new Date(publishedAt);
-  // Guard against clock skew between the feed/server and the browser - a
-  // just-published article should never render as being in the future.
-  if (publishedDate.getTime() > Date.now()) {
-    return 'az önce';
-  }
-  return formatDistanceToNow(publishedDate, { addSuffix: true, locale: tr });
-}
 
 interface ArticleCardProps {
   article: Article;

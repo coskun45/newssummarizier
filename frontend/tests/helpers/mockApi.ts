@@ -8,6 +8,7 @@ import type {
   SystemPrompt,
   AppUser,
   BulletinCategory,
+  GeneratedBulletin,
 } from '../../src/types';
 
 let idSeq = 1000;
@@ -62,6 +63,7 @@ export function makeArticle(overrides: Partial<MockArticle> = {}): MockArticle {
     status: 'summarized',
     importance: null,
     priority: null,
+    image_url: null,
     topics: [],
     has_summaries: false,
     is_read: false,
@@ -112,6 +114,21 @@ export function makeBulletinCategory(overrides: Partial<BulletinCategory> = {}):
   };
 }
 
+export function makeGeneratedBulletin(overrides: Partial<GeneratedBulletin> = {}): GeneratedBulletin {
+  const id = overrides.id ?? nextId();
+  return {
+    id,
+    filename: `bulten-${id}.docx`,
+    published_from: null,
+    published_to: null,
+    priorities: null,
+    include_favorites: false,
+    article_count: 0,
+    generated_at: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
 export function makeUser(overrides: Partial<AppUser> = {}): AppUser {
   const id = overrides.id ?? nextId();
   return {
@@ -133,6 +150,7 @@ export interface MockState {
   prompts: Map<string, SystemPrompt>;
   users: AppUser[];
   bulletinCategories: BulletinCategory[];
+  generatedBulletins: GeneratedBulletin[];
 }
 
 export interface MockApiOverrides {
@@ -144,6 +162,7 @@ export interface MockApiOverrides {
   prompts?: Map<string, SystemPrompt>;
   users?: AppUser[];
   bulletinCategories?: BulletinCategory[];
+  generatedBulletins?: GeneratedBulletin[];
 }
 
 function computeCounts(articles: MockArticle[]) {
@@ -267,10 +286,16 @@ function computeBulletinPreviewCount(articles: MockArticle[], params: URLSearchP
  * instead of hanging, so a spec with a mocking gap fails loudly.
  */
 export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Promise<MockState> {
+  // Shallow-clone every fixture object: handlers below (PUT /feeds/:id,
+  // PUT /topics/:id, ...) mutate the matched record in place via
+  // Object.assign. Specs commonly hoist a fixture to a module-level `const`
+  // (e.g. `const FEED = makeFeed(...)`) and reuse it across tests for
+  // readability — without cloning here, one test's edit permanently mutates
+  // that shared object for every later test in the file.
   const state: MockState = {
-    feeds: overrides.feeds ?? [makeFeed({ id: 1, title: 'DW - Deutsche Welle' })],
-    topics: overrides.topics ?? [],
-    articles: overrides.articles ?? [],
+    feeds: (overrides.feeds ?? [makeFeed({ id: 1, title: 'DW - Deutsche Welle' })]).map((f) => ({ ...f })),
+    topics: (overrides.topics ?? []).map((t) => ({ ...t })),
+    articles: (overrides.articles ?? []).map((a) => ({ ...a })),
     summaries: overrides.summaries ?? new Map(),
     settings: {
       enabled_topics: '',
@@ -279,8 +304,9 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
       ...overrides.settings,
     },
     prompts: overrides.prompts ?? new Map(),
-    users: overrides.users ?? [],
-    bulletinCategories: overrides.bulletinCategories ?? [],
+    users: (overrides.users ?? []).map((u) => ({ ...u })),
+    bulletinCategories: (overrides.bulletinCategories ?? []).map((c) => ({ ...c })),
+    generatedBulletins: (overrides.generatedBulletins ?? []).map((b) => ({ ...b })),
   };
 
   await page.route('**/api/**', async (route: Route) => {
@@ -624,12 +650,68 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
       if (state.bulletinCategories.length === 0) {
         return json({ detail: 'En az bir üst düzey kategori tanımlanmalı' }, 400);
       }
+      const body = request.postDataJSON() as {
+        published_from?: string;
+        published_to?: string;
+        priorities?: string[];
+        include_favorites?: boolean;
+      };
+      const priorities = body.priorities ?? [];
+      const includeFavorites = body.include_favorites ?? false;
+      const to = body.published_to ?? new Date().toISOString();
+      const from = body.published_from ?? new Date(new Date(to).getTime() - 24 * 60 * 60 * 1000).toISOString();
+      const articleCount = state.articles.filter((a) => {
+        if (!a.published_at || a.published_at < from || a.published_at > to) return false;
+        if (priorities.length === 0 && !includeFavorites) return true;
+        const priorityMatches = priorities.length > 0 && !!a.priority && priorities.includes(a.priority);
+        const starredMatches = includeFavorites && a.is_starred;
+        return priorityMatches || starredMatches;
+      }).length;
+
+      // Mirrors the real backend: every successful /generate persists a row
+      // the "Daha Önce Oluşturulan Bültenler" list picks up, and the
+      // filename is derived from published_to (not "now") — see
+      // backend/app/api/routes/bulletin.py's `filename = f"bulten-{published_to.date()...}"`.
+      const generated = makeGeneratedBulletin({
+        filename: `bulten-${to.slice(0, 10)}.docx`,
+        published_from: body.published_from ?? null,
+        published_to: body.published_to ?? null,
+        priorities: priorities.length > 0 ? priorities : null,
+        include_favorites: includeFavorites,
+        article_count: articleCount,
+      });
+      state.generatedBulletins.unshift(generated);
+
       return route.fulfill({
         status: 200,
         contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        headers: { 'Content-Disposition': 'attachment; filename="bulten-mock.docx"' },
+        headers: { 'Content-Disposition': `attachment; filename="${generated.filename}"` },
         body: Buffer.from('mock docx content'),
       });
+    }
+
+    // ---- generated bulletins (previously generated reports) ----
+    if (method === 'GET' && path === '/bulletin/generated') {
+      return json(state.generatedBulletins);
+    }
+    m = path.match(/^\/bulletin\/generated\/(\d+)\/download$/);
+    if (m && method === 'GET') {
+      const bulletin = state.generatedBulletins.find((b) => b.id === parseInt(m![1], 10));
+      if (!bulletin) return json({ detail: 'Bülten bulunamadı' }, 404);
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        headers: { 'Content-Disposition': `attachment; filename="${bulletin.filename}"` },
+        body: Buffer.from('mock docx content'),
+      });
+    }
+    m = path.match(/^\/bulletin\/generated\/(\d+)$/);
+    if (m && method === 'DELETE') {
+      const bulletinId = parseInt(m[1], 10);
+      const idx = state.generatedBulletins.findIndex((b) => b.id === bulletinId);
+      if (idx === -1) return json({ detail: 'Bülten bulunamadı' }, 404);
+      state.generatedBulletins.splice(idx, 1);
+      return json({ status: 'success' });
     }
 
     // Unrecognized /api/* request — fail loudly instead of hanging.

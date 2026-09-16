@@ -37,7 +37,7 @@ test('navigating away without saving does not send a PUT', async ({ page }) => {
   await page.goto('/');
 
   await openSummaryTypesCategory(page);
-  await page.getByRole('button', { name: 'Haberler' }).click();
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   await expect(page.locator('.settings-category')).not.toBeVisible();
   expect(putCalled).toBe(false);

@@ -32,6 +32,7 @@ export interface Article {
     status: string;
     importance: string | null;
     priority: string | null;
+    image_url: string | null;
     topics: Topic[];
     has_summaries: boolean;
     is_read: boolean;
@@ -150,4 +151,15 @@ export interface BulletinGenerateRequest {
 
 export interface BulletinPreviewCountResponse {
     count: number;
+}
+
+export interface GeneratedBulletin {
+    id: number;
+    filename: string;
+    published_from: string | null;
+    published_to: string | null;
+    priorities: string[] | null;
+    include_favorites: boolean;
+    article_count: number;
+    generated_at: string;
 }

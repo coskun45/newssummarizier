@@ -13,3 +13,14 @@ export function downloadBlob(blob: Blob, filename: string): void {
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
 }
+
+/**
+ * Extracts the filename from a `Content-Disposition: attachment; filename="…"`
+ * response header, falling back when the header is missing/malformed — the
+ * backend, not the browser's current date, is the source of truth for what a
+ * generated file should be called.
+ */
+export function filenameFromContentDisposition(header: string | undefined | null, fallback: string): string {
+  const match = header?.match(/filename="?([^";]+)"?/);
+  return match ? match[1] : fallback;
+}

@@ -261,3 +261,60 @@
 @keyframes skeleton-shimmer {
   100% { transform: translateX(100%); }
 }
+
+.skeleton-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 1.5rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.skeleton-line {
+  height: 0.85rem;
+  margin-bottom: 0.75rem;
+}
+
+.skeleton-line--title {
+  width: 60%;
+  height: 1.1rem;
+}
+
+.skeleton-line--meta {
+  width: 30%;
+}
+
+.skeleton-line--body {
+  width: 100%;
+}
+
+.skeleton-line--body-short {
+  width: 80%;
+  margin-bottom: 0;
+}
+
+/* Home-page section headings (e.g. "Top News", "İstatistikler") */
+.section-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.75rem 0;
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--color-text-primary);
+  letter-spacing: 0.02em;
+}
+
+.section-heading::before {
+  content: '';
+  width: 4px;
+  height: 1.1rem;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+}
+
+@media (max-width: 768px) {
+  .section-heading {
+    font-size: 1.05rem;
+  }
+}

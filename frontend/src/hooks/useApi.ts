@@ -372,8 +372,17 @@ export const useReorderBulletinCategories = () => {
 };
 
 export const useGenerateBulletin = () => {
+    const queryClient = useQueryClient();
     return useMutation({
         mutationFn: (payload: BulletinGenerateRequest) => bulletinApi.generate(payload),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['generatedBulletins'] });
+        },
+        // responseType: 'blob' means the global mutation onError fallback can't
+        // parse the error detail (it arrives as a Blob, not JSON) — the caller
+        // extracts and toasts the real message itself, so suppress the
+        // fallback's generic one here instead of showing both.
+        onError: () => {},
     });
 };
 
@@ -382,5 +391,30 @@ export const useBulletinPreviewCount = (params: BulletinGenerateRequest) => {
         queryKey: ['bulletinPreviewCount', params],
         queryFn: () => bulletinApi.previewCount(params),
         placeholderData: keepPreviousData,
+    });
+};
+
+export const useGeneratedBulletins = () => {
+    return useQuery({
+        queryKey: ['generatedBulletins'],
+        queryFn: () => bulletinApi.listGenerated(),
+    });
+};
+
+export const useDownloadGeneratedBulletin = () => {
+    return useMutation({
+        mutationFn: (id: number) => bulletinApi.downloadGenerated(id),
+        // Same blob-response reasoning as useGenerateBulletin's onError.
+        onError: () => {},
+    });
+};
+
+export const useDeleteGeneratedBulletin = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (id: number) => bulletinApi.deleteGenerated(id),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['generatedBulletins'] });
+        },
     });
 };

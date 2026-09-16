@@ -11,6 +11,7 @@ test('typing narrows the list after debounce', async ({ page }) => {
     ],
   });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
   await expect(page.getByText('Quantum Computing News')).toBeVisible();
   await expect(page.getByText('Regular News')).toBeVisible();
 
@@ -31,6 +32,7 @@ test('clear button resets the search and list', async ({ page }) => {
     ],
   });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   const searchReq = page.waitForRequest((req) => req.url().includes('search=Quantum'));
   await page.getByPlaceholder('Makalelerde ara...').fill('Quantum');
@@ -49,6 +51,7 @@ test('clear button is hidden when input is empty', async ({ page }) => {
   await loginAs(page);
   await mockApi(page, { articles: [] });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   await expect(page.getByRole('button', { name: 'Aramayı temizle' })).not.toBeVisible();
 });

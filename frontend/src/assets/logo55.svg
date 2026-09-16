@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1536" height="1536" viewBox="0 0 1536 1536">
+  <title>BULTEN — Your AI Journalist</title>
+  <desc>Transparent background logo with white lettering.</desc>
+
+  <!-- Transparent background -->
+
+  <!-- BULTEN -->
+  <text x="768" y="395"
+        text-anchor="middle"
+        font-family="Arial Rounded MT Bold, Arial, sans-serif"
+        font-size="190"
+        font-weight="900"
+        letter-spacing="8"
+        fill="#FFFFFF">BULTEN</text>
+
+  <!-- Main rounded icon -->
+  <rect x="414" y="470" width="708" height="708" rx="150" fill="#082B73"/>
+
+  <!-- Stream dots -->
+  <circle cx="500" cy="642" r="35" fill="#10BCEB"/>
+  <circle cx="500" cy="752" r="35" fill="#20E5C6"/>
+  <circle cx="500" cy="862" r="35" fill="#8C9BFF"/>
+  <circle cx="500" cy="972" r="35" fill="#A44DFF"/>
+
+  <!-- Flowing streams -->
+  <path d="M555 642 H680 C748 642 778 688 820 734 C850 767 882 790 930 790 H982"
+        fill="none" stroke="#10BCEB" stroke-width="62" stroke-linecap="round"/>
+  <path d="M555 752 H680 C742 752 775 782 818 814 C855 842 889 850 930 850 H982"
+        fill="none" stroke="#20E5C6" stroke-width="62" stroke-linecap="round"/>
+  <path d="M555 862 H680 C744 862 778 850 818 820 C858 790 888 790 930 790 H982"
+        fill="none" stroke="#8C9BFF" stroke-width="62" stroke-linecap="round"/>
+  <path d="M555 972 H680 C748 972 778 938 820 896 C852 864 885 850 930 850 H982"
+        fill="none" stroke="#A44DFF" stroke-width="62" stroke-linecap="round"/>
+
+  <!-- White arrow -->
+  <path d="M950 790 L1025 865 L950 940"
+        fill="none" stroke="#FFFFFF" stroke-width="58"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M910 865 H1025"
+        fill="none" stroke="#FFFFFF" stroke-width="58" stroke-linecap="round"/>
+
+  <!-- Tagline -->
+  <text x="768" y="1310"
+        text-anchor="middle"
+        font-family="Arial Rounded MT Bold, Arial, sans-serif"
+        font-size="88"
+        font-weight="700"
+        letter-spacing="1"
+        fill="#FFFFFF">Your AI Journalist</text>
+</svg>

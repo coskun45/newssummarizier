@@ -282,7 +282,12 @@ def _rebuild_category_sections(
 
     for name in ordered_names:
         groups = categorized.get(name)
-        anchor = existing_by_name.get(_normalize(name))
+        # pop(), not get(): two category names that normalize to the same key
+        # (e.g. "Avrupa" / "AVRUPA") must not both claim this same template
+        # heading — the second one falls through to the `anchor is None`
+        # branch below and gets its own new heading instead of relocating
+        # (and thereby corrupting the position of) the first one's.
+        anchor = existing_by_name.pop(_normalize(name), None)
 
         if not groups:
             # No articles landed here this run — don't leave an empty heading.

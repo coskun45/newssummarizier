@@ -146,6 +146,28 @@ def test_list_articles_published_at_round_trips_as_utc(client, auth_headers, db_
     assert parsed == datetime(2026, 9, 13, 10, 47, tzinfo=timezone.utc)
 
 
+def test_list_articles_includes_image_url(client, auth_headers, db_session):
+    feed = _make_feed(db_session)
+    _make_article(db_session, feed.id, image_url="https://static.dw.com/image/12345.jpg")
+    _make_article(db_session, feed.id, image_url=None)
+
+    response = client.get("/api/articles/", headers=auth_headers)
+
+    assert response.status_code == 200
+    image_urls = {a["image_url"] for a in response.json()["articles"]}
+    assert image_urls == {"https://static.dw.com/image/12345.jpg", None}
+
+
+def test_get_article_includes_image_url(client, auth_headers, db_session):
+    feed = _make_feed(db_session)
+    article = _make_article(db_session, feed.id, image_url="https://static.dw.com/image/67890.jpg")
+
+    response = client.get(f"/api/articles/{article.id}", headers=auth_headers)
+
+    assert response.status_code == 200
+    assert response.json()["image_url"] == "https://static.dw.com/image/67890.jpg"
+
+
 def test_list_articles_limit_over_100_returns_422(client, auth_headers):
     response = client.get("/api/articles/", params={"limit": 101}, headers=auth_headers)
     assert response.status_code == 422

@@ -9,6 +9,7 @@ services:
       # ── Database (host ./data dir bind-mounted below; never git-tracked) ──
       DATABASE_URL: sqlite:////app/data/news_summary.db
       CHECKPOINTS_DB: /app/data/checkpoints.db
+      BULLETIN_STORAGE_DIR: /app/data/bulletins
 
       # ── App ───────────────────────────────────────────────────────────────
       DEBUG: "false"

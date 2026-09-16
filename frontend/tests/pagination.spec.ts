@@ -16,6 +16,7 @@ test('hidden when totalPages <= 1', async ({ page }) => {
   await loginAs(page);
   await mockApi(page, { articles: [makeArticle({ title: 'Only One', is_read: false })] });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   await expect(page.getByRole('navigation', { name: 'Sayfalama' })).not.toBeVisible();
 });
@@ -25,6 +26,7 @@ test('next/prev buttons navigate and send correct skip', async ({ page }) => {
   await mockApi(page, { articles: [] });
   await mockLargeTotal(page, 45);
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   await expect(page.getByRole('navigation', { name: 'Sayfalama' })).toBeVisible();
 
@@ -46,6 +48,7 @@ test('prev button disabled on first page, next disabled on last page', async ({ 
   await mockApi(page, { articles: [] });
   await mockLargeTotal(page, 45); // 3 pages
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   await expect(page.getByRole('button', { name: 'Önceki sayfa' })).toBeDisabled();
 
@@ -58,6 +61,7 @@ test('clicking a specific page number navigates directly', async ({ page }) => {
   await mockApi(page, { articles: [] });
   await mockLargeTotal(page, 45); // 3 pages
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   const req = page.waitForRequest((r) => new URL(r.url()).searchParams.get('skip') === '20');
   await page.getByRole('button', { name: '2', exact: true }).click();
@@ -71,6 +75,7 @@ test('ellipsis appears for a large page count and jumps to the last page', async
   await mockApi(page, { articles: [] });
   await mockLargeTotal(page, 400); // 20 pages
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   await expect(page.locator('.pagination-ellipsis')).toBeVisible();
 

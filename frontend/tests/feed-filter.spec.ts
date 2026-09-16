@@ -9,6 +9,7 @@ test('all feeds selected by default (Tüm Beslemeler checked)', async ({ page })
   await loginAs(page);
   await mockApi(page, { feeds: [FEED_A, FEED_B], articles: [] });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   await expect(page.getByLabel('Tüm Beslemeler')).toBeChecked();
 });
@@ -23,6 +24,7 @@ test('selecting one feed filters the list and unchecks "all"', async ({ page }) 
     ],
   });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   const req = page.waitForRequest((r) => r.url().includes(`feed_ids=${FEED_A.id}`));
   await page.getByLabel('DW News').click();
@@ -43,6 +45,7 @@ test('selecting multiple feeds sends comma-separated feed_ids', async ({ page })
     ],
   });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   await page.getByLabel('DW News').click();
   const req = page.waitForRequest((r) => {
@@ -66,6 +69,7 @@ test('clicking "Tüm Beslemeler" clears the selection', async ({ page }) => {
     ],
   });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   await page.getByLabel('DW News').click();
   await expect(page.getByText('From B')).not.toBeVisible();
@@ -91,6 +95,7 @@ test('"Şimdi Yenile" refreshes every feed when none is selected, not just the f
     }
   );
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   await page.getByRole('button', { name: 'Haberleri Güncelle' }).click();
 
@@ -113,6 +118,7 @@ test('"Şimdi Yenile" only refreshes the selected feed when one is filtered', as
     }
   );
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   await page.getByLabel('Tech Feed').click();
   await page.getByRole('button', { name: 'Haberleri Güncelle' }).click();
@@ -131,6 +137,7 @@ test('feed count badge matches articleCounts.by_feed', async ({ page }) => {
     ],
   });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   const feedARow = page.locator('.topic-item').filter({ hasText: 'DW News' });
   await expect(feedARow).toContainText('1');

@@ -21,10 +21,14 @@ import {
   useReorderBulletinCategories,
   useGenerateBulletin,
   useBulletinPreviewCount,
+  useGeneratedBulletins,
+  useDownloadGeneratedBulletin,
+  useDeleteGeneratedBulletin,
 } from '../../hooks/useApi';
 import { downloadBlob } from '../../utils/downloadFile';
+import { showToast } from '../../lib/toast';
 import { PRIORITIES } from '../../constants/priorities';
-import type { BulletinGenerateRequest, DateFilterState } from '../../types';
+import type { BulletinGenerateRequest, DateFilterState, GeneratedBulletin } from '../../types';
 import './Bulletin.css';
 
 const EMPTY_DATE_FILTER: DateFilterState = { preset: null, customFrom: '', customTo: '' };
@@ -48,10 +52,27 @@ function resolveDateRange(filter: DateFilterState): { from?: string; to?: string
   return {};
 }
 
+function formatGeneratedBulletinMeta(bulletin: GeneratedBulletin): string {
+  const range = bulletin.published_from && bulletin.published_to
+    ? `${format(new Date(bulletin.published_from), 'd MMM HH:mm', { locale: tr })} – ${format(new Date(bulletin.published_to), 'd MMM HH:mm', { locale: tr })}`
+    : 'Son 24 saat';
+
+  const selectionLabels = (bulletin.priorities ?? []).map(
+    (value) => PRIORITIES.find((p) => p.value === value)?.label ?? value
+  );
+  if (bulletin.include_favorites) selectionLabels.push('Favoriler');
+  const selection = selectionLabels.length > 0 ? selectionLabels.join(', ') : 'Tüm önem seviyeleri';
+
+  return `${range} · ${selection} · ${bulletin.article_count} haber özeti`;
+}
+
 /** The generate call uses responseType: 'blob', so an error response body
  * (e.g. a 400's {"detail": "..."}) also arrives as a Blob, not parsed JSON —
  * read it back out as text before parsing. */
-async function extractErrorMessage(err: unknown): Promise<string> {
+async function extractErrorMessage(
+  err: unknown,
+  fallback = 'Bülten oluşturulurken bir hata oluştu.'
+): Promise<string> {
   const data = (err as { response?: { data?: unknown } })?.response?.data;
   if (data instanceof Blob) {
     try {
@@ -62,7 +83,7 @@ async function extractErrorMessage(err: unknown): Promise<string> {
       // fall through to the generic message
     }
   }
-  return 'Bülten oluşturulurken bir hata oluştu.';
+  return fallback;
 }
 
 function BulletinPanel() {
@@ -72,8 +93,6 @@ function BulletinPanel() {
   const [newCategoryName, setNewCategoryName] = useState('');
   const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
   const [editCategoryName, setEditCategoryName] = useState('');
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const { data: categories, isLoading: categoriesLoading } = useBulletinCategories();
   const { mutate: createCategory, isPending: isCreatingCategory } = useCreateBulletinCategory();
@@ -81,6 +100,9 @@ function BulletinPanel() {
   const { mutate: deleteCategory, isPending: isDeletingCategory } = useDeleteBulletinCategory();
   const { mutate: reorderCategories } = useReorderBulletinCategories();
   const generateMutation = useGenerateBulletin();
+  const { data: generatedBulletins, isLoading: generatedLoading } = useGeneratedBulletins();
+  const downloadGeneratedMutation = useDownloadGeneratedBulletin();
+  const { mutate: deleteGenerated } = useDeleteGeneratedBulletin();
 
   const togglePriority = (value: string) => {
     setSelectedPriorities((prev) => (prev.includes(value) ? prev.filter((p) => p !== value) : [...prev, value]));
@@ -131,19 +153,33 @@ function BulletinPanel() {
   };
 
   const handleGenerate = async () => {
-    setErrorMessage(null);
-    setStatusMessage(null);
     try {
-      const blob = await generateMutation.mutateAsync(bulletinParams);
-      const stamp = format(new Date(), 'yyyy-MM-dd', { locale: tr });
-      downloadBlob(blob, `bulten-${stamp}.docx`);
-      setStatusMessage('Bülten oluşturuldu ve indirildi.');
+      const { blob, filename } = await generateMutation.mutateAsync(bulletinParams);
+      downloadBlob(blob, filename);
+      showToast('Bülten oluşturuldu ve indirildi.', 'success');
     } catch (err) {
-      setErrorMessage(await extractErrorMessage(err));
+      showToast(await extractErrorMessage(err), 'error');
+    }
+  };
+
+  const handleDownloadGenerated = async (bulletin: GeneratedBulletin) => {
+    try {
+      const blob = await downloadGeneratedMutation.mutateAsync(bulletin.id);
+      downloadBlob(blob, bulletin.filename);
+      showToast('Bülten indirildi.', 'success');
+    } catch (err) {
+      showToast(await extractErrorMessage(err, 'Bülten indirilemedi.'), 'error');
+    }
+  };
+
+  const handleDeleteGenerated = (bulletin: GeneratedBulletin) => {
+    if (confirm(`"${bulletin.filename}" bültenini silmek istediğinizden emin misiniz?`)) {
+      deleteGenerated(bulletin.id, { onSuccess: () => showToast('Bülten silindi.', 'success') });
     }
   };
 
   const hasCategories = !!categories && categories.length > 0;
+  const hasGeneratedBulletins = !!generatedBulletins && generatedBulletins.length > 0;
 
   return (
     <div className="bulletin-panel">
@@ -300,7 +336,7 @@ function BulletinPanel() {
           </span>
         )}
         <button
-          className="btn btn-primary btn-lg"
+          className="btn btn-primary btn-lg bulletin-generate-btn"
           onClick={handleGenerate}
           disabled={generateMutation.isPending || !hasCategories}
           title={!hasCategories ? 'Önce en az bir kategori ekleyin' : undefined}
@@ -315,11 +351,47 @@ function BulletinPanel() {
             </>
           )}
         </button>
-        {statusMessage && <span className="bulletin-status-message">{statusMessage}</span>}
-        {errorMessage && (
-          <span className="bulletin-status-message bulletin-status-message--error">{errorMessage}</span>
-        )}
       </div>
+
+      <section className="bulletin-section bulletin-section--wide">
+        <h3 className="bulletin-section-title">Daha Önce Oluşturulan Bültenler</h3>
+
+        {generatedLoading ? (
+          <p className="text-small text-muted">Yükleniyor...</p>
+        ) : !hasGeneratedBulletins ? (
+          <p className="text-small text-muted">Henüz oluşturulmuş bülten yok.</p>
+        ) : (
+          <ul className="generated-bulletins-list">
+            {generatedBulletins!.map((bulletin) => (
+              <li key={bulletin.id} className="generated-bulletin-item">
+                <div className="generated-bulletin-info">
+                  <span className="generated-bulletin-date">
+                    {format(new Date(bulletin.generated_at), 'd MMM yyyy HH:mm', { locale: tr })}
+                  </span>
+                  <span className="generated-bulletin-meta">{formatGeneratedBulletinMeta(bulletin)}</span>
+                </div>
+                <div className="generated-bulletin-actions">
+                  <button
+                    className="btn btn-icon btn-secondary"
+                    onClick={() => handleDownloadGenerated(bulletin)}
+                    disabled={downloadGeneratedMutation.isPending}
+                    aria-label="İndir"
+                  >
+                    <DocumentArrowDownIcon />
+                  </button>
+                  <button
+                    className="btn btn-icon btn-secondary"
+                    onClick={() => handleDeleteGenerated(bulletin)}
+                    aria-label="Sil"
+                  >
+                    <TrashIcon />
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }

@@ -8,6 +8,7 @@ test('starring sends PATCH with starred:true and label flips', async ({ page }) 
     articles: [makeArticle({ title: 'Star Me', is_read: false, is_starred: false })],
   });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   const button = page.getByRole('button', { name: 'Favorilere ekle' });
   await expect(button).toBeVisible();
@@ -27,6 +28,7 @@ test('unstarring an already-starred article sends starred:false', async ({ page 
     articles: [makeArticle({ title: 'Unstar Me', is_read: false, is_starred: true })],
   });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   const button = page.getByRole('button', { name: 'Favorilerden çıkar' });
   await expect(button).toBeVisible();
@@ -53,6 +55,7 @@ test('star button is disabled while the mutation is pending', async ({ page }) =
     }
   );
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   const button = page.getByRole('button', { name: 'Favorilere ekle' });
   await button.click();

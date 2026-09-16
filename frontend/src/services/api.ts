@@ -2,6 +2,7 @@
  * API service using axios for backend communication.
  */
 import axios from 'axios';
+import { filenameFromContentDisposition } from '../utils/downloadFile';
 import type {
     Feed,
     ArticleDetail,
@@ -18,6 +19,7 @@ import type {
     BulletinCategory,
     BulletinGenerateRequest,
     BulletinPreviewCountResponse,
+    GeneratedBulletin,
 } from '../types';
 
 const API_BASE_URL = '/api';
@@ -337,9 +339,12 @@ export const bulletinApi = {
         return response.data;
     },
 
-    generate: async (payload: BulletinGenerateRequest): Promise<Blob> => {
+    generate: async (payload: BulletinGenerateRequest): Promise<{ blob: Blob; filename: string }> => {
         const response = await api.post('/bulletin/generate', payload, { responseType: 'blob' });
-        return response.data;
+        return {
+            blob: response.data,
+            filename: filenameFromContentDisposition(response.headers['content-disposition'], 'bulten.docx'),
+        };
     },
 
     previewCount: async (params: BulletinGenerateRequest): Promise<BulletinPreviewCountResponse> => {
@@ -352,6 +357,20 @@ export const bulletinApi = {
             },
         });
         return response.data;
+    },
+
+    listGenerated: async (): Promise<GeneratedBulletin[]> => {
+        const response = await api.get('/bulletin/generated');
+        return response.data;
+    },
+
+    downloadGenerated: async (id: number): Promise<Blob> => {
+        const response = await api.get(`/bulletin/generated/${id}/download`, { responseType: 'blob' });
+        return response.data;
+    },
+
+    deleteGenerated: async (id: number): Promise<void> => {
+        await api.delete(`/bulletin/generated/${id}`);
     },
 };
 

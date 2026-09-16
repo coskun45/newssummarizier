@@ -14,6 +14,7 @@ test('opens with fetched content and closes via the close button', async ({ page
     ],
   });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   await page.getByRole('button', { name: 'Orijinal İçerik' }).click();
 
@@ -31,6 +32,7 @@ test('closes via backdrop click', async ({ page }) => {
     ],
   });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   await page.getByRole('button', { name: 'Orijinal İçerik' }).click();
   await expect(page.locator('.modal-overlay')).toBeVisible();
@@ -48,6 +50,7 @@ test('shows "İçerik mevcut değil" when content is null', async ({ page }) => 
     ],
   });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   await page.getByRole('button', { name: 'Orijinal İçerik' }).click();
 
@@ -62,6 +65,7 @@ test('Escape key does NOT close the modal', async ({ page }) => {
     ],
   });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   await page.getByRole('button', { name: 'Orijinal İçerik' }).click();
   await expect(page.locator('.modal-overlay')).toBeVisible();

@@ -56,6 +56,7 @@ class ArticleResponse(BaseModel):
     status: str
     importance: Optional[str] = None
     priority: Optional[str] = None
+    image_url: Optional[str] = None
     topics: List[TopicInfo] = []
     has_summaries: bool = False
     is_read: bool = False
@@ -152,6 +153,7 @@ async def list_articles(
             "status": article.status,
             "importance": article.importance,
             "priority": article.priority,
+            "image_url": article.image_url,
             "topics": [
                 {
                     "id": at.topic.id,
@@ -389,6 +391,7 @@ async def get_article(article_id: int, db: Session = Depends(get_db)):
         "status": article.status,
         "importance": article.importance,
         "priority": article.priority,
+        "image_url": article.image_url,
         "topics": [
             {
                 "id": at.topic.id,
@@ -443,6 +446,7 @@ async def get_articles_by_topic(
             "status": article.status,
             "importance": article.importance,
             "priority": article.priority,
+            "image_url": article.image_url,
             "topics": [
                 {
                     "id": at.topic.id,

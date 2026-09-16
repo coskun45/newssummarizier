@@ -32,6 +32,7 @@ test('"Bugün" preset on Yayın Tarihi sends a same-day published_from/to range'
   await loginAs(page);
   await mockApi(page, { articles: fixtures() });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   await pubSection(page).getByLabel('Bugün').click();
 
@@ -44,6 +45,7 @@ test('"Son 1 Hafta" preset sends a 7-day range', async ({ page }) => {
   await loginAs(page);
   await mockApi(page, { articles: fixtures() });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   await pubSection(page).getByLabel('Son 1 Hafta').click();
 
@@ -56,6 +58,7 @@ test('"Özel Tarih" reveals date inputs and sends the chosen custom range', asyn
   await loginAs(page);
   await mockApi(page, { articles: fixtures() });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   const section = pubSection(page);
   await section.getByLabel('Özel Tarih').click();
@@ -78,6 +81,7 @@ test('İşlenme Tarihi section filters independently using fetched_from/to', asy
     ],
   });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   const req = page.waitForRequest((r) => !!new URL(r.url()).searchParams.get('fetched_from'));
   await fetchSection(page).getByLabel('Bugün').click();
@@ -91,6 +95,7 @@ test('re-selecting the same preset clears it', async ({ page }) => {
   await loginAs(page);
   await mockApi(page, { articles: fixtures() });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   const section = pubSection(page);
   await section.getByLabel('Bugün').click();

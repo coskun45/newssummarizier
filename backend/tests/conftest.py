@@ -109,7 +109,8 @@ _article_url_counter = itertools.count()
 
 def _make_article(db_session, feed_id, *, title="Test Article", url=None, priority=None,
                    importance=None, is_read=False, is_starred=False, status="pending",
-                   published_at=None, raw_content=None, cleaned_content=None, author=None):
+                   published_at=None, raw_content=None, cleaned_content=None, author=None,
+                   image_url=None):
     article = models.Article(
         feed_id=feed_id,
         url=url or f"https://example.com/article-{next(_article_url_counter)}",
@@ -123,6 +124,7 @@ def _make_article(db_session, feed_id, *, title="Test Article", url=None, priori
         priority=priority,
         is_read=is_read,
         is_starred=is_starred,
+        image_url=image_url,
     )
     db_session.add(article)
     db_session.commit()

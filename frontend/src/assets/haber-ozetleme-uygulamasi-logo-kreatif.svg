@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Haber özetleme uygulaması logosu</title>
+  <desc id="desc">Katlanmış haber sayfası, kısalan özet satırları, hızlı içgörü yolu ve parıltı simgesi.</desc>
+  <defs>
+    <linearGradient id="pageBlue" x1="180" y1="160" x2="760" y2="850" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#087DDD"/>
+      <stop offset="1" stop-color="#004E96"/>
+    </linearGradient>
+    <linearGradient id="foldCyan" x1="650" y1="180" x2="840" y2="430" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#35D7F5"/>
+      <stop offset="1" stop-color="#00A9D9"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Main folded news page -->
+  <path fill="url(#pageBlue)" d="M230 128h407c31 0 61 12 83 34l126 126c22 22 34 52 34 83v409c0 64-52 116-116 116H230c-64 0-116-52-116-116V244c0-64 52-116 116-116Z"/>
+
+  <!-- Folded corner -->
+  <path fill="url(#foldCyan)" d="M637 128v166c0 52 42 94 94 94h149v-17c0-31-12-61-34-83L720 162c-22-22-52-34-83-34Z"/>
+  <path fill="#FFFFFF" opacity=".18" d="M672 171v117c0 36 29 65 65 65h105L672 171Z"/>
+
+  <!-- Abstract headline capsule -->
+  <rect x="208" y="246" width="302" height="88" rx="44" fill="#FFFFFF"/>
+  <circle cx="256" cy="290" r="19" fill="#FF9F1C"/>
+  <path d="M296 274h162c9 0 16 7 16 16s-7 16-16 16H296c-9 0-16-7-16-16s7-16 16-16Z" fill="#006EC7"/>
+
+  <!-- Shortening summary lines -->
+  <rect x="208" y="426" width="456" height="42" rx="21" fill="#FFFFFF"/>
+  <rect x="208" y="508" width="365" height="42" rx="21" fill="#BCEFFA"/>
+  <rect x="208" y="590" width="274" height="42" rx="21" fill="#FFFFFF"/>
+
+  <!-- Fast insight / compression path -->
+  <path d="M690 452c-42 32-70 70-83 113-14 45-9 92 15 141l-53-15 88 92 25-125-39 30c-15-35-17-67-8-96 10-31 31-59 64-83l-9-57Z" fill="#35D7F5"/>
+
+  <!-- Insight sparkle -->
+  <path fill="#FF9F1C" d="M768 482c8 44 28 64 72 72-44 8-64 28-72 72-8-44-28-64-72-72 44-8 64-28 72-72Z"/>
+  <circle cx="824" cy="652" r="16" fill="#FFFFFF" opacity=".95"/>
+</svg>

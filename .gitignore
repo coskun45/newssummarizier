@@ -11,6 +11,9 @@ backend/app/__pycache__
 # SQLite data — lives on the host, never in git (deploys bind-mount ./data into the container)
 /data/
 backend/news_summary.db
+backend/news_summary.db-shm
+backend/news_summary.db-wal
 backend/checkpoints.db
+backend/bulletin_reports/
 
 

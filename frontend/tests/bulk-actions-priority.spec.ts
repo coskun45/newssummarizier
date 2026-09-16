@@ -18,6 +18,7 @@ test('archive all by priority fires immediately without confirmation', async ({ 
   await loginAs(page);
   await mockApi(page, { articles: fixtures() });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   const req = page.waitForRequest((r) => r.url().includes('/articles/priority/high/archive-all'));
   await highRow(page).getByRole('button', { name: /Tümünü Arşive Gönder/ }).click();
@@ -30,6 +31,7 @@ test('delete all by priority opens a confirm modal with the correct count', asyn
   await loginAs(page);
   await mockApi(page, { articles: fixtures() });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   await highRow(page).getByRole('button', { name: /Tümünü Sil/ }).click();
 
@@ -50,6 +52,7 @@ test('"Vazgeç" cancels without sending a request', async ({ page }) => {
     }
   );
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   await highRow(page).getByRole('button', { name: /Tümünü Sil/ }).click();
   await page.getByRole('button', { name: 'Vazgeç' }).click();
@@ -62,6 +65,7 @@ test('confirming "Sil" sends the delete-all request and closes the modal', async
   await loginAs(page);
   await mockApi(page, { articles: fixtures() });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   await highRow(page).getByRole('button', { name: /Tümünü Sil/ }).click();
   const req = page.waitForRequest((r) => r.url().includes('/articles/priority/high/delete-all'));

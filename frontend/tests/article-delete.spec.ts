@@ -11,6 +11,7 @@ test('deleting removes the article from the list and DELETE is sent', async ({ p
     ],
   });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   const card = page.locator('.article-card').filter({ hasText: 'Delete Me' });
   const req = page.waitForRequest((r) => r.method() === 'DELETE' && /\/api\/articles\/\d+$/.test(new URL(r.url()).pathname));
@@ -30,6 +31,7 @@ test('article counts refetch after delete', async ({ page }) => {
     ],
   });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   await expect(page.getByRole('button', { name: /Okunmamışlar/ })).toContainText('2');
 

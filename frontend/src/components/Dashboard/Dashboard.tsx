@@ -1,9 +1,11 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { useArticles, useArticleCounts, useTopics, useFeeds, useRefreshFeed, useMarkArticlesBulkRead, useUnstarAll, useDeleteAllArticlesByPriority, useArchiveAllArticlesByPriority, useDeleteAllUnimportant, useArchiveAllUnimportant } from '../../hooks/useApi';
-import { appApi, feedsApi, articlesApi, summariesApi } from '../../services/api';
+import { feedsApi, articlesApi, summariesApi } from '../../services/api';
 import { downloadArticlesAsWord, buildWhatsAppMessage, copyToClipboard } from '../../utils/exportArticles';
 import ArticleList from '../ArticleList/ArticleList';
+import HomeHero from '../HomeHero/HomeHero';
+import StatsPanel from '../StatsPanel/StatsPanel';
 import TopicFilter from '../TopicFilter/TopicFilter';
 import CategoryBulkActions from '../CategoryBulkActions/CategoryBulkActions';
 import FeedSidebar from '../FeedSidebar/FeedSidebar';
@@ -14,6 +16,7 @@ import Settings, { type SettingsCategory } from '../Settings/Settings';
 import SettingsNav from '../Settings/SettingsNav';
 import UserMenu from '../UserMenu/UserMenu';
 import BulletinPanel from '../Bulletin/Bulletin';
+import logo from '../../assets/logo.svg';
 import {
   Cog6ToothIcon,
   ArrowPathIcon,
@@ -51,7 +54,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
   const emptyDate: DateFilterState = { preset: null, customFrom: '', customTo: '' };
   const [publishedFilter, setPublishedFilter] = useState<DateFilterState>(emptyDate);
   const [fetchedFilter, setFetchedFilter] = useState<DateFilterState>(emptyDate);
-  const [activeView, setActiveView] = useState<'news' | 'bulletin' | 'settings'>('news');
+  const [activeView, setActiveView] = useState<'home' | 'news' | 'bulletin' | 'settings'>('home');
   const [settingsCategory, setSettingsCategory] = useState<SettingsCategory>('feeds');
   const [activeSection, setActiveSection] = useState<'unread' | 'archive' | 'important'>('unread');
   const [selectedArticleIds, setSelectedArticleIds] = useState<Set<number>>(new Set());
@@ -63,8 +66,6 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const refreshStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queryClient = useQueryClient();
-
-  const { data: appInfo } = useQuery({ queryKey: ['appInfo'], queryFn: appApi.getInfo, staleTime: Infinity });
 
   const { data: feedsData } = useFeeds();
   const { data: articleCounts } = useArticleCounts();
@@ -341,10 +342,22 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
         <div className="container">
           <div className="header-content">
             <div className="header-text">
-              <h1>Haber Özetleyici</h1>
-              {appInfo && <span className="app-version">v{appInfo.version}</span>}
+              <button
+                type="button"
+                className="header-logo-button"
+                onClick={() => setActiveView('home')}
+                aria-label="Ana sayfaya git"
+              >
+                <img src={logo} alt="Bülten" className="header-logo" />
+              </button>
             </div>
             <nav className="header-nav">
+              <button
+                className={`header-nav-item${activeView === 'home' ? ' header-nav-item--active' : ''}`}
+                onClick={() => setActiveView('home')}
+              >
+                Ana Sayfa
+              </button>
               <button
                 className={`header-nav-item${activeView === 'news' ? ' header-nav-item--active' : ''}`}
                 onClick={() => setActiveView('news')}
@@ -452,6 +465,13 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
 
             {/* Main Content Area */}
             <main className="dashboard-main">
+              {activeView === 'home' && (
+                <>
+                  <HomeHero onViewAll={() => setActiveView('news')} />
+                  <StatsPanel />
+                </>
+              )}
+
               {activeView === 'bulletin' && <BulletinPanel />}
 
               {activeView === 'settings' && (

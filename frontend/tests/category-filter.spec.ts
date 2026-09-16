@@ -16,6 +16,7 @@ test('selecting a topic filters the list', async ({ page }) => {
   await loginAs(page);
   await mockApi(page, { topics: [TOPIC_POLITICS, TOPIC_SPORTS], articles: fixtures() });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   const req = page.waitForRequest((r) => (new URL(r.url()).searchParams.get('topic_ids') ?? '').includes(String(TOPIC_POLITICS.id)));
   await page.getByLabel('Politics').click();
@@ -29,6 +30,7 @@ test('selecting multiple topics sends comma-separated topic_ids', async ({ page 
   await loginAs(page);
   await mockApi(page, { topics: [TOPIC_POLITICS, TOPIC_SPORTS], articles: fixtures() });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   await page.getByLabel('Politics').click();
   const req = page.waitForRequest((r) => {
@@ -52,6 +54,7 @@ test('unread count badge per topic matches fixture', async ({ page }) => {
     ],
   });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   const politicsRow = page.locator('.topic-item').filter({ hasText: 'Politics' });
   await expect(politicsRow).toContainText('1');
@@ -61,6 +64,7 @@ test('collapsing the accordion hides the checkboxes', async ({ page }) => {
   await loginAs(page);
   await mockApi(page, { topics: [TOPIC_POLITICS, TOPIC_SPORTS], articles: fixtures() });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   await expect(page.getByLabel('Politics')).toBeVisible();
 

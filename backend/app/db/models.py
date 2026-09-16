@@ -37,6 +37,7 @@ class Article(Base):
     fetched_at = Column(UTCDateTime(), server_default=func.now())
     raw_content = Column(Text)  # Full HTML/text content
     cleaned_content = Column(Text)  # Extracted main content
+    image_url = Column(String, nullable=True)  # Hero image (RSS media:content/enclosure, falls back to page og:image)
     status = Column(String, default="pending", index=True)  # pending, scraped, summarized, failed, filtered
     importance = Column(String, nullable=True)  # "important" | "unimportant"
     priority = Column(String, nullable=True)    # "high" | "med" | "low"
@@ -148,6 +149,22 @@ class BulletinCategory(Base):
     name = Column(String, unique=True, nullable=False)
     display_order = Column(Integer, nullable=False, default=0)
     created_at = Column(UTCDateTime(), server_default=func.now())
+
+
+class GeneratedBulletin(Base):
+    """A persisted record of a previously generated Word bulletin report, so
+    users can browse and re-download past reports from the Bülten tab."""
+    __tablename__ = "generated_bulletins"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    filename = Column(String, nullable=False)  # friendly name shown/downloaded as
+    stored_path = Column(String, nullable=False)  # actual path on disk (collision-proof name)
+    published_from = Column(UTCDateTime(), nullable=True)
+    published_to = Column(UTCDateTime(), nullable=True)
+    priorities = Column(String, nullable=True)  # comma-separated, e.g. "high,med"; null = all
+    include_favorites = Column(Boolean, nullable=False, default=False)
+    article_count = Column(Integer, nullable=False)
+    generated_at = Column(UTCDateTime(), server_default=func.now())
 
 
 class ArticleBulletinClassification(Base):

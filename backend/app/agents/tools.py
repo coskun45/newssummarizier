@@ -56,6 +56,41 @@ def _extract_author(entry) -> Optional[str]:
     return None
 
 
+_IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".gif")
+
+
+def _looks_like_image_url(url: str) -> bool:
+    return url.lower().split("?")[0].endswith(_IMAGE_EXTENSIONS)
+
+
+def _extract_image_url(entry) -> Optional[str]:
+    """Pull a representative image URL from a feed entry. DW and most news
+    feeds expose one via the Media RSS extension (media:content/media:thumbnail)
+    or a plain <enclosure> - checked in that order of preference."""
+    media_content = entry.get("media_content")
+    if media_content:
+        for item in media_content:
+            url = item.get("url")
+            if url and (item.get("medium") == "image" or _looks_like_image_url(url)):
+                return url
+
+    media_thumbnail = entry.get("media_thumbnail")
+    if media_thumbnail:
+        url = media_thumbnail[0].get("url")
+        if url:
+            return url
+
+    enclosures = entry.get("enclosures")
+    if enclosures:
+        for item in enclosures:
+            url = item.get("href") or item.get("url")
+            item_type = item.get("type", "") or ""
+            if url and (item_type.startswith("image/") or _looks_like_image_url(url)):
+                return url
+
+    return None
+
+
 async def _fetch_and_parse(feed_url: str):
     """
     Fetch and parse a feed URL with feedparser, off the event loop and bounded by a timeout.
@@ -130,6 +165,7 @@ async def fetch_rss_feed(feed_url: str) -> List[Dict[str, Any]]:
                 "author": _extract_author(entry),
                 "published_at": None,
                 "raw_content": entry.get("description", "") or entry.get("summary", ""),
+                "image_url": _extract_image_url(entry),
             }
 
             # Parse publication date. Feeds without an explicit offset parse as
@@ -188,40 +224,47 @@ async def check_robots_txt(url: str) -> bool:
         return True  # Default to allowed if robots.txt check fails
 
 
-def _extract_page_author(html: str) -> Optional[str]:
-    """Pull the author from a page's metadata (meta tags / JSON-LD) via trafilatura."""
+def _extract_page_metadata(html: str) -> Tuple[Optional[str], Optional[str]]:
+    """Pull the author and hero image (og:image / twitter:image) from a page's
+    metadata (meta tags / JSON-LD) via trafilatura."""
+    author: Optional[str] = None
+    image: Optional[str] = None
     try:
         meta = extract_metadata(html)
-        author = getattr(meta, "author", None) if meta else None
-        if author and str(author).strip():
-            return str(author).strip()
+        if meta:
+            raw_author = getattr(meta, "author", None)
+            if raw_author and str(raw_author).strip():
+                author = str(raw_author).strip()
+            raw_image = getattr(meta, "image", None)
+            if raw_image and str(raw_image).strip():
+                image = str(raw_image).strip()
     except Exception as e:
-        logger.debug(f"Page author metadata extraction failed: {e}")
-    return None
+        logger.debug(f"Page metadata extraction failed: {e}")
+    return author, image
 
 
-async def extract_article_content(url: str) -> Tuple[Optional[str], Optional[str]]:
+async def extract_article_content(url: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     """
-    Extract main content and author from an article URL using trafilatura.
+    Extract main content, author, and hero image from an article URL using trafilatura.
 
     Args:
         url: URL of the article
 
     Returns:
-        (content, author) — either element may be None if unavailable.
+        (content, author, image_url) — any element may be None if unavailable.
 
     Raises:
         ScrapingError: If scraping fails
     """
     if not settings.scraping_enabled:
         logger.info("Scraping is disabled in settings")
-        return None, None
+        return None, None, None
 
     try:
         # Check robots.txt
         if not await check_robots_txt(url):
             logger.warning(f"URL not allowed by robots.txt: {url}")
-            return None, None
+            return None, None, None
 
         logger.info(f"Extracting content from: {url}")
 
@@ -242,7 +285,7 @@ async def extract_article_content(url: str) -> Tuple[Optional[str], Optional[str
                     async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as response:
                         if response.status != 200:
                             logger.warning(f"HTTP {response.status} for URL: {url}")
-                            return None, None
+                            return None, None, None
                         html = await response.text()
                 break
             except (aiohttp.ClientError, asyncio.TimeoutError) as e:
@@ -251,8 +294,8 @@ async def extract_article_content(url: str) -> Tuple[Optional[str], Optional[str
                 logger.warning(f"Transient error fetching {url} (attempt {attempt}/{attempts}): {e}. Retrying...")
                 await asyncio.sleep(settings.scraping_delay)
 
-        # Author from page metadata — RSS feeds (e.g. DW) often omit it
-        author = _extract_page_author(html)
+        # Author and hero image from page metadata — RSS feeds (e.g. DW) often omit both
+        author, image_url = _extract_page_metadata(html)
 
         # Extract content using trafilatura
         content = trafilatura.extract(
@@ -267,7 +310,7 @@ async def extract_article_content(url: str) -> Tuple[Optional[str], Optional[str
         else:
             logger.warning(f"No content extracted from {url}")
 
-        return content, author
+        return content, author, image_url
 
     except aiohttp.ClientError as e:
         logger.error(f"HTTP error while fetching {url}: {e}")

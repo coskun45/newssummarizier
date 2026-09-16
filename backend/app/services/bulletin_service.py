@@ -15,6 +15,7 @@ import io
 import json
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
@@ -234,6 +235,23 @@ async def pick_bulletin_digest(articles: List[models.Article], limit: int = 8) -
             continue
         digest.append({"article_id": article_id, "blurb": blurb.strip()})
     return digest
+
+
+def save_bulletin_file(buffer: io.BytesIO, stored_filename: str) -> str:
+    """Write generated bulletin bytes to BULLETIN_STORAGE_DIR so it can be
+    re-downloaded later; returns the stored path. Reads via getvalue(), which
+    doesn't consume the buffer's read position, so the caller's own
+    StreamingResponse can still stream the same buffer afterward."""
+    storage_dir = Path(settings.bulletin_storage_dir)
+    storage_dir.mkdir(parents=True, exist_ok=True)
+    path = storage_dir / stored_filename
+    path.write_bytes(buffer.getvalue())
+    return str(path)
+
+
+def delete_bulletin_file(stored_path: str) -> None:
+    """Best-effort delete — a manually-removed file is not an error."""
+    Path(stored_path).unlink(missing_ok=True)
 
 
 async def generate_bulletin_report(

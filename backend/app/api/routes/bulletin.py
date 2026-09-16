@@ -2,7 +2,9 @@
 Bulletin report endpoints: user-editable top-level categories (CRUD) and
 on-demand Word (.docx) report generation.
 """
+import io
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -219,8 +221,97 @@ async def generate_bulletin(
         raise HTTPException(status_code=500, detail=str(e))
 
     filename = f"bulten-{published_to.date().isoformat()}.docx"
+    # A timestamped stored filename avoids collisions between multiple
+    # reports generated on the same day; the friendly `filename` above is
+    # what's actually shown/downloaded as.
+    generated_at = datetime.now(timezone.utc)
+    stored_filename = f"bulten-{generated_at.strftime('%Y%m%d-%H%M%S')}.docx"
+    stored_path = bulletin_service.save_bulletin_file(buffer, stored_filename)
+    crud.create_generated_bulletin(
+        db,
+        filename=filename,
+        stored_path=stored_path,
+        published_from=published_from,
+        published_to=published_to,
+        priorities=",".join(body.priorities) if body.priorities else None,
+        include_favorites=body.include_favorites,
+        article_count=len(articles),
+    )
+
+    buffer.seek(0)
     return StreamingResponse(
         buffer,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+class GeneratedBulletinResponse(BaseModel):
+    """A previously generated bulletin report, for the "past reports" list."""
+    id: int
+    filename: str
+    published_from: Optional[datetime]
+    published_to: Optional[datetime]
+    priorities: Optional[List[str]]
+    include_favorites: bool
+    article_count: int
+    generated_at: datetime
+
+
+def _to_generated_bulletin_response(row: models.GeneratedBulletin) -> GeneratedBulletinResponse:
+    return GeneratedBulletinResponse(
+        id=row.id,
+        filename=row.filename,
+        published_from=row.published_from,
+        published_to=row.published_to,
+        priorities=row.priorities.split(",") if row.priorities else None,
+        include_favorites=row.include_favorites,
+        article_count=row.article_count,
+        generated_at=row.generated_at,
+    )
+
+
+@router.get("/generated", response_model=List[GeneratedBulletinResponse])
+async def list_generated_bulletins(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Previously generated bulletin reports, newest first."""
+    return [_to_generated_bulletin_response(row) for row in crud.get_generated_bulletins(db)]
+
+
+@router.get("/generated/{bulletin_id}/download")
+async def download_generated_bulletin(
+    bulletin_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Re-download a previously generated bulletin report."""
+    row = crud.get_generated_bulletin(db, bulletin_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Bülten bulunamadı")
+
+    path = Path(row.stored_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Bülten dosyası bulunamadı")
+
+    return StreamingResponse(
+        io.BytesIO(path.read_bytes()),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{row.filename}"'},
+    )
+
+
+@router.delete("/generated/{bulletin_id}")
+async def delete_generated_bulletin(
+    bulletin_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Delete a previously generated bulletin report (DB record and file)."""
+    row = crud.get_generated_bulletin(db, bulletin_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Bülten bulunamadı")
+    bulletin_service.delete_bulletin_file(row.stored_path)
+    crud.delete_generated_bulletin(db, bulletin_id)
+    return {"status": "success"}

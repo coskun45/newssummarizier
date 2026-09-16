@@ -92,6 +92,7 @@ def create_article(
     published_at: datetime = None,
     raw_content: str = None,
     cleaned_content: str = None,
+    image_url: str = None,
     status: str = "pending"
 ) -> models.Article:
     """Create a new article."""
@@ -103,6 +104,7 @@ def create_article(
         published_at=published_at,
         raw_content=raw_content,
         cleaned_content=cleaned_content,
+        image_url=image_url,
         status=status
     )
     db.add(article)
@@ -566,6 +568,16 @@ def update_article_author(db: Session, article_id: int, author: str) -> Optional
     return article
 
 
+def update_article_image(db: Session, article_id: int, image_url: str) -> Optional[models.Article]:
+    """Set an article's image (used to backfill from the page's og:image when RSS lacks one)."""
+    article = get_article(db, article_id)
+    if article and image_url:
+        article.image_url = image_url
+        db.commit()
+        db.refresh(article)
+    return article
+
+
 def update_article_content(
     db: Session,
     article_id: int,
@@ -958,9 +970,25 @@ def get_bulletin_category(db: Session, category_id: int) -> Optional[models.Bull
     return db.query(models.BulletinCategory).filter(models.BulletinCategory.id == category_id).first()
 
 
+# Fold all four Turkish I-variants to the same character before lowercasing,
+# matching app.services.docx_service._normalize() exactly — two category
+# names that only differ by case/Turkish-I form (e.g. "Avrupa" / "AVRUPA")
+# would otherwise both be created and then collide onto the same template
+# heading when rendering a bulletin (docx_service._rebuild_category_sections).
+_BULLETIN_CATEGORY_TR_I_FOLD = str.maketrans({"İ": "i", "I": "i", "ı": "i"})
+
+
+def _normalize_bulletin_category_name(name: str) -> str:
+    return name.strip().translate(_BULLETIN_CATEGORY_TR_I_FOLD).lower()
+
+
 def get_bulletin_category_by_name(db: Session, name: str) -> Optional[models.BulletinCategory]:
-    """Get a bulletin category by name."""
-    return db.query(models.BulletinCategory).filter(models.BulletinCategory.name == name).first()
+    """Get a bulletin category by name, case/Turkish-I-insensitively."""
+    target = _normalize_bulletin_category_name(name)
+    for category in db.query(models.BulletinCategory).all():
+        if _normalize_bulletin_category_name(category.name) == target:
+            return category
+    return None
 
 
 def create_bulletin_category(db: Session, name: str) -> models.BulletinCategory:
@@ -1051,4 +1079,55 @@ def create_bulletin_classification(
     db.commit()
     db.refresh(classification)
     return classification
+
+
+# ==================== Generated Bulletin Operations ====================
+
+def get_generated_bulletins(db: Session) -> List[models.GeneratedBulletin]:
+    """Previously generated bulletin reports, newest first. SQLite's
+    CURRENT_TIMESTAMP has 1-second resolution, so two reports generated
+    within the same second would tie on generated_at — break ties by id
+    (insertion order) so "newest first" is never ambiguous."""
+    return db.query(models.GeneratedBulletin).order_by(
+        desc(models.GeneratedBulletin.generated_at), desc(models.GeneratedBulletin.id)
+    ).all()
+
+
+def get_generated_bulletin(db: Session, bulletin_id: int) -> Optional[models.GeneratedBulletin]:
+    return db.query(models.GeneratedBulletin).filter(models.GeneratedBulletin.id == bulletin_id).first()
+
+
+def create_generated_bulletin(
+    db: Session,
+    filename: str,
+    stored_path: str,
+    published_from: Optional[datetime],
+    published_to: Optional[datetime],
+    priorities: Optional[str],
+    include_favorites: bool,
+    article_count: int,
+) -> models.GeneratedBulletin:
+    """Record a newly generated bulletin report for later listing/re-download."""
+    row = models.GeneratedBulletin(
+        filename=filename,
+        stored_path=stored_path,
+        published_from=published_from,
+        published_to=published_to,
+        priorities=priorities,
+        include_favorites=include_favorites,
+        article_count=article_count,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def delete_generated_bulletin(db: Session, bulletin_id: int) -> bool:
+    row = get_generated_bulletin(db, bulletin_id)
+    if row:
+        db.delete(row)
+        db.commit()
+        return True
+    return False
 

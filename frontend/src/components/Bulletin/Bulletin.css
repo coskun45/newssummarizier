@@ -106,13 +106,53 @@
   color: var(--color-text-secondary);
 }
 
-.bulletin-status-message {
-  font-size: 0.875rem;
+/* Pushed to the bar's right edge regardless of whether the preview-count
+   span next to it is rendered (it's hidden while the count query errors). */
+.bulletin-generate-btn {
+  margin-left: auto;
+}
+
+.generated-bulletins-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.generated-bulletin-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.85rem;
+  background: var(--color-surface-alt);
+  border-radius: var(--radius-sm);
+}
+
+.generated-bulletin-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.generated-bulletin-date {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.generated-bulletin-meta {
+  font-size: 0.8rem;
   color: var(--color-text-secondary);
 }
 
-.bulletin-status-message--error {
-  color: var(--color-danger-solid);
+.generated-bulletin-actions {
+  display: flex;
+  gap: 0.35rem;
+  flex-shrink: 0;
 }
 
 @media (max-width: 700px) {

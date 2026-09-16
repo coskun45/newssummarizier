@@ -17,6 +17,7 @@ test('archive all unimportant fires immediately', async ({ page }) => {
   await loginAs(page);
   await mockApi(page, { articles: fixtures() });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   const req = page.waitForRequest((r) => r.url().includes('/articles/unimportant/archive-all'));
   await unimportantRow(page).getByRole('button', { name: /Tümünü Arşive Gönder/ }).click();
@@ -37,6 +38,7 @@ test('delete all unimportant requires confirmation, cancel sends nothing', async
     }
   );
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   await unimportantRow(page).getByRole('button', { name: /Tümünü Sil/ }).click();
   await expect(
@@ -53,6 +55,7 @@ test('confirming sends the unimportant delete-all request', async ({ page }) => 
   await loginAs(page);
   await mockApi(page, { articles: fixtures() });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   await unimportantRow(page).getByRole('button', { name: /Tümünü Sil/ }).click();
   const req = page.waitForRequest((r) => r.url().includes('/articles/unimportant/delete-all'));

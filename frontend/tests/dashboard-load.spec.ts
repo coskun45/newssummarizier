@@ -12,8 +12,9 @@ test('renders article list after login', async ({ page }) => {
   });
 
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
-  await expect(page.getByRole('heading', { name: 'Haber Özetleyici' })).toBeVisible();
+  await expect(page.getByRole('img', { name: 'Bülten' })).toBeVisible();
   await expect(page.getByText('First Unread Article')).toBeVisible();
   await expect(page.getByText('Second Unread Article')).toBeVisible();
   await expect(page.getByText('2 makale bulundu')).toBeVisible();
@@ -24,6 +25,7 @@ test('shows empty state when no articles', async ({ page }) => {
   await mockApi(page, { articles: [] });
 
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   await expect(page.getByText('Makale bulunamadı')).toBeVisible();
 });
@@ -37,6 +39,7 @@ test('shows error state when articles request fails', async ({ page }) => {
   );
 
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   await expect(page.getByText('Makaleler yüklenirken hata oluştu')).toBeVisible();
 });
@@ -55,6 +58,7 @@ test('shows loading state before response resolves', async ({ page }) => {
   );
 
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   await expect(page.getByRole('status', { name: 'Makaleler yükleniyor' })).toBeVisible();
   await expect(page.getByText('Slow Article')).toBeVisible({ timeout: 5000 });
@@ -71,6 +75,7 @@ test('switches between unread/archive/important tabs and refetches with differen
   });
 
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   await expect(page.getByText('Unread Piece')).toBeVisible();
   await expect(page.getByText('Starred Piece')).toBeVisible();
@@ -104,19 +109,32 @@ test('section tab badge counts reflect articleCounts', async ({ page }) => {
   });
 
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   await expect(page.getByRole('button', { name: 'Okunmamışlar', exact: true })).toContainText('2');
   await expect(page.getByRole('button', { name: 'Arşiv', exact: true })).toContainText('1');
   await expect(page.getByRole('button', { name: 'Favori', exact: true })).toContainText('1');
 });
 
-test('header shows app version, and the user menu reveals email, theme toggle and logout', async ({ page }) => {
+test('clicking the header logo navigates back to the home view', async ({ page }) => {
   await loginAs(page);
   await mockApi(page, { articles: [] });
 
   await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
+  await expect(page.getByPlaceholder('Makalelerde ara...')).toBeVisible();
 
-  await expect(page.getByText('v1.0.0')).toBeVisible();
+  await page.getByRole('button', { name: 'Ana sayfaya git' }).click();
+
+  await expect(page.getByPlaceholder('Makalelerde ara...')).not.toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Önem Seviyesine Göre Okunmamış' })).toBeVisible();
+});
+
+test('the user menu reveals email, theme toggle and logout', async ({ page }) => {
+  await loginAs(page);
+  await mockApi(page, { articles: [] });
+
+  await page.goto('/');
 
   const avatar = page.getByRole('button', { name: new RegExp(`Kullanıcı menüsü: ${DEFAULT_USER.email}`) });
   await expect(page.getByText(DEFAULT_USER.email)).not.toBeVisible();

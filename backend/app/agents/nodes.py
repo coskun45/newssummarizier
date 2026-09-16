@@ -102,7 +102,8 @@ async def article_processor_node(state: NewsProcessingState) -> Dict[str, Any]:
             title=article["title"],
             author=article.get("author"),
             published_at=article.get("published_at"),
-            raw_content=article.get("raw_content")
+            raw_content=article.get("raw_content"),
+            image_url=article.get("image_url")
         )
         
         crud.create_log(
@@ -115,12 +116,16 @@ async def article_processor_node(state: NewsProcessingState) -> Dict[str, Any]:
         
         # Step 2: Extract content from web page
         try:
-            cleaned_content, page_author = await extract_article_content(article["url"])
+            cleaned_content, page_author, page_image_url = await extract_article_content(article["url"])
 
-            # Backfill author from the page when the RSS feed didn't provide one
+            # Backfill author/image from the page when the RSS feed didn't provide them
             if page_author and not article.get("author"):
                 crud.update_article_author(db=db, article_id=db_article.id, author=page_author)
                 article["author"] = page_author
+
+            if page_image_url and not article.get("image_url"):
+                crud.update_article_image(db=db, article_id=db_article.id, image_url=page_image_url)
+                article["image_url"] = page_image_url
 
             if cleaned_content:
                 article["cleaned_content"] = cleaned_content

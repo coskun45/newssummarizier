@@ -88,6 +88,7 @@ def init_db():
         ("priority", "VARCHAR"),
         ("is_read", "BOOLEAN NOT NULL DEFAULT 0"),
         ("is_starred", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("image_url", "VARCHAR"),
     ]
 
     inspector = inspect(engine)
