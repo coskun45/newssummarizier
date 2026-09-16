@@ -11,6 +11,9 @@ Deutsche Welle (DW) RSS beslemelerinden haber toplayan, kategorize eden ve yapay
 - **İnteraktif Dashboard**: Arama ve filtreleme ile React tabanlı kullanıcı arayüzü
 - **Maliyet Takibi**: Yapılandırılabilir limitlerle OpenAI API maliyetlerini izler
 - **LangGraph Workflow**: Karmaşık işleme hatları için sağlam agent orkestrasyon
+- **Word Bülten Raporu**: Seçilen zaman aralığı ve önem seviyesindeki haberleri, kullanıcı tanımlı üst
+  düzey kategorilere (Avrupa, Amerika vb.) göre gruplayıp şablona uygun bir Word (.docx) raporu üretir —
+  alt başlıklar ve gündem özeti her üretimde yapay zeka tarafından haberlere göre oluşturulur
 
 ## 🏗️ Mimari
 
@@ -290,6 +293,14 @@ Bulten/
 - `GET /api/settings` - Kullanıcı ayarlarını getir
 - `PUT /api/settings` - Kullanıcı ayarlarını güncelle
 
+#### Bülten (Word Raporu)
+
+- `GET /api/bulletin/categories` - Üst düzey bülten kategorilerini listele
+- `POST /api/bulletin/categories` - Yeni üst düzey kategori ekle (admin)
+- `PUT /api/bulletin/categories/reorder` - Kategori görüntüleme sırasını güncelle (admin)
+- `POST /api/bulletin/generate` - Filtrelere (tarih aralığı, önem seviyesi) göre Word (.docx) bülten
+  raporu oluşturur ve dosya olarak döner
+
 ## ⚙️ Yapılandırma
 
 ### Backend (.env)
@@ -314,6 +325,10 @@ SCRAPING_DELAY=1.0  # İstekler arası saniye
 # Maliyet Limitleri
 DAILY_COST_LIMIT=5.0  # USD
 MONTHLY_COST_LIMIT=100.0  # USD
+
+# Bülten Raporu
+BULLETIN_CLASSIFICATION_BATCH_SIZE=15  # LLM sınıflandırma çağrısı başına haber sayısı
+BULLETIN_MAX_ARTICLES=400  # Tek bir raporda izin verilen maksimum haber sayısı
 
 # CORS
 CORS_ORIGINS=http://localhost:5173,http://localhost:3000
@@ -381,6 +396,7 @@ Bulten/
 │   │   │   └── routes/      # API Endpoints
 │   │   ├── core/            # Config & Exceptions
 │   │   ├── db/              # Veritabanı Modelleri & CRUD
+│   │   ├── resources/       # Statik dosyalar (Bülten Word şablonu)
 │   │   ├── services/        # İş Mantığı
 │   │   ├── tasks/           # Arka Plan Görevleri
 │   │   └── main.py          # FastAPI Uygulaması
@@ -414,6 +430,7 @@ Bulten/
 - Feedparser (RSS Ayrıştırma)
 - Trafilatura (İçerik Çıkarma)
 - Aiohttp (Async HTTP)
+- python-docx (Word Bülten Raporu Üretimi)
 
 **Frontend:**
 

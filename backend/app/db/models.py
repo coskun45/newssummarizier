@@ -1,7 +1,7 @@
 """
 SQLAlchemy database models.
 """
-from sqlalchemy import Column, Integer, String, Text, Float, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, Float, Boolean, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.database import Base, UTCDateTime
@@ -137,6 +137,40 @@ class DeletedArticleUrl(Base):
 
     url = Column(String, primary_key=True)
     deleted_at = Column(UTCDateTime(), server_default=func.now())
+
+
+class BulletinCategory(Base):
+    """User-editable top-level section of the Word bulletin report (e.g. "AVRUPA",
+    "AMERİKA"). Independent of the ingestion pipeline's flat Topic taxonomy."""
+    __tablename__ = "bulletin_categories"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    name = Column(String, unique=True, nullable=False)
+    display_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(UTCDateTime(), server_default=func.now())
+
+
+class ArticleBulletinClassification(Base):
+    """Cached LLM classification of an article for bulletin generation, keyed by a
+    hash of the top-level category set in effect when it was classified — so
+    editing categories invalidates stale rows instead of silently reusing them."""
+    __tablename__ = "article_bulletin_classifications"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    article_id = Column(Integer, ForeignKey("articles.id"), nullable=False, index=True)
+    category_set_hash = Column(String, nullable=False, index=True)
+    top_category = Column(String, nullable=False)
+    subcategory = Column(String, nullable=False)   # LLM-generated dynamic label
+    article_type = Column(String, nullable=False)  # "haber" | "haber_detayi" | "yorum"
+    model_used = Column(String)
+    created_at = Column(UTCDateTime(), server_default=func.now())
+
+    # Relationships
+    article = relationship("Article")
+
+    __table_args__ = (
+        UniqueConstraint("article_id", "category_set_hash", name="uq_bulletin_classification_article_hash"),
+    )
 
 
 class User(Base):

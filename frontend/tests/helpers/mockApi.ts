@@ -7,6 +7,7 @@ import type {
   UserSettings,
   SystemPrompt,
   AppUser,
+  BulletinCategory,
 } from '../../src/types';
 
 let idSeq = 1000;
@@ -101,6 +102,16 @@ export function makePrompt(promptType: string, overrides: Partial<SystemPrompt> 
   };
 }
 
+export function makeBulletinCategory(overrides: Partial<BulletinCategory> = {}): BulletinCategory {
+  const id = overrides.id ?? nextId();
+  return {
+    id,
+    name: `Category ${id}`,
+    display_order: 0,
+    ...overrides,
+  };
+}
+
 export function makeUser(overrides: Partial<AppUser> = {}): AppUser {
   const id = overrides.id ?? nextId();
   return {
@@ -121,6 +132,7 @@ export interface MockState {
   settings: UserSettings;
   prompts: Map<string, SystemPrompt>;
   users: AppUser[];
+  bulletinCategories: BulletinCategory[];
 }
 
 export interface MockApiOverrides {
@@ -131,6 +143,7 @@ export interface MockApiOverrides {
   settings?: Partial<UserSettings>;
   prompts?: Map<string, SystemPrompt>;
   users?: AppUser[];
+  bulletinCategories?: BulletinCategory[];
 }
 
 function computeCounts(articles: MockArticle[]) {
@@ -247,6 +260,7 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
     },
     prompts: overrides.prompts ?? new Map(),
     users: overrides.users ?? [],
+    bulletinCategories: overrides.bulletinCategories ?? [],
   };
 
   await page.route('**/api/**', async (route: Route) => {
@@ -540,6 +554,57 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
       const userId = parseInt(m[1], 10);
       state.users = state.users.filter((u) => u.id !== userId);
       return route.fulfill({ status: 204, body: '' });
+    }
+
+    // ---- bulletin categories ----
+    if (method === 'GET' && path === '/bulletin/categories') {
+      const sorted = [...state.bulletinCategories].sort((a, b) => a.display_order - b.display_order);
+      return json(sorted);
+    }
+    if (method === 'POST' && path === '/bulletin/categories') {
+      const body = request.postDataJSON() as { name: string };
+      const maxOrder = state.bulletinCategories.reduce((max, c) => Math.max(max, c.display_order), -1);
+      const category = makeBulletinCategory({ name: body.name, display_order: maxOrder + 1 });
+      state.bulletinCategories.push(category);
+      return json(category);
+    }
+    if (method === 'PUT' && path === '/bulletin/categories/reorder') {
+      const body = request.postDataJSON() as { ordered_ids: number[] };
+      body.ordered_ids.forEach((id, index) => {
+        const category = state.bulletinCategories.find((c) => c.id === id);
+        if (category) category.display_order = index;
+      });
+      const sorted = [...state.bulletinCategories].sort((a, b) => a.display_order - b.display_order);
+      return json(sorted);
+    }
+    m = path.match(/^\/bulletin\/categories\/(\d+)$/);
+    if (m) {
+      const categoryId = parseInt(m[1], 10);
+      const category = state.bulletinCategories.find((c) => c.id === categoryId);
+      if (method === 'PUT') {
+        if (!category) return json({ detail: 'Category not found' }, 404);
+        const body = request.postDataJSON() as { name?: string };
+        if (body.name) category.name = body.name;
+        return json(category);
+      }
+      if (method === 'DELETE') {
+        if (!category) return json({ detail: 'Category not found' }, 404);
+        state.bulletinCategories = state.bulletinCategories.filter((c) => c.id !== categoryId);
+        return json({ status: 'success' });
+      }
+    }
+
+    // ---- bulletin generate ----
+    if (method === 'POST' && path === '/bulletin/generate') {
+      if (state.bulletinCategories.length === 0) {
+        return json({ detail: 'En az bir üst düzey kategori tanımlanmalı' }, 400);
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        headers: { 'Content-Disposition': 'attachment; filename="bulten-mock.docx"' },
+        body: Buffer.from('mock docx content'),
+      });
     }
 
     // Unrecognized /api/* request — fail loudly instead of hanging.

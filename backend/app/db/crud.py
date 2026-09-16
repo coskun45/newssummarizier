@@ -164,6 +164,7 @@ def get_articles(
     feed_id: int = None,
     feed_ids: List[int] = None,
     priority: str = None,
+    priorities: List[str] = None,
     is_read: bool = None,
     is_starred: bool = None
 ) -> List[models.Article]:
@@ -192,8 +193,10 @@ def get_articles(
     if status:
         query = query.filter(models.Article.status == status)
 
-    # Filter by priority
-    if priority:
+    # Filter by priority — a single value or a list (list wins if both given)
+    if priorities:
+        query = query.filter(models.Article.priority.in_(priorities))
+    elif priority:
         query = query.filter(models.Article.priority == priority)
 
     # Filter by is_read
@@ -238,6 +241,7 @@ def count_articles(
     feed_id: int = None,
     feed_ids: List[int] = None,
     priority: str = None,
+    priorities: List[str] = None,
     start_date: datetime = None,
     end_date: datetime = None,
     fetched_from: datetime = None,
@@ -262,7 +266,9 @@ def count_articles(
     if status:
         query = query.filter(models.Article.status == status)
 
-    if priority:
+    if priorities:
+        query = query.filter(models.Article.priority.in_(priorities))
+    elif priority:
         query = query.filter(models.Article.priority == priority)
 
     if is_read is not None:
@@ -879,4 +885,111 @@ def delete_user(db: Session, user_id: int) -> bool:
         db.commit()
         return True
     return False
+
+
+# ==================== Bulletin Category Operations ====================
+
+def get_bulletin_categories(db: Session) -> List[models.BulletinCategory]:
+    """Get all bulletin top-level categories, ordered for display."""
+    return db.query(models.BulletinCategory).order_by(models.BulletinCategory.display_order).all()
+
+
+def get_bulletin_category(db: Session, category_id: int) -> Optional[models.BulletinCategory]:
+    """Get a bulletin category by ID."""
+    return db.query(models.BulletinCategory).filter(models.BulletinCategory.id == category_id).first()
+
+
+def get_bulletin_category_by_name(db: Session, name: str) -> Optional[models.BulletinCategory]:
+    """Get a bulletin category by name."""
+    return db.query(models.BulletinCategory).filter(models.BulletinCategory.name == name).first()
+
+
+def create_bulletin_category(db: Session, name: str) -> models.BulletinCategory:
+    """Create a new bulletin category, appended to the end of the display order."""
+    max_order = db.query(func.max(models.BulletinCategory.display_order)).scalar()
+    category = models.BulletinCategory(name=name, display_order=(max_order or 0) + 1)
+    db.add(category)
+    db.commit()
+    db.refresh(category)
+    return category
+
+
+def update_bulletin_category(db: Session, category_id: int, name: str = None) -> Optional[models.BulletinCategory]:
+    """Update a bulletin category's name."""
+    category = get_bulletin_category(db, category_id)
+    if category:
+        if name is not None:
+            category.name = name
+        db.commit()
+        db.refresh(category)
+    return category
+
+
+def delete_bulletin_category(db: Session, category_id: int) -> bool:
+    """Delete a bulletin category."""
+    category = get_bulletin_category(db, category_id)
+    if category:
+        db.delete(category)
+        db.commit()
+        return True
+    return False
+
+
+def reorder_bulletin_categories(db: Session, ordered_ids: List[int]) -> List[models.BulletinCategory]:
+    """Rewrite display_order to match the given id order. IDs not present are
+    left at the end, in their previous relative order."""
+    categories = {c.id: c for c in get_bulletin_categories(db)}
+    order = 0
+    for category_id in ordered_ids:
+        category = categories.pop(category_id, None)
+        if category:
+            category.display_order = order
+            order += 1
+    for category in categories.values():
+        category.display_order = order
+        order += 1
+    db.commit()
+    return get_bulletin_categories(db)
+
+
+# ==================== Bulletin Classification Operations ====================
+
+def get_bulletin_classifications(
+    db: Session,
+    article_ids: List[int],
+    category_set_hash: str,
+) -> Dict[int, models.ArticleBulletinClassification]:
+    """Cached classifications for the given articles under this category set,
+    keyed by article_id."""
+    if not article_ids:
+        return {}
+    rows = db.query(models.ArticleBulletinClassification).filter(
+        models.ArticleBulletinClassification.article_id.in_(article_ids),
+        models.ArticleBulletinClassification.category_set_hash == category_set_hash,
+    ).all()
+    return {row.article_id: row for row in rows}
+
+
+def create_bulletin_classification(
+    db: Session,
+    article_id: int,
+    category_set_hash: str,
+    top_category: str,
+    subcategory: str,
+    article_type: str,
+    model_used: str = None,
+) -> models.ArticleBulletinClassification:
+    """Persist a bulletin classification result for an article/category-set pair."""
+    classification = models.ArticleBulletinClassification(
+        article_id=article_id,
+        category_set_hash=category_set_hash,
+        top_category=top_category,
+        subcategory=subcategory,
+        article_type=article_type,
+        model_used=model_used,
+    )
+    db.add(classification)
+    db.commit()
+    db.refresh(classification)
+    return classification
 

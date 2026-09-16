@@ -9,7 +9,7 @@ interface DateFilterSectionProps {
   onChange: (val: DateFilterState) => void;
 }
 
-function DateFilterSection({ title, value, onChange }: DateFilterSectionProps) {
+export function DateFilterSection({ title, value, onChange }: DateFilterSectionProps) {
   const [open, setOpen] = useState(true);
 
   const setPreset = (preset: DateFilterState['preset']) => {

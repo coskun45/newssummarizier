@@ -2,8 +2,8 @@
  * React Query hooks for data fetching and caching.
  */
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
-import { articlesApi, summariesApi, topicsApi, settingsApi, statsApi, feedsApi, authApi } from '../services/api';
-import type { ArticleFilters, UserSettings } from '../types';
+import { articlesApi, summariesApi, topicsApi, settingsApi, statsApi, feedsApi, authApi, bulletinApi } from '../services/api';
+import type { ArticleFilters, UserSettings, BulletinGenerateRequest } from '../types';
 
 // Articles hooks
 export const useArticleCounts = () => {
@@ -319,5 +319,60 @@ export const useDeleteUser = () => {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['users'] });
         },
+    });
+};
+
+// Bulletin hooks
+export const useBulletinCategories = () => {
+    return useQuery({
+        queryKey: ['bulletinCategories'],
+        queryFn: () => bulletinApi.listCategories(),
+    });
+};
+
+export const useCreateBulletinCategory = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (name: string) => bulletinApi.createCategory(name),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['bulletinCategories'] });
+        },
+    });
+};
+
+export const useUpdateBulletinCategory = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: ({ categoryId, name }: { categoryId: number; name: string }) =>
+            bulletinApi.updateCategory(categoryId, name),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['bulletinCategories'] });
+        },
+    });
+};
+
+export const useDeleteBulletinCategory = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (categoryId: number) => bulletinApi.deleteCategory(categoryId),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['bulletinCategories'] });
+        },
+    });
+};
+
+export const useReorderBulletinCategories = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (orderedIds: number[]) => bulletinApi.reorderCategories(orderedIds),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['bulletinCategories'] });
+        },
+    });
+};
+
+export const useGenerateBulletin = () => {
+    return useMutation({
+        mutationFn: (payload: BulletinGenerateRequest) => bulletinApi.generate(payload),
     });
 };

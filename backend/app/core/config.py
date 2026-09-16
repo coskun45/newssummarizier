@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     # Cost Management
     daily_cost_limit: float = 5.0  # USD
     monthly_cost_limit: float = 100.0  # USD
+
+    # Bulletin report generation
+    bulletin_classification_batch_size: int = 15  # articles per LLM classification call
+    bulletin_max_articles: int = 400  # hard cap on articles selected for a single report
     
     # CORS
     cors_origins: str = "http://localhost:5173,http://localhost:3000"

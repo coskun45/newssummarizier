@@ -134,3 +134,15 @@ export interface LoginResponse {
     token_type: string;
     user: AppUser;
 }
+
+export interface BulletinCategory {
+    id: number;
+    name: string;
+    display_order: number;
+}
+
+export interface BulletinGenerateRequest {
+    published_from?: string;
+    published_to?: string;
+    priorities?: string[];
+}

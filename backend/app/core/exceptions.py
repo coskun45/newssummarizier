@@ -36,3 +36,8 @@ class DatabaseError(NewsAppException):
 class CostLimitExceededError(NewsAppException):
     """Exception raised when API cost limits are exceeded."""
     pass
+
+
+class BulletinGenerationError(NewsAppException):
+    """Exception raised when generating the Word bulletin report fails."""
+    pass

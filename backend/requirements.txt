@@ -30,6 +30,9 @@ python-dateutil==2.8.2
 pydantic==2.10.3
 pydantic-settings==2.1.0
 
+# Word bulletin report generation
+python-docx==1.1.2
+
 # Rate limiting
 aiolimiter==1.1.0
 

@@ -15,6 +15,8 @@ import type {
     SystemPrompt,
     AppUser,
     LoginResponse,
+    BulletinCategory,
+    BulletinGenerateRequest,
 } from '../types';
 
 const API_BASE_URL = '/api';
@@ -304,6 +306,38 @@ export const promptsApi = {
             prompt_text: promptText,
             is_active: isActive
         });
+        return response.data;
+    },
+};
+
+// Bulletin (Word report) endpoints
+export const bulletinApi = {
+    listCategories: async (): Promise<BulletinCategory[]> => {
+        const response = await api.get('/bulletin/categories');
+        return response.data;
+    },
+
+    createCategory: async (name: string): Promise<BulletinCategory> => {
+        const response = await api.post('/bulletin/categories', { name });
+        return response.data;
+    },
+
+    updateCategory: async (categoryId: number, name: string): Promise<BulletinCategory> => {
+        const response = await api.put(`/bulletin/categories/${categoryId}`, { name });
+        return response.data;
+    },
+
+    deleteCategory: async (categoryId: number): Promise<void> => {
+        await api.delete(`/bulletin/categories/${categoryId}`);
+    },
+
+    reorderCategories: async (orderedIds: number[]): Promise<BulletinCategory[]> => {
+        const response = await api.put('/bulletin/categories/reorder', { ordered_ids: orderedIds });
+        return response.data;
+    },
+
+    generate: async (payload: BulletinGenerateRequest): Promise<Blob> => {
+        const response = await api.post('/bulletin/generate', payload, { responseType: 'blob' });
         return response.data;
     },
 };

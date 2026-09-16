@@ -12,6 +12,7 @@ import SearchBar from '../SearchBar/SearchBar';
 import Pagination from '../Pagination/Pagination';
 import Settings from '../Settings/Settings';
 import UserMenu from '../UserMenu/UserMenu';
+import BulletinPanel from '../Bulletin/Bulletin';
 import {
   Cog6ToothIcon,
   ArrowPathIcon,
@@ -26,6 +27,7 @@ import {
   TrashIcon,
   ExclamationTriangleIcon,
   InformationCircleIcon,
+  NewspaperIcon,
 } from '@heroicons/react/24/outline';
 import { StarIcon } from '@heroicons/react/24/solid';
 import type { AuthUser, DateFilterState } from '../../types';
@@ -50,7 +52,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
   const emptyDate: DateFilterState = { preset: null, customFrom: '', customTo: '' };
   const [publishedFilter, setPublishedFilter] = useState<DateFilterState>(emptyDate);
   const [fetchedFilter, setFetchedFilter] = useState<DateFilterState>(emptyDate);
-  const [activeSection, setActiveSection] = useState<'unread' | 'archive' | 'important'>('unread');
+  const [activeSection, setActiveSection] = useState<'unread' | 'archive' | 'important' | 'bulletin'>('unread');
   const [selectedArticleIds, setSelectedArticleIds] = useState<Set<number>>(new Set());
   const [exportNotice, setExportNotice] = useState<string | null>(null);
   const exportNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -211,7 +213,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [feedsData]);
 
-  const handleSectionChange = (section: 'unread' | 'archive' | 'important') => {
+  const handleSectionChange = (section: 'unread' | 'archive' | 'important' | 'bulletin') => {
     setActiveSection(section);
     setSelectedArticleIds(new Set());
   };
@@ -395,7 +397,9 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
       <div className="dashboard-content">
         <div className="container">
           <div className="dashboard-grid">
-            {/* Left Sidebar */}
+            {/* Left Sidebar — not shown for the Bülten tab, which is a report
+                generator, not an article browser, and has its own config form */}
+            {activeSection !== 'bulletin' && (
             <aside className="dashboard-sidebar">
               <h2 className="sidebar-section-title">
                 <FunnelIcon className="sidebar-section-icon" /> Filtreleme
@@ -453,10 +457,11 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                 onFetchedChange={setFetchedFilter}
               />
             </aside>
+            )}
 
             {/* Main Content Area */}
             <main className="dashboard-main">
-              <SearchBar value={searchQuery} onChange={setSearchQuery} />
+              {activeSection !== 'bulletin' && <SearchBar value={searchQuery} onChange={setSearchQuery} />}
 
               <div className="section-tabs">
                 <button
@@ -489,7 +494,16 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                     <span className="section-tab-badge section-tab-badge--important">{articleCounts!.starred_count}</span>
                   )}
                 </button>
+                <button
+                  className={`section-tab${activeSection === 'bulletin' ? ' section-tab--active' : ''}`}
+                  onClick={() => handleSectionChange('bulletin')}
+                  aria-label="Bülten"
+                >
+                  <NewspaperIcon /> Bülten
+                </button>
               </div>
+
+              {activeSection === 'bulletin' && <BulletinPanel />}
 
               {activeSection === 'unread' && articlesData && articlesData.articles.length > 0 && (
                 <div className="bulk-action-bar">
@@ -569,13 +583,13 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                 </div>
               )}
 
-              {error && (
+              {activeSection !== 'bulletin' && error && (
                 <div className="error-message">
                   <p><ExclamationTriangleIcon /> Makaleler yüklenirken hata oluştu</p>
                 </div>
               )}
 
-              {isLoading ? (
+              {activeSection !== 'bulletin' && (isLoading ? (
                 <div className="skeleton-list" role="status" aria-label="Makaleler yükleniyor">
                   {Array.from({ length: 4 }).map((_, i) => (
                     <div key={i} className="skeleton-card">
@@ -620,7 +634,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                     />
                   </>
                 )
-              )}
+              ))}
             </main>
           </div>
         </div>
