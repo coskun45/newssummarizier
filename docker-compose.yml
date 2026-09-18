@@ -33,8 +33,8 @@ services:
       APP_VERSION: ${APP_VERSION:-1.0.0}
 
       # ── OpenAI Models (explicitly override env_file defaults) ─────────────
-      DEFAULT_MODEL: gpt-4o-mini
-      DETAILED_MODEL: gpt-4o
+      DEFAULT_MODEL: gpt-5-mini-2025-08-07
+      DETAILED_MODEL: gpt-5-mini-2025-08-07
 
       # ── JWT (override with a strong secret in production) ─────────────────
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-use-a-strong-secret-in-production}
