@@ -86,8 +86,8 @@ def init_db():
     article_columns = [
         ("importance", "VARCHAR"),
         ("priority", "VARCHAR"),
-        ("is_read", "BOOLEAN NOT NULL DEFAULT 0"),
-        ("is_starred", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("is_read", "BOOLEAN NOT NULL DEFAULT false"),
+        ("is_starred", "BOOLEAN NOT NULL DEFAULT false"),
         ("image_url", "VARCHAR"),
     ]
 
@@ -101,9 +101,17 @@ def init_db():
                         conn.execute(text(f"ALTER TABLE articles ADD COLUMN {column} {ddl}"))
                         conn.commit()
                     except Exception:
-                        pass
+                        # On strict-transaction dialects (Postgres), a failed statement
+                        # leaves the connection's transaction "aborted" until an explicit
+                        # rollback — every later statement on this same conn (remaining
+                        # ALTERs, the CREATE INDEX below) would otherwise raise
+                        # "current transaction is aborted" too and get silently
+                        # swallowed by this same except, cascading one column's failure
+                        # into all the others. SQLite has no such abort state, which is
+                        # why this only shows up once Postgres is the target.
+                        conn.rollback()
             try:
                 conn.execute(text("CREATE INDEX IF NOT EXISTS ix_articles_is_starred ON articles (is_starred)"))
                 conn.commit()
             except Exception:
-                pass
+                conn.rollback()

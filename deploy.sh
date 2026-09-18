@@ -127,6 +127,25 @@ export JWT_SECRET_KEY="$JWT_SECRET"
 sed -i "s|JWT_SECRET_KEY: \${JWT_SECRET_KEY:-.*}|JWT_SECRET_KEY: \"$JWT_SECRET\"|" docker-compose.yml
 info "JWT_SECRET_KEY docker-compose.yml'e yazıldı"
 
+# ── 4b. PostgreSQL kimlik bilgileri üret / kontrol et ────────────────────────
+# docker-compose.yml içindeki ${POSTGRES_...} substitution'ları repo kökündeki
+# .env dosyasından besleniyor (docker compose bunu otomatik okur). Bu dosya
+# git-ignore'lu ve 'git reset --hard' tracked olmayan dosyalara dokunmadığı
+# için sonraki otomatik deploy'larda da kalıcı kalır.
+ROOT_ENV_FILE="$APP_DIR/.env"
+
+if [ ! -f "$ROOT_ENV_FILE" ]; then
+    PG_PASSWORD=$(python3 -c "import secrets; print(secrets.token_urlsafe(24))")
+    cat > "$ROOT_ENV_FILE" <<EOF
+POSTGRES_USER=bulten
+POSTGRES_PASSWORD=$PG_PASSWORD
+POSTGRES_DB=bulten
+EOF
+    info "PostgreSQL kimlik bilgileri üretildi → $ROOT_ENV_FILE"
+else
+    info "$ROOT_ENV_FILE mevcut, atlanıyor"
+fi
+
 # ── 5. CORS — sunucu IP'sini ayarla ──────────────────────────────────────────
 SERVER_IP=$(curl -s --max-time 5 ifconfig.me || curl -s --max-time 5 api.ipify.org)
 if [ -z "$SERVER_IP" ]; then
@@ -139,21 +158,27 @@ info "CORS_ORIGINS → http://$SERVER_IP"
 # TODO satırını da temizle
 sed -i '/# TODO: Replace YOUR_SERVER_IP/d' docker-compose.yml
 
-# ── 6. SQLite DB dosyası ve izinleri ─────────────────────────────────────────
-DATA_DIR="$APP_DIR/data"
-DB_FILE="$DATA_DIR/news_summary.db"
-mkdir -p "$DATA_DIR"
-if [ ! -f "$DB_FILE" ]; then
-    touch "$DB_FILE"
-    info "news_summary.db oluşturuldu"
-fi
-chown -R 1001:1001 "$DATA_DIR"
-info "DB dosyası izinleri ayarlandı (UID 1001)"
-
 # ── 7. Build & Start ──────────────────────────────────────────────────────────
 echo ""
 warn "Docker imajları build ediliyor (ilk seferde birkaç dakika sürebilir)..."
 docker compose build --no-cache
+
+# Postgres'i backend'den ÖNCE, tek başına ayağa kaldır — backend her
+# başlangıçta seed_database() çalıştırır (topics/feeds/system_prompts'a
+# idempotent seed verisi ekler); eski SQLite verisi varsa migrasyon bundan
+# ÖNCE çalışmalı, yoksa aynı satırları ikinci kez eklemeye çalışıp unique
+# constraint hatası alır (bkz. README "Veritabanı Kalıcılığı").
+echo ""
+warn "PostgreSQL başlatılıyor..."
+docker compose up -d db
+
+LEGACY_DB_FILE="$APP_DIR/data/news_summary.db"
+if [ -f "$LEGACY_DB_FILE" ]; then
+    warn "Eski SQLite verisi bulundu ($LEGACY_DB_FILE), Postgres'e taşınıyor..."
+    docker compose run --rm backend python migrate_sqlite_to_postgres.py \
+        --sqlite-path /app/data/news_summary.db
+    info "SQLite → Postgres migrasyonu tamamlandı"
+fi
 
 echo ""
 warn "Servisler başlatılıyor..."

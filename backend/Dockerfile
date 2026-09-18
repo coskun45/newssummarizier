@@ -13,6 +13,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY app/ ./app/
+COPY migrate_sqlite_to_postgres.py .
 
 # Create data directory
 RUN mkdir -p /app/data

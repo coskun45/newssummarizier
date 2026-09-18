@@ -1,13 +1,29 @@
 services:
 
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bulten}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-bulten}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bulten} -d ${POSTGRES_DB:-bulten}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   backend:
     build:
       context: ./backend
     env_file:
       - ./backend/.env
     environment:
-      # ── Database (host ./data dir bind-mounted below; never git-tracked) ──
-      DATABASE_URL: sqlite:////app/data/news_summary.db
+      # ── Database (PostgreSQL, dockerized via the `db` service above) ───────
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-bulten}:${POSTGRES_PASSWORD:-changeme}@db:5432/${POSTGRES_DB:-bulten}
       CHECKPOINTS_DB: /app/data/checkpoints.db
       BULLETIN_STORAGE_DIR: /app/data/bulletins
 
@@ -24,6 +40,9 @@ services:
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-use-a-strong-secret-in-production}
     volumes:
       - ./data:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
@@ -41,4 +60,7 @@ services:
       backend:
         condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  postgres_data:
 

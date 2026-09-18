@@ -55,11 +55,6 @@ jobs:
               echo "[✓] backend/.env mevcut, atlanıyor"
             fi
 
-            # ── DB dosyası izinleri ──────────────────────────────────────
-            DB_FILE="$APP_DIR/backend/news_summary.db"
-            [ ! -f "$DB_FILE" ] && touch "$DB_FILE"
-            chown 1001:1001 "$DB_FILE" || true
-
             # ── Build & deploy ───────────────────────────────────────────
             export JWT_SECRET_KEY="${{ secrets.JWT_SECRET_KEY }}"
             docker compose build --no-cache

@@ -21,7 +21,8 @@ Deutsche Welle (DW) RSS beslemelerinden haber toplayan, kategorize eden ve yapay
 
 - **FastAPI**: Otomatik OpenAPI dokümantasyonu ile modern, hızlı API
 - **LangGraph**: Çok-ajanlı iş akışı orkestrasyon
-- **SQLite**: Makaleler, özetler ve meta veriler için hafif veritabanı
+- **PostgreSQL** (Docker/production) / **SQLite** (manuel yerel geliştirme): Makaleler, özetler ve
+  meta veriler için veritabanı — bkz. [Docker ile Çalıştırma](#-docker)
 - **OpenAI**: Kategorizasyon ve özetleme için GPT-3.5-turbo ve GPT-4
 
 ### Frontend
@@ -201,14 +202,25 @@ docker compose ps
 | `OPENAI_API_KEY` | – | **(Zorunlu)** OpenAI API Key |
 | `JWT_SECRET_KEY` | `change-me-use-a-strong-secret-in-production` | JWT imza anahtarı — **`DEBUG=false` iken varsayılan değerde bırakılırsa uygulama başlamayı reddeder** |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | – | İlk admin kullanıcısını oluşturmak için (ikisi de set edilmelidir). Boş bırakılırsa hiç admin oluşturulmaz — bkz. `db/seed.py` |
-| `DATABASE_URL` | `sqlite:////app/data/news_summary.db` | Container içinde veritabanı yolu |
+| `POSTGRES_USER` | `bulten` | PostgreSQL kullanıcı adı (repo kökü `.env`'den, `db` servisine ve backend'in `DATABASE_URL`'ine enjekte edilir) |
+| `POSTGRES_PASSWORD` | `changeme` | PostgreSQL şifresi — **production'da repo kökü `.env`'de güçlü bir değerle override edilmeli** |
+| `POSTGRES_DB` | `bulten` | PostgreSQL veritabanı adı |
+| `DATABASE_URL` | `postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}` | Backend'in bağlandığı veritabanı — `db` servisine işaret eder, doğrudan override edilmez |
 | `DEBUG` | `false` | Debug modu |
 | `CORS_ORIGINS` | `http://localhost,http://localhost:80` | İzin verilen CORS origin'leri |
 
 ### Veritabanı Kalıcılığı
 
-SQLite veritabanı ve LangGraph checkpoint'leri host'taki `./data/` dizinine volume olarak mount
-edilir (repo'nun git ağacının dışında, asla commit'lenmez):
+Veritabanı, Docker Compose ile çalıştırıldığında **PostgreSQL** (`db` servisi, `postgres:16-alpine`)
+üzerinde tutulur; verisi adlandırılmış bir Docker volume'ünde (`postgres_data`) kalıcı olur:
+
+```yaml
+volumes:
+  - postgres_data:/var/lib/postgresql/data
+```
+
+LangGraph checkpoint'leri ve üretilen Word bültenleri ise ayrıca host'taki `./data/` dizinine
+mount edilir (repo'nun git ağacının dışında, asla commit'lenmez):
 
 ```yaml
 volumes:
@@ -216,7 +228,26 @@ volumes:
 ```
 
 Bu şu anlama gelir: Veriler `docker compose down` ve `git pull`/`reset --hard` sonrasında bile
-korunur. Sadece `./data` dizinini silmek veritabanını siler.
+korunur. Sadece `docker compose down -v` (Postgres volume'ünü de siler) veya `./data` dizinini
+silmek veriyi kaldırır.
+
+Manuel/yerel geliştirmede (Docker olmadan `uvicorn` ile) varsayılan hâlâ SQLite'tır
+(`backend/.env.example`'daki `DATABASE_URL=sqlite:///./news_summary.db`) — bu iki ortam
+birbirinden bağımsızdır.
+
+**Var olan bir SQLite veritabanını Postgres'e taşımak için** (ör. önceki bir sürümden yükseltme),
+backend'i normal başlatmadan ÖNCE (aksi halde `seed_database()` topics/feeds/system_prompts'a
+seed verisi ekler ve migrasyon aynı satırları tekrar eklemeye çalışıp unique constraint hatası alır):
+
+```bash
+docker compose up -d db                                  # sadece Postgres
+docker compose run --rm backend python migrate_sqlite_to_postgres.py \
+    --sqlite-path /app/data/news_summary.db
+docker compose up -d                                      # migrasyondan sonra her şeyi başlat
+```
+
+Script kaynak/hedef satır sayılarını karşılaştırıp özet basar; hedef tablolar zaten doluysa
+(yanlışlıkla ikinci kez çalıştırmayı önlemek için) durur.
 
 ### Proje Yapısı (Docker ile)
 
@@ -225,12 +256,14 @@ Bulten/
 ├── backend/
 │   ├── Dockerfile          # Python 3.12-slim Image
 │   ├── .env                # Ortam değişkenleri (Git'e eklemeyin!)
+│   ├── migrate_sqlite_to_postgres.py  # Bir kerelik SQLite → Postgres veri göçü
 │   └── ...
 ├── frontend/
 │   ├── Dockerfile          # Multi-Stage: Node build → Nginx serve
 │   ├── nginx.conf          # Nginx Konfigürasyonu (API-Proxy + SPA-Fallback)
 │   └── ...
-├── docker-compose.yml      # Servis orkestrasyon
+├── docker-compose.yml      # Servis orkestrasyon (db: Postgres, backend, frontend)
+├── .env                    # POSTGRES_*/JWT_SECRET_KEY (Git'e eklemeyin!)
 └── README.md
 ```
 
@@ -403,6 +436,7 @@ Bulten/
 │   │   └── main.py          # FastAPI Uygulaması
 │   ├── Dockerfile           # Python 3.12-slim Image
 │   ├── requirements.txt
+│   ├── migrate_sqlite_to_postgres.py  # Bir kerelik SQLite → Postgres veri göçü
 │   └── .env                 # Ortam değişkenleri (Git'e eklemeyin!)
 ├── frontend/
 │   ├── src/
@@ -518,8 +552,7 @@ docker compose up -d
 
 ```bash
 # Veritabanını sıfırlayın (Dikkat: tüm veriler silinir!)
-docker compose down
-rm data/news_summary.db
+docker compose down -v   # -v Postgres volume'ünü de siler
 docker compose up -d
 ```
 
