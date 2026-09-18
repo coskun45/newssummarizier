@@ -310,6 +310,7 @@ Bulten/
 OPENAI_API_KEY=your-key-here
 DEFAULT_MODEL=gpt-3.5-turbo
 DETAILED_MODEL=gpt-4-turbo-preview
+OPENAI_TIMEOUT_SECONDS=60.0  # tek bir OpenAI isteği için üst sınır (saniye)
 
 # Veritabanı
 DATABASE_URL=sqlite:///./news_summary.db

@@ -24,6 +24,7 @@ def get_openai_client() -> AsyncOpenAI:
         _client = AsyncOpenAI(
             api_key=settings.openai_api_key,
             max_retries=2,
+            timeout=settings.openai_timeout_seconds,
         )
     return _client
 

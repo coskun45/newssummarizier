@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     # OpenAI Configuration
     default_model: str = "gpt-4o-mini"
     detailed_model: str = "gpt-4o"
+    openai_timeout_seconds: float = 60.0  # per-request cap; SDK default (~10min) is otherwise unbounded
     max_tokens_input: int = 4000
     max_tokens_output_brief: int = 150
     max_tokens_output_standard: int = 300
