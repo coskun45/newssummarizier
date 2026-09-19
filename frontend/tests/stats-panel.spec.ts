@@ -42,7 +42,8 @@ test('shows feed/priority/archive/favorite/category stats on Ana Sayfa without a
   await expect(highCard).toContainText('2');
 
   const medCard = page.locator('.stats-priority-card').filter({ hasText: 'Orta' });
-  await expect(medCard).toContainText('1');
+  // 1 explicit 'med' article + the starred one (mock default priority is 'med')
+  await expect(medCard).toContainText('2');
 
   const lowCard = page.locator('.stats-priority-card').filter({ hasText: 'Düşük' });
   await expect(lowCard).toContainText('1');

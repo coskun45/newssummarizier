@@ -38,7 +38,7 @@ class Article(Base):
     raw_content = Column(Text)  # Full HTML/text content
     cleaned_content = Column(Text)  # Extracted main content
     image_url = Column(String, nullable=True)  # Hero image (RSS media:content/enclosure, falls back to page og:image)
-    status = Column(String, default="pending", index=True)  # pending, scraped, summarized, failed, filtered
+    status = Column(String, default="pending", index=True)  # pending, scraped, summarized (>=1 summary + severity label), failed, filtered
     importance = Column(String, nullable=True)  # "important" | "unimportant"
     priority = Column(String, nullable=True)    # "high" | "med" | "low"
     is_read = Column(Boolean, default=False, nullable=False)

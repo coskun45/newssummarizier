@@ -519,6 +519,8 @@ async def process_article_by_id(article_id: int) -> dict:
             crud.delete_article_summaries(db, article.id)
 
             crud.update_article_importance(db=db, article_id=article.id, importance=importance, priority=priority)
+            # It now has a label, so it is no longer an Error: send it (back) to the unread list.
+            crud.mark_article_unread(db, article.id)
 
             if importance == "unimportant":
                 crud.update_article_status(db=db, article_id=article.id, status="filtered")
@@ -543,6 +545,8 @@ async def process_article_by_id(article_id: int) -> dict:
             crud.update_article_status(db=db, article_id=article.id, status="failed")
             return {"article_id": article.id, "status": "failed", "cost": 0.0, "success": False}
 
+        summaries_created = 0
+
         # Generate summaries (only for important articles)
         if is_important:
             try:
@@ -560,13 +564,19 @@ async def process_article_by_id(article_id: int) -> dict:
                         result = await generate_summary(title=article.title, content=truncate_content(content), summary_type=summary_type)
                         total_cost += result.get("cost", 0.0)
                         crud.create_summary(db=db, article_id=article.id, summary_text=result["summary_text"], summary_type=summary_type, model_used=result.get("model_used"), tokens_used=result.get("tokens_used", 0), cost=result.get("cost", 0.0))
+                        summaries_created += 1
                     except Exception as e:
                         crud.create_log(db=db, article_id=article.id, agent_name="summarizer", status="error", message=f"Failed to generate {summary_type} summary", error_details=str(e))
 
             except Exception as e:
                 logger.error(f"Summary generation loop failed: {e}")
 
-        # Mark as summarized
+        # "summarized" is reserved for articles that actually got at least one summary
+        if summaries_created == 0:
+            crud.update_article_status(db=db, article_id=article.id, status="failed")
+            crud.create_log(db=db, article_id=article.id, agent_name="article_processor", status="error", message="No summary could be generated — article left as failed")
+            return {"article_id": article.id, "status": "failed", "cost": total_cost, "success": False}
+
         crud.update_article_status(db=db, article_id=article.id, status="summarized")
         crud.create_log(db=db, article_id=article.id, agent_name="article_processor", status="success", message=f"Article processing completed. Cost: ${total_cost:.4f}")
 

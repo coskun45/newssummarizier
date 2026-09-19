@@ -35,8 +35,11 @@ async def lifespan(app: FastAPI):
     from app.db import crud
     with SessionLocal() as db:
         stale = crud.reset_stale_pending_articles(db)
+        fixed = crud.fix_summarized_status(db)
     if stale:
         logger.warning(f"Reset {stale} article(s) stuck in 'pending' to 'failed'")
+    if fixed:
+        logger.warning(f"Reset {fixed} article(s) wrongly marked 'summarized' to 'failed'")
 
     # Seed database with initial data (only creates feed and topics if missing)
     from app.db.seed import seed_database

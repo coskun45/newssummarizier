@@ -174,6 +174,9 @@ async def article_processor_node(state: NewsProcessingState) -> Dict[str, Any]:
             priority = categorization.get("priority")
             topics = categorization.get("topics", [])
 
+            if importance != "unimportant" and priority not in ("high", "med", "low"):
+                raise ValueError(f"Important article came back without a valid priority: {priority!r}")
+
             crud.update_article_importance(db=db, article_id=db_article.id, importance=importance, priority=priority)
             article["topics"] = topics
 
@@ -217,6 +220,7 @@ async def article_processor_node(state: NewsProcessingState) -> Dict[str, Any]:
         except Exception as e:
             logger.error(f"Topic categorization failed: {e}")
             article["topics"] = []
+            db.rollback()  # a failed DB write above would otherwise poison the session
             crud.create_log(
                 db=db,
                 article_id=db_article.id,
@@ -225,9 +229,28 @@ async def article_processor_node(state: NewsProcessingState) -> Dict[str, Any]:
                 message="Failed to categorize topics",
                 error_details=str(e)
             )
+            # No severity label => the article is an "Error" article. Don't spend money on
+            # summaries or mark it "summarized"; leave it "failed" so the user can retry it.
+            crud.remove_article_topics(db, db_article.id)
+            crud.update_article_importance(db=db, article_id=db_article.id, importance=None, priority=None)
+            crud.update_article_status(db=db, article_id=db_article.id, status="failed")
+            article["status"] = "failed"
+            errors = state.get("errors", [])
+            errors.append({
+                "node": "topic_categorizer",
+                "article_url": article.get("url"),
+                "error": str(e),
+                "timestamp": datetime.utcnow().isoformat()
+            })
+            return {
+                "current_article_index": index + 1,
+                "errors": errors,
+                "should_continue": index + 1 < len(articles)
+            }
 
         # Step 4: Generate summaries based on user settings
         total_cost = 0.0
+        summaries_created = 0
         content_for_summary = article.get("cleaned_content") or article.get("raw_content", "")
         
         if content_for_summary:
@@ -265,6 +288,7 @@ async def article_processor_node(state: NewsProcessingState) -> Dict[str, Any]:
                         tokens_used=summary_result["tokens_used"],
                         cost=summary_result["cost"]
                     )
+                    summaries_created += 1
                     
                 except Exception as e:
                     logger.error(f"Summary generation failed for {summary_type}: {e}")
@@ -278,17 +302,27 @@ async def article_processor_node(state: NewsProcessingState) -> Dict[str, Any]:
                         error_details=str(e)
                     )
         
-        # Update article status to summarized
-        crud.update_article_status(db=db, article_id=db_article.id, status="summarized")
-        crud.create_log(
-            db=db,
-            article_id=db_article.id,
-            agent_name="article_processor",
-            status="success",
-            message=f"Article processing completed. Cost: ${total_cost:.4f}"
-        )
+        # "summarized" is reserved for articles that actually got at least one summary
+        final_status = "summarized" if summaries_created > 0 else "failed"
+        crud.update_article_status(db=db, article_id=db_article.id, status=final_status)
+        if summaries_created > 0:
+            crud.create_log(
+                db=db,
+                article_id=db_article.id,
+                agent_name="article_processor",
+                status="success",
+                message=f"Article processing completed. Cost: ${total_cost:.4f}"
+            )
+        else:
+            crud.create_log(
+                db=db,
+                article_id=db_article.id,
+                agent_name="article_processor",
+                status="error",
+                message="No summary could be generated — article left as failed"
+            )
         
-        article["status"] = "summarized"
+        article["status"] = final_status
         
         # Update state
         processed = state.get("processed_articles", [])

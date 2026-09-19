@@ -61,8 +61,10 @@ export function makeArticle(overrides: Partial<MockArticle> = {}): MockArticle {
     published_at: now,
     fetched_at: now,
     status: 'summarized',
-    importance: null,
-    priority: null,
+    // Labelled by default: an article without a severity label is an "Error" article, which
+    // is kept out of the unread list — specs that want one pass importance/priority: null.
+    importance: 'important',
+    priority: 'med',
     image_url: null,
     topics: [],
     has_summaries: false,
@@ -165,9 +167,11 @@ export interface MockApiOverrides {
   generatedBulletins?: GeneratedBulletin[];
 }
 
-/** Mirrors the backend's "Error" group: no severity label (not even Önemsiz) and not mid-processing. */
+/** Mirrors the backend's "Error" group: no severity label (not even Önemsiz) or status `failed`,
+ * and not mid-processing. */
 export function isErrorArticle(a: MockArticle): boolean {
-  return !a.priority && a.importance !== 'unimportant' && a.status !== 'pending' && a.status !== 'scraped';
+  if (a.status === 'pending' || a.status === 'scraped') return false;
+  return (!a.priority && a.importance !== 'unimportant') || a.status === 'failed';
 }
 
 function computeCounts(articles: MockArticle[]) {
@@ -180,14 +184,15 @@ function computeCounts(articles: MockArticle[]) {
   let error_count = 0;
 
   for (const a of articles) {
-    if (!a.is_read) {
+    // Error articles are not "unread work" — they are counted in error_count only
+    if (!a.is_read && !isErrorArticle(a)) {
       const feedKey = String(a.feedId);
       by_feed[feedKey] = (by_feed[feedKey] ?? 0) + 1;
 
       unread_count += 1;
       if (a.priority) by_priority[a.priority] = (by_priority[a.priority] ?? 0) + 1;
       if (a.importance === 'unimportant') unimportant_count += 1;
-    } else {
+    } else if (a.is_read) {
       read_count += 1;
     }
     if (a.is_starred) starred_count += 1;
@@ -233,7 +238,8 @@ function matchesArticleFilters(a: MockArticle, params: URLSearchParams): boolean
   const isStarred = params.get('is_starred');
   if (isStarred !== null && a.is_starred !== (isStarred === 'true')) return false;
 
-  if (params.get('is_error') === 'true' && !isErrorArticle(a)) return false;
+  const isError = params.get('is_error');
+  if (isError !== null && isErrorArticle(a) !== (isError === 'true')) return false;
 
   const topicIds = parseIdList(params.get('topic_ids'));
   if (topicIds && !a.topics.some((t) => topicIds.includes(t.id))) return false;
@@ -424,6 +430,7 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
         a.importance = 'important';
         a.priority = 'med';
         a.status = 'summarized';
+        a.is_read = false; // labelled now -> back to the unread list
       }
       return json({ queued: targets.length, article_ids: targets.map((a) => a.id) });
     }

@@ -155,13 +155,20 @@ def delete_article(db: Session, article_id: int) -> bool:
 ERROR_EXCLUDED_STATUSES = ("pending", "scraped")
 
 
-def _error_clause():
-    """SQL clause for the "Error" group: articles that never received a severity label
-    (no priority and not marked unimportant). Articles still being processed
-    (pending/scraped) are excluded so in-flight work isn't flagged as an error."""
+def _unlabelled_clause():
+    """No severity label: no priority and not marked unimportant (Önemsiz)."""
+    return models.Article.priority.is_(None) & or_(
+        models.Article.importance.is_(None), models.Article.importance != "unimportant"
+    )
+
+
+def error_clause():
+    """SQL clause for the "Error" group: articles that could not be fully processed —
+    either they never received a severity label, or they ended up `failed` (e.g. labelled
+    but no summary could be generated). Articles still being processed (pending/scraped)
+    are excluded so in-flight work isn't flagged as an error."""
     return (
-        models.Article.priority.is_(None)
-        & or_(models.Article.importance.is_(None), models.Article.importance != "unimportant")
+        (_unlabelled_clause() | (models.Article.status == "failed"))
         & models.Article.status.notin_(ERROR_EXCLUDED_STATUSES)
     )
 
@@ -224,9 +231,9 @@ def get_articles(
     if is_starred is not None:
         query = query.filter(models.Article.is_starred == is_starred)
 
-    # Filter by "Error" group (no severity label)
-    if is_error:
-        query = query.filter(_error_clause())
+    # Filter by "Error" group (no severity label): True = only errors, False = exclude them
+    if is_error is not None:
+        query = query.filter(error_clause() if is_error else ~error_clause())
 
     # Filter by published date range
     if start_date:
@@ -299,8 +306,8 @@ def count_articles(
     if is_starred is not None:
         query = query.filter(models.Article.is_starred == is_starred)
 
-    if is_error:
-        query = query.filter(_error_clause())
+    if is_error is not None:
+        query = query.filter(error_clause() if is_error else ~error_clause())
 
     if start_date:
         query = query.filter(models.Article.published_at >= start_date)
@@ -443,8 +450,8 @@ def mark_articles_read_bulk(
         if is_starred is not None:
             query = query.filter(models.Article.is_starred == is_starred)
 
-        if is_error:
-            query = query.filter(_error_clause())
+        if is_error is not None:
+            query = query.filter(error_clause() if is_error else ~error_clause())
 
         if start_date:
             query = query.filter(models.Article.published_at >= start_date)
@@ -470,7 +477,7 @@ def mark_articles_read_bulk(
 
 def count_error_articles(db: Session) -> int:
     """Number of articles in the "Error" group (no severity label)."""
-    return db.query(func.count(models.Article.id)).filter(_error_clause()).scalar() or 0
+    return db.query(func.count(models.Article.id)).filter(error_clause()).scalar() or 0
 
 
 def get_error_article_ids(
@@ -480,12 +487,22 @@ def get_error_article_ids(
 ) -> List[int]:
     """Ids of articles currently in the "Error" group, optionally restricted to
     `article_ids` and/or `feed_ids`. Ids that aren't errors are silently dropped."""
-    query = db.query(models.Article.id).filter(_error_clause())
+    query = db.query(models.Article.id).filter(error_clause())
     if article_ids is not None:
         query = query.filter(models.Article.id.in_(article_ids))
     if feed_ids:
         query = query.filter(models.Article.feed_id.in_(feed_ids))
     return [row[0] for row in query.order_by(desc(models.Article.published_at)).all()]
+
+
+def mark_article_unread(db: Session, article_id: int) -> Optional[models.Article]:
+    """Put an article back into the unread list (used once a re-processed Error article got a label)."""
+    article = db.query(models.Article).filter(models.Article.id == article_id).first()
+    if article:
+        article.is_read = False
+        db.commit()
+        db.refresh(article)
+    return article
 
 
 def mark_articles_pending(db: Session, article_ids: List[int]) -> int:
@@ -506,6 +523,20 @@ def reset_stale_pending_articles(db: Session) -> int:
     count = db.query(models.Article).filter(models.Article.status == "pending").update(
         {models.Article.status: "failed"}, synchronize_session=False
     )
+    db.commit()
+    return count
+
+
+def fix_summarized_status(db: Session) -> int:
+    """Normalize legacy rows: "summarized" is reserved for articles that have at least one
+    summary AND a severity label. Anything else marked "summarized" (older pipeline runs
+    that swallowed a failed categorization/summarization) becomes "failed". Idempotent.
+    Returns the number of articles changed."""
+    has_summary = db.query(models.Summary.id).filter(models.Summary.article_id == models.Article.id).exists()
+    count = db.query(models.Article).filter(
+        models.Article.status == "summarized",
+        or_(~has_summary, _unlabelled_clause()),
+    ).update({models.Article.status: "failed"}, synchronize_session=False)
     db.commit()
     return count
 
@@ -765,7 +796,8 @@ def get_topics_with_counts(db: Session, feed_id: int = None) -> List[Dict[str, A
     query = db.query(
         models.Topic,
         func.count(models.ArticleTopic.article_id).label('article_count'),
-        func.sum(case((models.Article.is_read.is_(False), 1), else_=0)).label('unread_count')
+        # Error articles (no severity label) don't count as unread — they live in the Error tab
+        func.sum(case((models.Article.is_read.is_(False) & ~error_clause(), 1), else_=0)).label('unread_count')
     ).outerjoin(
         models.ArticleTopic,
         models.ArticleTopic.topic_id == models.Topic.id

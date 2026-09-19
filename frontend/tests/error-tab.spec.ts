@@ -35,7 +35,7 @@ test('Error tab sits next to Favori and only lists unlabelled articles', async (
   await expect(page.getByText('Wird gerade verarbeitet')).toHaveCount(0);
 });
 
-test('unlabelled article carries a Hata badge in the normal tabs too', async ({ page }) => {
+test('error articles are kept out of the unread list and its counts', async ({ page }) => {
   await loginAs(page);
   await mockApi(page, {
     articles: [
@@ -45,10 +45,76 @@ test('unlabelled article carries a Hata badge in the normal tabs too', async ({ 
   });
   await openNews(page);
 
-  const errCard = page.locator('.article-card', { hasText: 'Kein Label' });
-  const okCard = page.locator('.article-card', { hasText: 'Hoch' });
-  await expect(errCard.getByText('Hata')).toBeVisible();
-  await expect(okCard.getByText('Hata')).toHaveCount(0);
+  const unreadTab = page.getByRole('button', { name: 'Okunmamışlar' });
+  // Only the labelled article counts as unread
+  await expect(unreadTab).toContainText('1');
+  await expect(page.locator('.article-list').getByText('Hoch')).toBeVisible();
+  await expect(page.getByText('Kein Label')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Error' })).toContainText('1');
+});
+
+test('the unread list asks the API to exclude error articles', async ({ page }) => {
+  await loginAs(page);
+  await mockApi(page, { articles: [errorArticle('Kein Label')] });
+  const req = page.waitForRequest((r) => {
+    const q = new URL(r.url()).searchParams;
+    return r.url().includes('/articles/?') && q.get('is_read') === 'false' && q.get('is_error') === 'false';
+  });
+  await openNews(page);
+  await req;
+});
+
+test('an unread-tab "archive all" leaves error articles alone', async ({ page }) => {
+  await loginAs(page);
+  await mockApi(page, {
+    articles: [
+      errorArticle('Kein Label'),
+      makeArticle({ title: 'Hoch', importance: 'important', priority: 'high' }),
+    ],
+  });
+  await openNews(page);
+
+  const req = page.waitForRequest((r) => r.url().endsWith('/articles/mark-read-bulk')
+    && r.postDataJSON()?.mark_all === true && r.postDataJSON()?.is_error === false);
+  await page.getByRole('button', { name: 'Tümünü Arşive Gönder', exact: true }).first().click();
+  await req;
+
+  await page.getByRole('button', { name: 'Error' }).click();
+  await expect(page.getByText('Kein Label')).toBeVisible();
+});
+
+test('a read error article shows the Hata badge in the archive', async ({ page }) => {
+  await loginAs(page);
+  await mockApi(page, {
+    articles: [
+      makeArticle({ title: 'Kein Label', importance: null, priority: null, is_read: true }),
+      makeArticle({ title: 'Hoch', importance: 'important', priority: 'high', is_read: true }),
+    ],
+  });
+  await openNews(page);
+  await page.getByRole('button', { name: 'Arşiv', exact: true }).click();
+
+  await expect(page.locator('.article-card', { hasText: 'Kein Label' }).getByText('Hata')).toBeVisible();
+  await expect(page.locator('.article-card', { hasText: 'Hoch' }).getByText('Hata')).toHaveCount(0);
+});
+
+test('a successfully re-processed error article moves to the unread list and counts update', async ({ page }) => {
+  await loginAs(page);
+  await mockApi(page, {
+    articles: [
+      makeArticle({ title: 'Retry Me', importance: null, priority: null, is_read: true }),
+    ],
+  });
+  await openNews(page);
+  await expect(page.getByRole('button', { name: 'Okunmamışlar' })).not.toContainText('1');
+
+  await page.getByRole('button', { name: 'Error' }).click();
+  await page.locator('.article-card', { hasText: 'Retry Me' }).getByRole('button', { name: 'Tekrar dene' }).click();
+  await expect(page.getByText('Hatalı haber yok')).toBeVisible();
+
+  await expect(page.getByRole('button', { name: 'Okunmamışlar' })).toContainText('1');
+  await page.getByRole('button', { name: 'Okunmamışlar' }).click();
+  await expect(page.locator('.article-list').getByText('Retry Me')).toBeVisible();
 });
 
 test('single "Tekrar dene" re-runs just that article and it leaves the Error tab', async ({ page }) => {
@@ -104,6 +170,28 @@ test('bulk: "Tümünü Tekrar Dene" asks for confirmation then re-runs every err
     (r) => r.url().endsWith('/articles/reprocess') && r.method() === 'POST' && r.postDataJSON()?.all_errors === true
   );
   await page.getByRole('button', { name: 'Tümünü Tekrar Dene' }).click();
+  await req;
+
+  await expect(page.getByText('Hatalı haber yok')).toBeVisible();
+});
+
+test('a labelled article whose processing failed (no summary) is an error and can be retried', async ({ page }) => {
+  await loginAs(page);
+  const failed = makeArticle({ title: 'High No Summary', importance: 'important', priority: 'high', status: 'failed' });
+  await mockApi(page, {
+    articles: [failed, makeArticle({ title: 'Fine', importance: 'important', priority: 'high' })],
+  });
+  await openNews(page);
+
+  // kept out of the unread list, listed in the Error tab
+  await expect(page.locator('.article-list').getByText('High No Summary')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Error' }).click();
+  const card = page.locator('.article-card', { hasText: 'High No Summary' });
+  await expect(card.getByText('Hata')).toBeVisible();
+
+  const req = page.waitForRequest((r) => r.url().endsWith('/articles/reprocess')
+    && JSON.stringify(r.postDataJSON()) === JSON.stringify({ article_ids: [failed.id] }));
+  await card.getByRole('button', { name: 'Tekrar dene' }).click();
   await req;
 
   await expect(page.getByText('Hatalı haber yok')).toBeVisible();

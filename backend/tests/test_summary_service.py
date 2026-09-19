@@ -229,3 +229,124 @@ def test_reprocess_task_cancellation_does_not_strand_articles(monkeypatch):
     # articles 2 and 3 were never finished -> back to "failed" (visible in Error), not "pending"
     assert marked == [(2, "failed"), (3, "failed")]
     assert background.get_reprocess_status() == {"status": "done", "total": 3, "done": 3, "failed": 2}
+
+
+def test_reprocess_without_any_summary_is_failed_not_summarized(reprocess_env, monkeypatch, db_session):
+    """Regression: an article was marked "summarized" even when no summary was created."""
+    feed = _make_feed(db_session)
+    article = _make_article(db_session, feed.id, status="failed", cleaned_content="body")
+    _set_categorization(monkeypatch, reprocess_env,
+                        {"importance": "important", "priority": "low", "topics": []})
+
+    async def broken_summary(**kwargs):
+        raise RuntimeError("openai down")
+
+    monkeypatch.setattr(reprocess_env, "generate_summary", broken_summary)
+
+    result = asyncio.run(reprocess_env.process_article_by_id(article.id))
+
+    assert result["status"] == "failed" and result["success"] is False
+    db_session.expire_all()
+    assert article.status == "failed"
+    assert article.priority == "low"  # it did get a label, so it leaves the Error group
+
+
+def test_reprocess_success_sends_article_back_to_unread(reprocess_env, monkeypatch, db_session):
+    feed = _make_feed(db_session)
+    article = _make_article(db_session, feed.id, status="failed", cleaned_content="body", is_read=True)
+    _set_categorization(monkeypatch, reprocess_env,
+                        {"importance": "important", "priority": "high", "topics": []})
+
+    asyncio.run(reprocess_env.process_article_by_id(article.id))
+
+    db_session.expire_all()
+    assert article.is_read is False and article.status == "summarized"
+
+
+def test_reprocess_failure_leaves_read_state_alone(reprocess_env, monkeypatch, db_session):
+    feed = _make_feed(db_session)
+    article = _make_article(db_session, feed.id, status="failed", cleaned_content="body", is_read=True)
+    _set_categorization(monkeypatch, reprocess_env, error=RuntimeError("openai down"))
+
+    asyncio.run(reprocess_env.process_article_by_id(article.id))
+
+    db_session.expire_all()
+    assert article.is_read is True
+
+
+def test_fix_summarized_status_only_touches_wrongly_marked_articles(db_session):
+    feed = _make_feed(db_session)
+    good = _make_article(db_session, feed.id, status="summarized", importance="important", priority="high")
+    _make_summary(db_session, good.id)
+    no_summary = _make_article(db_session, feed.id, status="summarized", importance="important", priority="med")
+    unlabelled = _make_article(db_session, feed.id, status="summarized")
+    _make_summary(db_session, unlabelled.id)
+    filtered = _make_article(db_session, feed.id, status="filtered", importance="unimportant")
+
+    assert crud.fix_summarized_status(db_session) == 2
+    assert crud.fix_summarized_status(db_session) == 0  # idempotent
+
+    db_session.expire_all()
+    assert good.status == "summarized"
+    assert no_summary.status == "failed"
+    assert unlabelled.status == "failed"
+    assert filtered.status == "filtered"
+
+
+def test_pipeline_node_categorization_failure_is_failed_not_summarized(monkeypatch, db_session):
+    """Regression: the feed pipeline swallowed a failed categorization, still generated
+    summaries and marked the unlabelled article "summarized"."""
+    from sqlalchemy.orm import sessionmaker
+    from app.agents import nodes
+
+    monkeypatch.setattr(nodes, "SessionLocal", sessionmaker(bind=db_session.get_bind(), expire_on_commit=False))
+    feed = _make_feed(db_session)
+
+    async def fake_extract(url):
+        return "some body text", None, None
+
+    async def failing_categorize(title):
+        raise RuntimeError("openai down")
+
+    summary_calls = []
+
+    async def fake_summary(**kwargs):
+        summary_calls.append(kwargs)
+        return {"summary_text": "s", "model_used": "m", "tokens_used": 1, "cost": 0.0}
+
+    monkeypatch.setattr(nodes, "extract_article_content", fake_extract)
+    monkeypatch.setattr(nodes, "categorize_and_prioritize_article", failing_categorize)
+    monkeypatch.setattr(nodes, "generate_summary", fake_summary)
+
+    state = {
+        "feed_id": feed.id, "feed_url": feed.url, "current_article_index": 0,
+        "rss_articles": [{"url": "https://example.com/x", "title": "T", "raw_content": "raw"}],
+        "processed_articles": [], "errors": [], "total_cost": 0.0, "should_continue": True,
+    }
+
+    out = asyncio.run(nodes.article_processor_node(state))
+
+    db_session.expire_all()
+    article = crud.get_article_by_url(db_session, "https://example.com/x")
+    assert article.status == "failed"
+    assert article.priority is None and article.importance is None
+    assert summary_calls == []  # no money spent summarizing an unlabelled article
+    assert out["current_article_index"] == 1 and out["should_continue"] is False
+    assert crud.get_error_article_ids(db_session) == [article.id]
+
+
+def test_reprocess_recovers_labelled_failed_article(reprocess_env, monkeypatch, db_session):
+    """A labelled article stuck on "failed" (no summary) gets its summaries on a retry and leaves the Error group."""
+    feed = _make_feed(db_session)
+    article = _make_article(db_session, feed.id, status="failed", importance="important",
+                            priority="high", cleaned_content="body", is_read=True)
+    _set_categorization(monkeypatch, reprocess_env,
+                        {"importance": "important", "priority": "high", "topics": []})
+    assert crud.get_error_article_ids(db_session) == [article.id]
+
+    result = asyncio.run(reprocess_env.process_article_by_id(article.id))
+
+    assert result["success"] is True
+    db_session.expire_all()
+    assert article.status == "summarized" and article.is_read is False
+    assert crud.get_error_article_ids(db_session) == []

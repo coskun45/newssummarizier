@@ -178,8 +178,9 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
       // "Önemli" (starred) and "Error" show their group regardless of read state
       is_read: (activeSection === 'important' || activeSection === 'error') ? undefined : activeSection === 'unread' ? false : true,
       is_starred: activeSection === 'important' ? true : undefined,
-      // "Error" = articles that never received a severity label
-      is_error: activeSection === 'error' ? true : undefined,
+      // "Error" = articles that never received a severity label. They are listed only in the
+      // Error tab and kept out of the unread list/counts until a re-run gives them a label.
+      is_error: activeSection === 'error' ? true : activeSection === 'unread' ? false : undefined,
     };
   }, [selectedTopics, debouncedSearch, selectedFeedIds, importanceMode, selectedPriority, publishedFilter, fetchedFilter, activeSection]);
 

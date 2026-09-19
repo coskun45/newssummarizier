@@ -739,3 +739,90 @@ def test_reprocess_status_endpoint_reports_idle_shape(client, auth_headers):
 
     assert resp.status_code == 200
     assert set(resp.json()) == {"status", "total", "done", "failed"}
+
+
+def test_counts_exclude_error_articles_from_unread_and_by_feed(client, auth_headers, db_session):
+    feed, arts = _error_fixture(db_session)
+
+    body = client.get("/api/articles/counts", headers=auth_headers).json()
+
+    # 3 errors are excluded; unread = high + unimportant + pending + scraped
+    assert body["unread_count"] == 4
+    assert body["by_feed"][str(feed.id)] == 4
+    assert body["error_count"] == 3
+
+
+def test_list_is_error_false_excludes_error_articles(client, auth_headers, db_session):
+    _, arts = _error_fixture(db_session)
+
+    resp = client.get("/api/articles/?is_error=false&is_read=false", headers=auth_headers)
+
+    titles = {a["title"] for a in resp.json()["articles"]}
+    assert titles == {"high", "unimp", "pending", "scraped"}
+    assert resp.json()["total"] == 4
+
+
+def test_mark_all_read_from_unread_tab_leaves_error_articles_unread(client, auth_headers, db_session):
+    _, arts = _error_fixture(db_session)
+
+    resp = client.post("/api/articles/mark-read-bulk",
+                       json={"mark_all": True, "is_read": False, "is_error": False}, headers=auth_headers)
+
+    assert resp.json()["marked_count"] == 4
+    db_session.expire_all()
+    assert arts["error"].is_read is False and arts["error_failed"].is_read is False
+    assert arts["high"].is_read is True
+
+
+def test_topic_unread_count_excludes_error_articles(client, auth_headers, db_session):
+    feed = _make_feed(db_session)
+    topic = _make_topic(db_session, "Politik")
+    ok = _make_article(db_session, feed.id, importance="important", priority="high", status="summarized")
+    err = _make_article(db_session, feed.id, status="summarized", importance="important")
+    _make_article_topic(db_session, ok.id, topic.id)
+    _make_article_topic(db_session, err.id, topic.id)
+
+    body = client.get("/api/topics/", headers=auth_headers).json()
+
+    assert body[0]["article_count"] == 2
+    assert body[0]["unread_count"] == 1
+
+
+def _labelled_failed(db_session):
+    """Labelled (Yüksek) article whose summarization failed -> status "failed"."""
+    feed = _make_feed(db_session)
+    ok = _make_article(db_session, feed.id, title="ok-high", importance="important",
+                       priority="high", status="summarized")
+    failed = _make_article(db_session, feed.id, title="high-no-summary", importance="important",
+                           priority="high", status="failed")
+    return feed, ok, failed
+
+
+def test_labelled_but_failed_article_is_an_error_article(client, auth_headers, db_session):
+    """Regression: a labelled article left `failed` (no summary) had no retry path because the
+    Error group only contained unlabelled articles."""
+    _, ok, failed = _labelled_failed(db_session)
+
+    listed = client.get("/api/articles/?is_error=true", headers=auth_headers).json()
+
+    assert [a["id"] for a in listed["articles"]] == [failed.id]
+    assert client.get("/api/articles/counts", headers=auth_headers).json()["error_count"] == 1
+
+
+def test_labelled_failed_article_is_excluded_from_unread_and_priority_counts(client, auth_headers, db_session):
+    _labelled_failed(db_session)
+
+    body = client.get("/api/articles/counts", headers=auth_headers).json()
+
+    assert body["unread_count"] == 1
+    assert body["by_priority"] == {"high": 1}
+
+
+def test_reprocess_accepts_labelled_failed_article(client, auth_headers, db_session, captured_reprocess):
+    _, ok, failed = _labelled_failed(db_session)
+
+    resp = client.post("/api/articles/reprocess",
+                       json={"article_ids": [ok.id, failed.id]}, headers=auth_headers)
+
+    assert resp.json()["article_ids"] == [failed.id]
+    assert captured_reprocess == [[failed.id]]

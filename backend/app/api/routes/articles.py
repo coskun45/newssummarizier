@@ -96,7 +96,7 @@ async def list_articles(
     fetched_to: Optional[datetime] = Query(None, description="Fetched date to (ISO 8601)"),
     is_read: Optional[bool] = Query(None, description="Filter by read status: true=read, false=unread"),
     is_starred: Optional[bool] = Query(None, description="Filter by the user-curated 'Önemli' group"),
-    is_error: Optional[bool] = Query(None, description="true = only articles without a severity label (\"Error\" group)"),
+    is_error: Optional[bool] = Query(None, description="true = only articles without a severity label (\"Error\" group), false = everything except them"),
     db: Session = Depends(get_db)
 ):
     """
@@ -376,12 +376,17 @@ async def get_article_counts(db: Session = Depends(get_db)):
     triage", so they should drop as articles are archived, not just deleted.
     """
     from sqlalchemy import func
+    # Error articles (unlabelled or failed) are not "unread work" — they are counted in
+    # error_count and listed in the Error tab instead.
+    not_error = ~crud.error_clause()
+
     priority_rows = db.query(
         models.Article.priority,
         func.count(models.Article.id)
     ).filter(
         models.Article.priority.isnot(None),
         models.Article.is_read.is_(False),
+        not_error,
     ).group_by(models.Article.priority).all()
 
     feed_rows = db.query(
@@ -389,15 +394,18 @@ async def get_article_counts(db: Session = Depends(get_db)):
         func.count(models.Article.id)
     ).filter(
         models.Article.is_read.is_(False),
+        not_error,
     ).group_by(models.Article.feed_id).all()
 
     unimportant_count = db.query(func.count(models.Article.id)).filter(
         models.Article.importance == "unimportant",
         models.Article.is_read.is_(False),
+        not_error,
     ).scalar() or 0
 
     unread_count = db.query(func.count(models.Article.id)).filter(
-        models.Article.is_read.is_(False)
+        models.Article.is_read.is_(False),
+        not_error,
     ).scalar() or 0
 
     read_count = db.query(func.count(models.Article.id)).filter(

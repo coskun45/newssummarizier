@@ -44,9 +44,10 @@ function ArticleCard({ article, isSelected = false, onToggleSelect, onDeleted, i
   const setStarredMutation = useSetArticleStarred();
   const reprocessMutation = useReprocessArticles();
 
-  // "Error": no severity label (not even Önemsiz) and not currently being processed
-  const isError = !article.priority && article.importance !== 'unimportant'
-    && article.status !== 'pending' && article.status !== 'scraped';
+  // "Error": no severity label (not even Önemsiz) or processing failed (e.g. no summary could be
+  // generated) — and not currently being processed. Mirrors the backend's error_clause.
+  const isError = article.status !== 'pending' && article.status !== 'scraped'
+    && ((!article.priority && article.importance !== 'unimportant') || article.status === 'failed');
 
   const handleToggleExpand = () => {
     setExpanded(!expanded);
