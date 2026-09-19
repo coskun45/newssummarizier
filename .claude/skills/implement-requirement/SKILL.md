@@ -67,7 +67,7 @@ bottom-up on the frontend**, so each layer compiles against the one below it.
    changes. Nodes return partial state, own their `SessionLocal()`, log via `crud.create_log`, set
    `should_continue`, route LLM calls through `summary_service` (`langgraph-agent` rule).
 5. **Config** (`app/core/config.py`) — typed Pydantic field with a default; mirror into
-   `backend/.env.example` **and** the Docker env table in `README.md` (`config-and-deploy` rule).
+   `.env.example` **and** the Docker env table in `README.md` (`config-and-deploy` rule).
 
 ### Frontend (rules under `frontend/.claude/rules/`)
 
@@ -135,7 +135,7 @@ for an independent pass on the diff.
 
 ## Wrap up
 
-- Run `/update-docs` to sync `README.md` + `backend/.env.example` if behavior, an endpoint, config,
+- Run `/update-docs` to sync `README.md` + `.env.example` if behavior, an endpoint, config,
   dependencies, or project structure changed.
 - Capture any new recurring convention/gotcha with `/add-rule`.
 - Don't commit `backend/news_summary.db` or a real `.env`.

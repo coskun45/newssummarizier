@@ -70,13 +70,15 @@ venv\Scripts\activate
 # Bağımlılıkları yükle
 pip install -r requirements.txt
 
-# .env dosyası oluştur
+# Tek yapılandırma dosyası: REPO KÖKÜNDEKİ .env
+cd ..
 copy .env.example .env
 # veya Linux/Mac'te:
 # cp .env.example .env
 ```
 
-**Önemli**: `.env` dosyasını açın ve OpenAI API Key'inizi ekleyin:
+**Önemli**: Tüm ayarlar (OpenAI, modeller, token/maliyet limitleri, Postgres, JWT, CORS) **repo
+kökündeki tek `.env` dosyasında** tutulur. Dosyayı açın ve OpenAI API Key'inizi ekleyin:
 
 ```env
 OPENAI_API_KEY=sk-your-actual-api-key-here
@@ -128,30 +130,26 @@ Uygulamayı başlatmanın en kolay yolu Docker Compose kullanmaktır. Backend ve
 
 ### Hızlı Başlangıç
 
-**1. Backend dizininde `.env` dosyası oluşturun:**
+**1. Repo kökünde `.env` dosyası oluşturun (tek yapılandırma dosyası):**
 
 ```bash
-cp backend/.env.example backend/.env
+cp .env.example .env
 ```
 
-`backend/.env` dosyasını açın ve OpenAI API Key'inizi girin:
+`.env` dosyasını açın ve OpenAI API Key'inizi girin:
 
 ```env
 OPENAI_API_KEY=sk-your-actual-api-key-here
 ```
 
-**2. İsteğe bağlı: JWT Secret ayarlayın (production için önerilir):**
-
-```bash
-# Shell'de ortam değişkeni olarak ayarla
-export JWT_SECRET_KEY="your-very-strong-random-secret"
-```
-
-Ya da proje kök dizininde `.env` dosyası oluşturun:
+**2. JWT Secret ayarlayın (Docker'da ZORUNLU)** — container `DEBUG=false` ile çalıştığı için `.env.example`'daki
+varsayılan değerle backend başlamayı reddeder. Aynı `.env` dosyasında değiştirin:
 
 ```env
 JWT_SECRET_KEY=your-very-strong-random-secret
 ```
+
+Rastgele değer üretmek için: `python -c "import secrets; print(secrets.token_hex(32))"`
 
 **3. Container'ları build edin ve başlatın:**
 
@@ -195,19 +193,29 @@ docker compose build --no-cache
 docker compose ps
 ```
 
-### Ortam Değişkenleri (docker-compose.yml)
+### Ortam Değişkenleri
+
+Tüm değişkenler repo kökündeki **tek `.env`** dosyasından gelir (şablon: `.env.example`);
+`docker-compose.yml` bu dosyayı hem `${VAR}` substitution'ı için hem de backend container'ının
+`env_file`'ı olarak yükler. Sunucuda dosya `scripts/ensure_env.py` ile ilk deploy'da otomatik üretilir
+(rastgele `POSTGRES_PASSWORD` ve `JWT_SECRET_KEY` dahil), sonraki deploy'larda mevcut değerlere dokunulmaz.
+Aşağıdaki tablo öne çıkanlardır; tam liste `.env.example`'dadır. Container içinde yalnızca `DATABASE_URL`
+(`db` host'una çevrilir), `CHECKPOINTS_DB`, `BULLETIN_STORAGE_DIR` ve `DEBUG=false` compose tarafından ezilir.
 
 | Değişken | Varsayılan | Açıklama |
 |---|---|---|
 | `OPENAI_API_KEY` | – | **(Zorunlu)** OpenAI API Key |
-| `JWT_SECRET_KEY` | `change-me-use-a-strong-secret-in-production` | JWT imza anahtarı — **`DEBUG=false` iken varsayılan değerde bırakılırsa uygulama başlamayı reddeder** |
+| `JWT_SECRET_KEY` | – (şablondaki placeholder yalnızca `DEBUG=true`'da kabul edilir) | JWT imza anahtarı — **`DEBUG=false` iken varsayılan değerde bırakılırsa uygulama başlamayı reddeder** |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | – | İlk admin kullanıcısını oluşturmak için (ikisi de set edilmelidir). Boş bırakılırsa hiç admin oluşturulmaz — bkz. `db/seed.py` |
-| `POSTGRES_USER` | `bulten` | PostgreSQL kullanıcı adı (repo kökü `.env`'den, `db` servisine ve backend'in `DATABASE_URL`'ine enjekte edilir) |
-| `POSTGRES_PASSWORD` | `changeme` | PostgreSQL şifresi — **production'da repo kökü `.env`'de güçlü bir değerle override edilmeli** |
+| `POSTGRES_USER` | `bulten` | PostgreSQL kullanıcı adı (`db` servisine ve backend'in `DATABASE_URL`'ine enjekte edilir) |
+| `POSTGRES_PASSWORD` | `changeme` | PostgreSQL şifresi — **production'da güçlü bir değer olmalı** (deploy rastgele üretir) |
 | `POSTGRES_DB` | `bulten` | PostgreSQL veritabanı adı |
 | `DATABASE_URL` | `postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}` | Backend'in bağlandığı veritabanı — `db` servisine işaret eder, doğrudan override edilmez |
-| `DEBUG` | `false` | Debug modu |
-| `CORS_ORIGINS` | `http://localhost,http://localhost:80` | İzin verilen CORS origin'leri |
+| `DEBUG` | `false` | Debug modu (container'da her zaman `false`) |
+| `CORS_ORIGINS` | `http://localhost:5173,...` | İzin verilen CORS origin'leri (deploy sunucu IP'sine ayarlar) |
+| `DEFAULT_MODEL` / `DETAILED_MODEL` | `gpt-4o-mini` / `gpt-4o` | Kategorizasyon/kısa özet ve detaylı özet modelleri |
+| `MAX_TOKENS_OUTPUT_BRIEF` / `_STANDARD` / `_DETAILED` | `1500` / `3000` / `10000` | Özet tipine göre çıktı token limiti |
+| `DAILY_COST_LIMIT` / `MONTHLY_COST_LIMIT` | `10.0` / `100.0` | Maliyet limitleri (USD) |
 
 ### Veritabanı Kalıcılığı
 
@@ -233,7 +241,7 @@ silmek veriyi kaldırır.
 
 Yerel geliştirmede (`uvicorn` ile) de aynı Docker Postgres'i kullanılır: `db` servisi
 `127.0.0.1:5432` üzerinden yalnızca localhost'a açılır. Önce `docker compose up -d db` ile DB'yi
-başlat, `backend/.env` içinde
+başlat, kök `.env` içinde
 `DATABASE_URL=postgresql+psycopg2://bulten:changeme@localhost:5432/bulten` olsun (kullanıcı/şifre/DB
 adı `POSTGRES_*` değerleriyle aynı olmalı). Böylece yerel `uvicorn` ve Docker'daki backend aynı
 veriyi görür.
@@ -258,7 +266,6 @@ Script kaynak/hedef satır sayılarını karşılaştırıp özet basar; hedef t
 Bulten/
 ├── backend/
 │   ├── Dockerfile          # Python 3.12-slim Image
-│   ├── .env                # Ortam değişkenleri (Git'e eklemeyin!)
 │   ├── migrate_sqlite_to_postgres.py  # Bir kerelik SQLite → Postgres veri göçü
 │   └── ...
 ├── frontend/
@@ -266,7 +273,9 @@ Bulten/
 │   ├── nginx.conf          # Nginx Konfigürasyonu (API-Proxy + SPA-Fallback)
 │   └── ...
 ├── docker-compose.yml      # Servis orkestrasyon (db: Postgres, backend, frontend)
-├── .env                    # POSTGRES_*/JWT_SECRET_KEY (Git'e eklemeyin!)
+├── scripts/ensure_env.py   # Sunucuda .env üretir/günceller (deploy tarafından çağrılır)
+├── .env.example            # Tek yapılandırma şablonu
+├── .env                    # TÜM ayarlar + secret'lar — tek dosya (Git'e eklemeyin!)
 └── README.md
 ```
 
@@ -441,8 +450,7 @@ Bulten/
 │   │   └── main.py          # FastAPI Uygulaması
 │   ├── Dockerfile           # Python 3.12-slim Image
 │   ├── requirements.txt
-│   ├── migrate_sqlite_to_postgres.py  # Bir kerelik SQLite → Postgres veri göçü
-│   └── .env                 # Ortam değişkenleri (Git'e eklemeyin!)
+│   └── migrate_sqlite_to_postgres.py  # Bir kerelik SQLite → Postgres veri göçü
 ├── frontend/
 │   ├── src/
 │   │   ├── components/      # React Bileşenleri
@@ -542,7 +550,7 @@ docker compose ps
 # Backend loglarını kontrol edin
 docker compose logs backend
 
-# Yaygın sebep: backend/.env'de OPENAI_API_KEY eksik
+# Yaygın sebep: kök .env'de OPENAI_API_KEY eksik
 ```
 
 **Sorun**: Koddaki değişiklikler yansımıyor

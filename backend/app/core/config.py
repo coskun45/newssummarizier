@@ -1,20 +1,27 @@
 """
 Application configuration using Pydantic Settings.
 """
+from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import model_validator
 from typing import List, Optional
 
 _DEFAULT_JWT_SECRET = "change-me-in-production-use-32-char-minimum-secret-key"
 
+# Tek yapılandırma dosyası: repo kökündeki .env (backend/app/core/ -> 3 seviye yukarı).
+# Docker'da bu yol yoktur (env compose'tan gelir), pydantic dosya yoksa sessizce atlar.
+_ROOT_ENV_FILE = Path(__file__).resolve().parents[3] / ".env"
+
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
-    
+
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_ROOT_ENV_FILE,
         env_file_encoding="utf-8",
-        case_sensitive=False
+        case_sensitive=False,
+        # Kök .env docker-compose'un POSTGRES_* gibi Settings'te olmayan anahtarlarını da içerir.
+        extra="ignore",
     )
     
     # OpenAI Configuration

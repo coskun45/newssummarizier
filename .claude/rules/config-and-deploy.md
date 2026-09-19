@@ -1,7 +1,7 @@
 ---
 paths:
   - "backend/app/core/config.py"
-  - "backend/.env.example"
+  - ".env.example"
   - "backend/Dockerfile"
   - "frontend/Dockerfile"
   - "frontend/nginx.conf"
@@ -16,7 +16,7 @@ paths:
 This is a two-service app: a Python **FastAPI** backend (`backend/`) and a **React + Vite** frontend (`frontend/`), shipped via Docker and a GitHub Actions pipeline.
 
 ## Configuration
-- **Backend config is Pydantic `BaseSettings`** in `backend/app/core/config.py`, loaded from env / `.env`. Add a new setting as a typed field with a sensible default — then document it in `backend/.env.example`. The single required (no-default) field is `openai_api_key`.
+- **Backend config is Pydantic `BaseSettings`** in `backend/app/core/config.py`, loaded from env / the single repo-root `.env` (also used by `docker-compose.yml` `env_file` and generated on servers by `scripts/ensure_env.py` from `.env.example`). Add a new setting as a typed field with a sensible default — then document it in `.env.example`. The single required (no-default) field is `openai_api_key`.
 - **NEVER hardcode secrets** — `jwt_secret_key`, `openai_api_key`, and DB URLs come from env. The default JWT secret is a dev placeholder and must be overridden in production.
 - **CORS origins are a comma-separated env string**, parsed by `settings.cors_origins_list`. Update this (not hardcoded lists) when adding a frontend origin.
 

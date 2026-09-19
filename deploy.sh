@@ -39,6 +39,9 @@ if [ -d "$APP_DIR/.git" ]; then
         mv backend/checkpoints.db data/checkpoints.db
     fi
 
+    # Eski deploy.sh sürümleri docker-compose.yml'i sunucuda sed ile değiştiriyordu
+    # (JWT secret, IP); artık tüm ayarlar .env'de — yerel değişikliği at ki pull çakışmasın.
+    git checkout -- docker-compose.yml
     git pull
 else
     warn "Repo klonlanıyor..."
@@ -47,116 +50,35 @@ else
 fi
 info "Kod hazır: $APP_DIR"
 
-# ── 3. backend/.env oluştur (ilk kurulumda) ───────────────────────────────────
-ENV_FILE="$APP_DIR/backend/.env"
-
-if [ ! -f "$ENV_FILE" ]; then
-    warn "backend/.env bulunamadı, oluşturuluyor..."
-    echo ""
-    read -p "  OpenAI API Key girin (sk-proj-...): " OPENAI_KEY
-    echo ""
-    read -p "  İlk admin e-posta adresi girin: " ADMIN_EMAIL_INPUT
-    ADMIN_PASSWORD_GENERATED=$(python3 -c "import secrets; print(secrets.token_urlsafe(18))")
-    echo ""
-    info "İlk admin şifresi üretildi: $ADMIN_PASSWORD_GENERATED"
-    warn "Bu şifreyi şimdi bir yere kaydet — tekrar gösterilmeyecek."
-    echo ""
-
-    cat > "$ENV_FILE" <<EOF
-# OpenAI
-OPENAI_API_KEY=$OPENAI_KEY
-
-# İlk admin hesabı (yalnızca veritabanı ilk kez seed edilirken kullanılır)
-ADMIN_EMAIL=$ADMIN_EMAIL_INPUT
-ADMIN_PASSWORD=$ADMIN_PASSWORD_GENERATED
-
-# Database
-DATABASE_URL=sqlite:///./news_summary.db
-CHECKPOINTS_DB=checkpoints.db
-
-# App
-APP_NAME=News Summarizer
-APP_VERSION=1.0.0
-DEBUG=False
-
-# RSS
-DEFAULT_FEED_URL=https://rss.dw.com/atom/rss-de-all
-FEED_REFRESH_INTERVAL=1800
-
-# Scraping
-SCRAPING_ENABLED=True
-SCRAPING_DELAY=1.0
-MAX_RETRIES=3
-
-# OpenAI modeller
-DEFAULT_MODEL=gpt-4o-mini
-DETAILED_MODEL=gpt-4o
-MAX_TOKENS_INPUT=40000
-MAX_TOKENS_OUTPUT_BRIEF=1500
-MAX_TOKENS_OUTPUT_STANDARD=3000
-MAX_TOKENS_OUTPUT_DETAILED=10000
-
-# Maliyet limiti
-DAILY_COST_LIMIT=10.0
-MONTHLY_COST_LIMIT=100.0
-
-# CORS (docker-compose.yml override eder)
-CORS_ORIGINS=http://localhost:5173
-EOF
-    info "backend/.env oluşturuldu"
-else
-    info "backend/.env mevcut, atlanıyor"
-fi
-
-# ── 4. JWT_SECRET_KEY üret / kontrol et ──────────────────────────────────────
-SECRETS_FILE="$APP_DIR/.jwt_secret"
-
-if [ ! -f "$SECRETS_FILE" ]; then
-    JWT_SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))")
-    echo "$JWT_SECRET" > "$SECRETS_FILE"
-    chmod 600 "$SECRETS_FILE"
-    info "JWT_SECRET_KEY üretildi → $SECRETS_FILE"
-else
-    JWT_SECRET=$(cat "$SECRETS_FILE")
-    info "JWT_SECRET_KEY mevcut, kullanılıyor"
-fi
-
-export JWT_SECRET_KEY="$JWT_SECRET"
-
-# docker-compose.yml içindeki fallback değeri gerçek secret ile değiştir
-sed -i "s|JWT_SECRET_KEY: \${JWT_SECRET_KEY:-.*}|JWT_SECRET_KEY: \"$JWT_SECRET\"|" docker-compose.yml
-info "JWT_SECRET_KEY docker-compose.yml'e yazıldı"
-
-# ── 4b. PostgreSQL kimlik bilgileri üret / kontrol et ────────────────────────
-# docker-compose.yml içindeki ${POSTGRES_...} substitution'ları repo kökündeki
-# .env dosyasından besleniyor (docker compose bunu otomatik okur). Bu dosya
-# git-ignore'lu ve 'git reset --hard' tracked olmayan dosyalara dokunmadığı
-# için sonraki otomatik deploy'larda da kalıcı kalır.
-ROOT_ENV_FILE="$APP_DIR/.env"
-
-if [ ! -f "$ROOT_ENV_FILE" ]; then
-    PG_PASSWORD=$(python3 -c "import secrets; print(secrets.token_urlsafe(24))")
-    cat > "$ROOT_ENV_FILE" <<EOF
-POSTGRES_USER=bulten
-POSTGRES_PASSWORD=$PG_PASSWORD
-POSTGRES_DB=bulten
-EOF
-    info "PostgreSQL kimlik bilgileri üretildi → $ROOT_ENV_FILE"
-else
-    info "$ROOT_ENV_FILE mevcut, atlanıyor"
-fi
-
-# ── 5. CORS — sunucu IP'sini ayarla ──────────────────────────────────────────
+# ── 3. Sunucu IP'si (CORS için) ───────────────────────────────────────────────
 SERVER_IP=$(curl -s --max-time 5 ifconfig.me || curl -s --max-time 5 api.ipify.org)
 if [ -z "$SERVER_IP" ]; then
     error "Sunucu IP'si alınamadı. İnternet bağlantısını kontrol et."
 fi
 
-sed -i "s|CORS_ORIGINS: \"http://.*\"|CORS_ORIGINS: \"http://$SERVER_IP\"|" docker-compose.yml
-info "CORS_ORIGINS → http://$SERVER_IP"
+# ── 4. Tek yapılandırma dosyası: repo kökündeki .env ─────────────────────────
+# Modeller, token/maliyet limitleri, CORS, JWT, POSTGRES_* ve secret'lar hep bu
+# dosyada. Şablon: .env.example. Dosya yoksa üretilir; eski düzenden kalan
+# backend/.env varsa içeriği taşınır (scripts/ensure_env.py). Git-ignore'lu
+# olduğu için sonraki deploy'larda kalıcıdır.
+ENV_FILE="$APP_DIR/.env"
 
-# TODO satırını da temizle
-sed -i '/# TODO: Replace YOUR_SERVER_IP/d' docker-compose.yml
+if [ ! -f "$ENV_FILE" ] && [ ! -f "$APP_DIR/backend/.env" ]; then
+    warn ".env bulunamadı, oluşturuluyor..."
+    echo ""
+    read -p "  OpenAI API Key girin (sk-proj-...): " OPENAI_API_KEY
+    echo ""
+    read -p "  İlk admin e-posta adresi girin: " ADMIN_EMAIL
+    ADMIN_PASSWORD=$(python3 -c "import secrets; print(secrets.token_urlsafe(18))")
+    echo ""
+    info "İlk admin şifresi üretildi: $ADMIN_PASSWORD"
+    warn "Bu şifreyi şimdi bir yere kaydet — tekrar gösterilmeyecek."
+    echo ""
+    export OPENAI_API_KEY ADMIN_EMAIL ADMIN_PASSWORD
+fi
+
+python3 scripts/ensure_env.py --server-ip "$SERVER_IP"
+info "CORS_ORIGINS → http://$SERVER_IP (varsayılandaysa)"
 
 # ── 7. Build & Start ──────────────────────────────────────────────────────────
 echo ""

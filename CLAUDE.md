@@ -39,7 +39,10 @@ cd frontend && npm run test:e2e                   # frontend e2e tests (Playwrig
 docker compose up --build                         # http://localhost  (API at /api)
 ```
 
-`OPENAI_API_KEY` is required (see `backend/.env.example`). SQLite DB is `backend/news_summary.db`.
+`OPENAI_API_KEY` is required. **All config lives in ONE file: the repo-root `.env`** (`cp .env.example .env`) —
+read by `docker compose`, by local `uvicorn` (via `core/config.py`), and generated on the server by
+`scripts/ensure_env.py`. The DB is PostgreSQL (`docker compose up -d db`, exposed on `127.0.0.1:5432`);
+SQLite is only used by the pytest fixtures.
 
 ## Architecture rules
 
@@ -53,8 +56,9 @@ files). The essentials:
 - **Adding a column?** Add it to the model AND append `(column, DDL)` to the `article_columns` list in `init_db()` (`db/database.py`) — it auto-ALTERs existing SQLite DBs on startup (idempotent). No separate migration scripts.
 - **Frontend never calls `axios`/endpoints directly** — go types → `services/api.ts` → `hooks/useApi.ts`
   → component. Mutations must invalidate the affected React Query keys.
-- **Config lives in three places that must agree:** `core/config.py`, `backend/.env.example`, and the
-  Docker env table in `README.md`.
+- **Config lives in three places that must agree:** `core/config.py`, the root `.env.example` (the
+  single template — there is no `backend/.env`), and the Docker env table in `README.md`. Don't
+  duplicate values in `docker-compose.yml`/`deploy.*`; they only load `.env`.
 
 ## Workflow
 
@@ -68,5 +72,5 @@ files). The essentials:
   if the change is truly untestable (e.g. a comment/typo fix).
 - **Learned a new recurring convention/gotcha** → record it with the `/add-rule` skill into
   `.claude/rules/` (do not bloat this file).
-- **Before a PR** → run the `/update-docs` skill to sync `README.md` + `backend/.env.example`.
+- **Before a PR** → run the `/update-docs` skill to sync `README.md` + `.env.example`.
 - **Don't commit** `backend/news_summary.db` or a real `.env`.

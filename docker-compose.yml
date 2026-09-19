@@ -22,25 +22,16 @@ services:
   backend:
     build:
       context: ./backend
+    # Tek yapılandırma kaynağı: repo kökündeki .env (yoksa `cp .env.example .env`).
+    # Modeller, token/maliyet limitleri, CORS, JWT vb. hepsi buradan gelir.
     env_file:
-      - ./backend/.env
+      - ./.env
+    # Aşağıdakiler .env'yi ezer — yalnızca container içinde farklı olması gerekenler:
     environment:
-      # ── Database (PostgreSQL, dockerized via the `db` service above) ───────
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-bulten}:${POSTGRES_PASSWORD:-changeme}@db:5432/${POSTGRES_DB:-bulten}
       CHECKPOINTS_DB: /app/data/checkpoints.db
       BULLETIN_STORAGE_DIR: /app/data/bulletins
-
-      # ── App ───────────────────────────────────────────────────────────────
       DEBUG: "false"
-      CORS_ORIGINS: "http://77.42.89.136"
-      APP_VERSION: ${APP_VERSION:-1.0.0}
-
-      # ── OpenAI Models (explicitly override env_file defaults) ─────────────
-      DEFAULT_MODEL: gpt-4o-mini
-      DETAILED_MODEL: gpt-4o
-
-      # ── JWT (override with a strong secret in production) ─────────────────
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-use-a-strong-secret-in-production}
     volumes:
       - ./data:/app/data
     depends_on:

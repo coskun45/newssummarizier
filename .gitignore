@@ -6,6 +6,8 @@ frontend/node_modules
 **/*.pyc
 **/*.pyo
 .env
+.env.*
+!.env.example
 backend/app/__pycache__
 
 # SQLite data — lives on the host, never in git (deploys bind-mount ./data into the container)

@@ -1,12 +1,12 @@
 ---
 name: update-docs
-description: Bring the project docs up to date before a PR. Diffs the current branch against the integration branch and maps the changes onto README.md (features, API endpoints, config, project structure, troubleshooting) and backend/.env.example, then verifies the docs against the actual code. Use before creating a PR, or whenever asked to "update the docs" / "sync documentation" for a change.
+description: Bring the project docs up to date before a PR. Diffs the current branch against the integration branch and maps the changes onto README.md (features, API endpoints, config, project structure, troubleshooting) and .env.example, then verifies the docs against the actual code. Use before creating a PR, or whenever asked to "update the docs" / "sync documentation" for a change.
 ---
 
 # Update Documentation
 
 This project (Bülten) has a **single documentation surface**: the root **`README.md`** (Turkish),
-backed by **`backend/.env.example`** as the environment-variable reference. There is no MkDocs site,
+backed by **`.env.example`** as the environment-variable reference. There is no MkDocs site,
 no public/internal split, and no doc validator — so "update the docs" means keeping `README.md` and
 `.env.example` consistent with the code on this branch.
 
@@ -51,9 +51,9 @@ If the whole branch is internal-only, there is nothing to document — say so an
   every route. Add an endpoint here only if it's a primary, user-facing one; the live source of truth
   is `http://localhost:8000/docs` (auto-generated OpenAPI). Don't try to mirror every route.
 
-## 3. Sync the env-var reference (`backend/.env.example`)
+## 3. Sync the env-var reference (`.env.example`)
 
-Any new or renamed setting in `backend/app/core/config.py` MUST appear in **`backend/.env.example`**
+Any new or renamed setting in `backend/app/core/config.py` MUST appear in **`.env.example`**
 with a safe placeholder (never a real key/secret), and — if operators set it — in the README's `.env`
 block and the Docker env table. These three must agree. Mark anything you can't confirm as
 `# TODO: verify` rather than inventing a default.
@@ -81,7 +81,7 @@ Summarize what you changed in `README.md` and `.env.example` and why, and flag a
 
 - **Updating only one of the two `Proje Yapısı` trees** — there are two (Docker section + bottom); keep
   them identical.
-- **Adding an env var to the README but not `backend/.env.example`** (or vice-versa), or not to the
+- **Adding an env var to the README but not `.env.example`** (or vice-versa), or not to the
   Docker env table — all three must agree.
 - **Putting a real API key / secret in `.env.example` or the README** — always use a placeholder.
 - **Switching the README to English** — it is Turkish; match the existing language, emoji headers, and
