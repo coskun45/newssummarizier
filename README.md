@@ -21,8 +21,8 @@ Deutsche Welle (DW) RSS beslemelerinden haber toplayan, kategorize eden ve yapay
 
 - **FastAPI**: Otomatik OpenAPI dokümantasyonu ile modern, hızlı API
 - **LangGraph**: Çok-ajanlı iş akışı orkestrasyon
-- **PostgreSQL** (Docker/production) / **SQLite** (manuel yerel geliştirme): Makaleler, özetler ve
-  meta veriler için veritabanı — bkz. [Docker ile Çalıştırma](#-docker)
+- **PostgreSQL** (Docker `db` servisi; yerel `uvicorn` geliştirmede de aynı DB kullanılır): Makaleler,
+  özetler ve meta veriler için veritabanı — bkz. [Docker ile Çalıştırma](#-docker)
 - **OpenAI**: Kategorizasyon ve özetleme için GPT-3.5-turbo ve GPT-4
 
 ### Frontend
@@ -231,9 +231,12 @@ Bu şu anlama gelir: Veriler `docker compose down` ve `git pull`/`reset --hard` 
 korunur. Sadece `docker compose down -v` (Postgres volume'ünü de siler) veya `./data` dizinini
 silmek veriyi kaldırır.
 
-Manuel/yerel geliştirmede (Docker olmadan `uvicorn` ile) varsayılan hâlâ SQLite'tır
-(`backend/.env.example`'daki `DATABASE_URL=sqlite:///./news_summary.db`) — bu iki ortam
-birbirinden bağımsızdır.
+Yerel geliştirmede (`uvicorn` ile) de aynı Docker Postgres'i kullanılır: `db` servisi
+`127.0.0.1:5432` üzerinden yalnızca localhost'a açılır. Önce `docker compose up -d db` ile DB'yi
+başlat, `backend/.env` içinde
+`DATABASE_URL=postgresql+psycopg2://bulten:changeme@localhost:5432/bulten` olsun (kullanıcı/şifre/DB
+adı `POSTGRES_*` değerleriyle aynı olmalı). Böylece yerel `uvicorn` ve Docker'daki backend aynı
+veriyi görür.
 
 **Var olan bir SQLite veritabanını Postgres'e taşımak için** (ör. önceki bir sürümden yükseltme),
 backend'i normal başlatmadan ÖNCE (aksi halde `seed_database()` topics/feeds/system_prompts'a
@@ -274,7 +277,7 @@ Bulten/
 ### İlk Adımlar
 
 1. **Backend'i başlat**: Sistem otomatik olarak:
-   - SQLite veritabanını oluşturur
+   - PostgreSQL tablolarını oluşturur
    - Kategorileri ekler (Politika, Ekonomi, Teknoloji vb.)
    - DW RSS Feed'ini ekler
    - Arka planda ilk veri çekmeyi başlatır
@@ -345,8 +348,8 @@ DEFAULT_MODEL=gpt-3.5-turbo
 DETAILED_MODEL=gpt-4-turbo-preview
 OPENAI_TIMEOUT_SECONDS=60.0  # tek bir OpenAI isteği için üst sınır (saniye)
 
-# Veritabanı
-DATABASE_URL=sqlite:///./news_summary.db
+# Veritabanı (Docker'daki Postgres: `docker compose up -d db`)
+DATABASE_URL=postgresql+psycopg2://bulten:changeme@localhost:5432/bulten
 
 # RSS Feed
 DEFAULT_FEED_URL=https://rss.dw.com/atom/rss-de-all

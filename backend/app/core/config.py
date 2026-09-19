@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     openai_api_key: str
     
     # Database
-    database_url: str = "sqlite:///./news_summary.db"
+    database_url: str = "postgresql+psycopg2://bulten:changeme@localhost:5432/bulten"
     checkpoints_db: str = "checkpoints.db"
     
     # Application Settings
