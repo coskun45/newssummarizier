@@ -152,6 +152,20 @@ def delete_article(db: Session, article_id: int) -> bool:
     return True
 
 
+ERROR_EXCLUDED_STATUSES = ("pending", "scraped")
+
+
+def _error_clause():
+    """SQL clause for the "Error" group: articles that never received a severity label
+    (no priority and not marked unimportant). Articles still being processed
+    (pending/scraped) are excluded so in-flight work isn't flagged as an error."""
+    return (
+        models.Article.priority.is_(None)
+        & or_(models.Article.importance.is_(None), models.Article.importance != "unimportant")
+        & models.Article.status.notin_(ERROR_EXCLUDED_STATUSES)
+    )
+
+
 def get_articles(
     db: Session,
     skip: int = 0,
@@ -168,7 +182,8 @@ def get_articles(
     priority: str = None,
     priorities: List[str] = None,
     is_read: bool = None,
-    is_starred: bool = None
+    is_starred: bool = None,
+    is_error: bool = None,
 ) -> List[models.Article]:
     """Get articles with optional filtering."""
     query = db.query(models.Article).options(
@@ -208,6 +223,10 @@ def get_articles(
     # Filter by is_starred (user-curated "Önemli" group)
     if is_starred is not None:
         query = query.filter(models.Article.is_starred == is_starred)
+
+    # Filter by "Error" group (no severity label)
+    if is_error:
+        query = query.filter(_error_clause())
 
     # Filter by published date range
     if start_date:
@@ -250,6 +269,7 @@ def count_articles(
     fetched_to: datetime = None,
     is_read: bool = None,
     is_starred: bool = None,
+    is_error: bool = None,
 ) -> int:
     """Count articles with optional filtering."""
     query = db.query(func.count(models.Article.id))
@@ -278,6 +298,9 @@ def count_articles(
 
     if is_starred is not None:
         query = query.filter(models.Article.is_starred == is_starred)
+
+    if is_error:
+        query = query.filter(_error_clause())
 
     if start_date:
         query = query.filter(models.Article.published_at >= start_date)
@@ -392,6 +415,7 @@ def mark_articles_read_bulk(
     fetched_from: datetime = None,
     fetched_to: datetime = None,
     is_starred: bool = None,
+    is_error: bool = None,
 ) -> int:
     """Mark multiple articles as read. If article_ids is given, marks just those.
     Otherwise marks every unread article matching the given filters (no filters = all unread)."""
@@ -419,6 +443,9 @@ def mark_articles_read_bulk(
         if is_starred is not None:
             query = query.filter(models.Article.is_starred == is_starred)
 
+        if is_error:
+            query = query.filter(_error_clause())
+
         if start_date:
             query = query.filter(models.Article.published_at >= start_date)
         if end_date:
@@ -437,6 +464,48 @@ def mark_articles_read_bulk(
             query = query.filter(search_filter)
 
     count = query.update({models.Article.is_read: True}, synchronize_session=False)
+    db.commit()
+    return count
+
+
+def count_error_articles(db: Session) -> int:
+    """Number of articles in the "Error" group (no severity label)."""
+    return db.query(func.count(models.Article.id)).filter(_error_clause()).scalar() or 0
+
+
+def get_error_article_ids(
+    db: Session,
+    article_ids: Optional[List[int]] = None,
+    feed_ids: Optional[List[int]] = None,
+) -> List[int]:
+    """Ids of articles currently in the "Error" group, optionally restricted to
+    `article_ids` and/or `feed_ids`. Ids that aren't errors are silently dropped."""
+    query = db.query(models.Article.id).filter(_error_clause())
+    if article_ids is not None:
+        query = query.filter(models.Article.id.in_(article_ids))
+    if feed_ids:
+        query = query.filter(models.Article.feed_id.in_(feed_ids))
+    return [row[0] for row in query.order_by(desc(models.Article.published_at)).all()]
+
+
+def mark_articles_pending(db: Session, article_ids: List[int]) -> int:
+    """Flag articles as pending (queued for re-processing) so they leave the Error group."""
+    if not article_ids:
+        return 0
+    count = db.query(models.Article).filter(models.Article.id.in_(article_ids)).update(
+        {models.Article.status: "pending"}, synchronize_session=False
+    )
+    db.commit()
+    return count
+
+
+def reset_stale_pending_articles(db: Session) -> int:
+    """Move articles stuck in "pending" to "failed". Only safe at startup, when no pipeline or
+    re-process job can be running: a crash/restart mid-run otherwise strands them as
+    "pending", which the Error group excludes, so they could never be retried."""
+    count = db.query(models.Article).filter(models.Article.status == "pending").update(
+        {models.Article.status: "failed"}, synchronize_session=False
+    )
     db.commit()
     return count
 
@@ -787,6 +856,15 @@ def remove_article_topics(db: Session, article_id: int):
         models.ArticleTopic.article_id == article_id
     ).delete()
     db.commit()
+
+
+def delete_article_summaries(db: Session, article_id: int) -> int:
+    """Remove all summaries of an article (used before re-processing). Returns the number deleted."""
+    count = db.query(models.Summary).filter(
+        models.Summary.article_id == article_id
+    ).delete(synchronize_session=False)
+    db.commit()
+    return count
 
 
 # ==================== Processing Log Operations ====================

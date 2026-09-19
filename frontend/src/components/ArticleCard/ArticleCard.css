@@ -142,6 +142,18 @@
   border: 1px solid var(--color-border-strong);
 }
 
+.error-badge {
+  /* solid fill so it reads differently from the (soft red) Yüksek badge */
+  background: var(--color-danger-solid);
+  color: #fff;
+  border: 1px solid var(--color-danger-solid);
+}
+
+.error-badge svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
 .priority-badge {
   border: 1px solid transparent;
 }

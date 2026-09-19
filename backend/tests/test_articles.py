@@ -5,6 +5,8 @@ bulk routes, listing/filtering, read/star toggles, counts, and detail views.
 """
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from app.db import models, crud
 from tests.conftest import _make_feed, _make_article, _make_topic, _make_article_topic, _make_summary
 
@@ -583,3 +585,157 @@ def test_get_articles_by_topic_name_is_case_sensitive(client, auth_headers, db_s
     response = client.get("/api/articles/topic/politics", headers=auth_headers)
 
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# "Error" group: articles that never received a severity label
+# ---------------------------------------------------------------------------
+
+def _error_fixture(db_session):
+    """One article per relevant state; returns (feed, {name: article})."""
+    feed = _make_feed(db_session)
+    arts = {
+        "error": _make_article(db_session, feed.id, title="err", status="summarized"),
+        "error_failed": _make_article(db_session, feed.id, title="err-failed", status="failed"),
+        "error_no_priority": _make_article(db_session, feed.id, title="err-imp", importance="important",
+                                           status="summarized"),
+        "high": _make_article(db_session, feed.id, title="high", importance="important",
+                              priority="high", status="summarized"),
+        "unimportant": _make_article(db_session, feed.id, title="unimp", importance="unimportant",
+                                     status="filtered"),
+        "pending": _make_article(db_session, feed.id, title="pending", status="pending"),
+        "scraped": _make_article(db_session, feed.id, title="scraped", status="scraped"),
+    }
+    return feed, arts
+
+
+def test_list_articles_is_error_returns_only_unlabelled_articles(client, auth_headers, db_session):
+    _, arts = _error_fixture(db_session)
+
+    resp = client.get("/api/articles/?is_error=true", headers=auth_headers)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    titles = {a["title"] for a in body["articles"]}
+    # Önemsiz (importance=unimportant), labelled and still-processing articles are not errors.
+    assert titles == {"err", "err-failed", "err-imp"}
+    assert body["total"] == 3
+
+
+def test_list_articles_without_is_error_still_returns_everything(client, auth_headers, db_session):
+    _, arts = _error_fixture(db_session)
+
+    resp = client.get("/api/articles/", headers=auth_headers)
+
+    assert resp.json()["total"] == len(arts)
+
+
+def test_article_counts_include_error_count(client, auth_headers, db_session):
+    _error_fixture(db_session)
+
+    resp = client.get("/api/articles/counts", headers=auth_headers)
+
+    assert resp.status_code == 200
+    assert resp.json()["error_count"] == 3
+
+
+def test_mark_read_bulk_mark_all_scoped_to_is_error(client, auth_headers, db_session):
+    _, arts = _error_fixture(db_session)
+
+    resp = client.post("/api/articles/mark-read-bulk",
+                       json={"mark_all": True, "is_error": True}, headers=auth_headers)
+
+    assert resp.status_code == 200
+    assert resp.json()["marked_count"] == 3
+    db_session.expire_all()
+    assert arts["error"].is_read is True
+    assert arts["high"].is_read is False
+    assert arts["unimportant"].is_read is False
+
+
+def test_reprocess_requires_auth(client):
+    assert client.post("/api/articles/reprocess", json={"all_errors": True}).status_code == 401
+    assert client.get("/api/articles/reprocess-status").status_code == 401
+
+
+def test_reprocess_requires_article_ids_or_all_errors(client, auth_headers):
+    resp = client.post("/api/articles/reprocess", json={}, headers=auth_headers)
+    assert resp.status_code == 400
+
+
+@pytest.fixture
+def captured_reprocess(monkeypatch):
+    """Replace the background job so route tests never hit OpenAI; records queued ids."""
+    from app.tasks import background
+    calls = []
+
+    async def fake_task(ids):
+        calls.append(list(ids))
+
+    monkeypatch.setattr(background, "reprocess_articles_task", fake_task)
+    monkeypatch.setattr(background, "register_reprocess", lambda n: None)
+    return calls
+
+
+def test_reprocess_single_article_queues_it_and_leaves_error_group(
+        client, auth_headers, db_session, captured_reprocess):
+    _, arts = _error_fixture(db_session)
+
+    resp = client.post("/api/articles/reprocess",
+                       json={"article_ids": [arts["error"].id]}, headers=auth_headers)
+
+    assert resp.status_code == 200
+    assert resp.json()["queued"] == 1
+    assert captured_reprocess == [[arts["error"].id]]
+    db_session.expire_all()
+    assert arts["error"].status == "pending"
+    assert client.get("/api/articles/counts", headers=auth_headers).json()["error_count"] == 2
+
+
+def test_reprocess_ignores_articles_that_are_not_errors(
+        client, auth_headers, db_session, captured_reprocess):
+    _, arts = _error_fixture(db_session)
+
+    resp = client.post(
+        "/api/articles/reprocess",
+        json={"article_ids": [arts["high"].id, arts["unimportant"].id, arts["error_failed"].id]},
+        headers=auth_headers,
+    )
+
+    assert resp.json()["queued"] == 1
+    assert captured_reprocess == [[arts["error_failed"].id]]
+    db_session.expire_all()
+    assert arts["high"].status == "summarized"
+    assert arts["unimportant"].status == "filtered"
+
+
+def test_reprocess_all_errors_bulk_and_scoped_to_feed(
+        client, auth_headers, db_session, captured_reprocess):
+    feed, arts = _error_fixture(db_session)
+    other_feed = _make_feed(db_session, url="https://example.com/other")
+    other = _make_article(db_session, other_feed.id, title="other-err", status="summarized")
+
+    resp = client.post("/api/articles/reprocess",
+                       json={"all_errors": True, "feed_ids": [other_feed.id]}, headers=auth_headers)
+    assert resp.json()["article_ids"] == [other.id]
+
+    resp = client.post("/api/articles/reprocess", json={"all_errors": True}, headers=auth_headers)
+    assert resp.json()["queued"] == 3  # `other` is already pending; the 3 in `feed` remain
+
+
+def test_reprocess_with_nothing_to_do_queues_nothing(
+        client, auth_headers, db_session, captured_reprocess):
+    _, arts = _error_fixture(db_session)
+
+    resp = client.post("/api/articles/reprocess",
+                       json={"article_ids": [arts["high"].id]}, headers=auth_headers)
+
+    assert resp.json() == {"queued": 0, "article_ids": []}
+    assert captured_reprocess == []
+
+
+def test_reprocess_status_endpoint_reports_idle_shape(client, auth_headers):
+    resp = client.get("/api/articles/reprocess-status", headers=auth_headers)
+
+    assert resp.status_code == 200
+    assert set(resp.json()) == {"status", "total", "done", "failed"}

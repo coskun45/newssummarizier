@@ -305,7 +305,7 @@ Bulten/
 
 #### Makaleler
 
-- `GET /api/articles` - Makaleleri listele (filtrelerle)
+- `GET /api/articles` - Makaleleri listele (filtrelerle; `is_error=true` sadece önem etiketi olmayan "Error" haberleri döner)
   - Query params: `skip`, `limit`, `topic_ids`, `search`, `status`
 - `GET /api/articles/{id}` - Tek bir makale
 - `GET /api/articles/topic/{topic_name}` - Konuya göre makaleler
@@ -313,6 +313,8 @@ Bulten/
 - `POST /api/articles/topic/{topic_id}/archive-all` - Konudaki tüm okunmamış makaleleri arşive gönder
 - `POST /api/articles/unimportant/delete-all` - Tüm okunmamış önemsiz makaleleri sil
 - `POST /api/articles/unimportant/archive-all` - Tüm okunmamış önemsiz makaleleri arşive gönder
+- `POST /api/articles/reprocess` - Error haberleri (tek/toplu: `article_ids` veya `all_errors`) arka planda yeniden sınıflandır + özetle
+- `GET /api/articles/reprocess-status` - Yeniden işleme ilerlemesi (`idle`/`running`/`done`, `total`, `done`, `failed`)
 
 #### Özetler
 
@@ -344,8 +346,8 @@ Bulten/
 ```env
 # OpenAI
 OPENAI_API_KEY=your-key-here
-DEFAULT_MODEL=gpt-3.5-turbo
-DETAILED_MODEL=gpt-4-turbo-preview
+DEFAULT_MODEL=gpt-4o-mini
+DETAILED_MODEL=gpt-4o
 OPENAI_TIMEOUT_SECONDS=60.0  # tek bir OpenAI isteği için üst sınır (saniye)
 
 # Veritabanı (Docker'daki Postgres: `docker compose up -d db`)

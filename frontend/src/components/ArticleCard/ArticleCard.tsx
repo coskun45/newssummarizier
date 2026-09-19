@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Article } from '../../types';
-import { useSummaries, useArticle, useDeleteArticle, useSetArticleStarred } from '../../hooks/useApi';
+import { useSummaries, useArticle, useDeleteArticle, useSetArticleStarred, useReprocessArticles } from '../../hooks/useApi';
 import ContentModal from '../ContentModal/ContentModal';
 import { copyToClipboard } from '../../utils/exportArticles';
 import { withAlpha } from '../../utils/color';
@@ -12,6 +12,7 @@ import {
   ArrowPathIcon,
   CheckIcon,
   ClipboardDocumentIcon,
+  ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline';
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid';
 import './ArticleCard.css';
@@ -41,6 +42,11 @@ function ArticleCard({ article, isSelected = false, onToggleSelect, onDeleted, i
 
   const deleteArticleMutation = useDeleteArticle();
   const setStarredMutation = useSetArticleStarred();
+  const reprocessMutation = useReprocessArticles();
+
+  // "Error": no severity label (not even Önemsiz) and not currently being processed
+  const isError = !article.priority && article.importance !== 'unimportant'
+    && article.status !== 'pending' && article.status !== 'scraped';
 
   const handleToggleExpand = () => {
     setExpanded(!expanded);
@@ -120,6 +126,9 @@ function ArticleCard({ article, isSelected = false, onToggleSelect, onDeleted, i
         {article.importance === 'unimportant' && (
           <span className="badge unimportant-badge"><NoSymbolIcon /> Önemsiz</span>
         )}
+        {isError && (
+          <span className="badge error-badge"><ExclamationTriangleIcon /> Hata</span>
+        )}
         {article.priority && (
           <span className={`badge priority-badge priority-${article.priority}`}>
             <span className="priority-dot" />
@@ -166,6 +175,15 @@ function ArticleCard({ article, isSelected = false, onToggleSelect, onDeleted, i
         >
           Kaynağı aç →
         </a>
+        {isError && (
+          <button
+            className="btn btn-outline"
+            onClick={() => reprocessMutation.mutate({ article_ids: [article.id] })}
+            disabled={reprocessMutation.isPending}
+          >
+            <ArrowPathIcon className={reprocessMutation.isPending ? 'spin-icon' : undefined} /> Tekrar dene
+          </button>
+        )}
         {/* Delete button moved to top right as icon; favorite toggle to bottom-right */}
       </div>
 

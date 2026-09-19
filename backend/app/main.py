@@ -30,6 +30,14 @@ async def lifespan(app: FastAPI):
     init_db()
     logger.info("Database initialized")
 
+    # Articles left "pending" by an interrupted run would be invisible to the Error tab
+    from app.db.database import SessionLocal
+    from app.db import crud
+    with SessionLocal() as db:
+        stale = crud.reset_stale_pending_articles(db)
+    if stale:
+        logger.warning(f"Reset {stale} article(s) stuck in 'pending' to 'failed'")
+
     # Seed database with initial data (only creates feed and topics if missing)
     from app.db.seed import seed_database
     feed_id = seed_database()

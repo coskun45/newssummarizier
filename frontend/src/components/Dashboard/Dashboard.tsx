@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useArticles, useArticleCounts, useTopics, useFeeds, useRefreshFeed, useMarkArticlesBulkRead, useUnstarAll, useDeleteAllArticlesByPriority, useArchiveAllArticlesByPriority, useDeleteAllUnimportant, useArchiveAllUnimportant } from '../../hooks/useApi';
+import { useArticles, useArticleCounts, useTopics, useFeeds, useRefreshFeed, useMarkArticlesBulkRead, useUnstarAll, useDeleteAllArticlesByPriority, useArchiveAllArticlesByPriority, useDeleteAllUnimportant, useArchiveAllUnimportant, useReprocessArticles, useReprocessStatus } from '../../hooks/useApi';
 import { feedsApi, articlesApi, summariesApi } from '../../services/api';
 import { downloadArticlesAsWord, buildWhatsAppMessage, copyToClipboard } from '../../utils/exportArticles';
 import ArticleList from '../ArticleList/ArticleList';
@@ -56,7 +56,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
   const [fetchedFilter, setFetchedFilter] = useState<DateFilterState>(emptyDate);
   const [activeView, setActiveView] = useState<'home' | 'news' | 'bulletin' | 'settings'>('home');
   const [settingsCategory, setSettingsCategory] = useState<SettingsCategory>('feeds');
-  const [activeSection, setActiveSection] = useState<'unread' | 'archive' | 'important'>('unread');
+  const [activeSection, setActiveSection] = useState<'unread' | 'archive' | 'important' | 'error'>('unread');
   const [selectedArticleIds, setSelectedArticleIds] = useState<Set<number>>(new Set());
   const [exportNotice, setExportNotice] = useState<string | null>(null);
   const exportNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -75,6 +75,8 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
   const archiveAllByPriorityMutation = useArchiveAllArticlesByPriority();
   const deleteAllUnimportantMutation = useDeleteAllUnimportant();
   const archiveAllUnimportantMutation = useArchiveAllUnimportant();
+  const reprocessMutation = useReprocessArticles();
+  const { data: reprocessStatus } = useReprocessStatus();
 
   // Stop polling on unmount
   useEffect(() => {
@@ -164,15 +166,20 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
       topic_ids: selectedTopics.length > 0 ? selectedTopics.join(',') : undefined,
       search: debouncedSearch || undefined,
       feed_ids: selectedFeedIds.length > 0 ? selectedFeedIds.join(',') : undefined,
-      status: importanceMode === 'unimportant' ? 'filtered' : (importanceMode === 'important' ? 'summarized' : undefined),
-      priority: selectedPriority ?? undefined,
+      // The Error tab means "no severity label", so the sidebar importance/priority filters
+      // (which need a label) would contradict it and always yield an empty list.
+      status: activeSection === 'error' ? undefined
+        : importanceMode === 'unimportant' ? 'filtered' : (importanceMode === 'important' ? 'summarized' : undefined),
+      priority: activeSection === 'error' ? undefined : (selectedPriority ?? undefined),
       published_from: pubRange.from,
       published_to: pubRange.to,
       fetched_from: fetchRange.from,
       fetched_to: fetchRange.to,
-      // "Önemli" shows the starred group regardless of read state
-      is_read: activeSection === 'important' ? undefined : activeSection === 'unread' ? false : true,
+      // "Önemli" (starred) and "Error" show their group regardless of read state
+      is_read: (activeSection === 'important' || activeSection === 'error') ? undefined : activeSection === 'unread' ? false : true,
       is_starred: activeSection === 'important' ? true : undefined,
+      // "Error" = articles that never received a severity label
+      is_error: activeSection === 'error' ? true : undefined,
     };
   }, [selectedTopics, debouncedSearch, selectedFeedIds, importanceMode, selectedPriority, publishedFilter, fetchedFilter, activeSection]);
 
@@ -215,7 +222,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [feedsData]);
 
-  const handleSectionChange = (section: 'unread' | 'archive' | 'important') => {
+  const handleSectionChange = (section: 'unread' | 'archive' | 'important' | 'error') => {
     setActiveSection(section);
     setSelectedArticleIds(new Set());
   };
@@ -271,6 +278,19 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
     if (confirm('Tüm favorileri kaldırmak istediğinizden emin misiniz?')) {
       unstarAllMutation.mutate(undefined, { onSuccess: () => setSelectedArticleIds(new Set()) });
     }
+  };
+
+  const handleReprocessSelected = () => {
+    const ids = Array.from(selectedArticleIds);
+    reprocessMutation.mutate({ article_ids: ids }, { onSuccess: () => setSelectedArticleIds(new Set()) });
+  };
+
+  const handleReprocessAll = () => {
+    if (!confirm('Tüm hatalı haberler yeniden işlenecek (OpenAI maliyeti oluşabilir). Devam edilsin mi?')) return;
+    reprocessMutation.mutate(
+      { all_errors: true, feed_ids: selectedFeedIds.length > 0 ? selectedFeedIds : undefined },
+      { onSuccess: () => setSelectedArticleIds(new Set()) }
+    );
   };
 
   const handleToggleSelect = (id: number) => {
@@ -547,7 +567,53 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                         <span className="section-tab-badge section-tab-badge--important">{articleCounts!.starred_count}</span>
                       )}
                     </button>
+                    <button
+                      className={`section-tab${activeSection === 'error' ? ' section-tab--active' : ''}`}
+                      onClick={() => handleSectionChange('error')}
+                      aria-label="Error"
+                    >
+                      <ExclamationTriangleIcon /> Error
+                      {(articleCounts?.error_count ?? 0) > 0 && (
+                        <span className="section-tab-badge section-tab-badge--error">{articleCounts!.error_count}</span>
+                      )}
+                    </button>
                   </div>
+
+                  {(activeSection === 'error' || reprocessStatus?.status === 'running') && (
+                    <div className="bulk-action-bar">
+                      {activeSection === 'error' && articlesData && articlesData.articles.length > 0 && (
+                        <>
+                          <button
+                            className="btn btn-outline btn-sm"
+                            onClick={() => handleSelectAll(articlesData.articles.map((a) => a.id))}
+                          >
+                            <CheckCircleIcon /> Tümünü Seç
+                          </button>
+                          {selectedArticleIds.size > 0 && (
+                            <button
+                              className="btn btn-primary btn-sm"
+                              onClick={handleReprocessSelected}
+                              disabled={reprocessMutation.isPending}
+                            >
+                              <ArrowPathIcon /> Seçilenleri Tekrar Dene ({selectedArticleIds.size})
+                            </button>
+                          )}
+                          <button
+                            className="btn btn-outline btn-sm"
+                            onClick={handleReprocessAll}
+                            disabled={reprocessMutation.isPending}
+                          >
+                            <ArrowPathIcon /> Tümünü Tekrar Dene
+                          </button>
+                        </>
+                      )}
+                      {reprocessStatus?.status === 'running' && (
+                        <span className="refresh-message refresh-message--processing">
+                          <ArrowPathIcon className="spin-icon" /> Yeniden işleniyor: {reprocessStatus.done}/{reprocessStatus.total}
+                        </span>
+                      )}
+                    </div>
+                  )}
 
                   {activeSection === 'unread' && articlesData && articlesData.articles.length > 0 && (
                     <div className="bulk-action-bar">
@@ -647,11 +713,13 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                   ) : articlesData && articlesData.articles.length === 0 ? (
                     <div className="empty-state">
                       <InboxIcon className="empty-state-icon" />
-                      <p>Makale bulunamadı</p>
+                      <p>{activeSection === 'error' ? 'Hatalı haber yok' : 'Makale bulunamadı'}</p>
                       <p className="text-small text-muted">
                         {selectedTopics.length > 0 || searchQuery
                           ? 'Farklı filtreler deneyin'
-                          : 'Makaleler yükleniyor...'}
+                          : activeSection === 'error'
+                            ? 'Tüm haberler bir önem etiketi almış.'
+                            : 'Makaleler yükleniyor...'}
                       </p>
                     </div>
                   ) : (

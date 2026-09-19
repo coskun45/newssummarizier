@@ -1,9 +1,10 @@
 /**
  * React Query hooks for data fetching and caching.
  */
+import { useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { articlesApi, summariesApi, topicsApi, settingsApi, statsApi, feedsApi, authApi, bulletinApi } from '../services/api';
-import type { ArticleFilters, UserSettings, BulletinGenerateRequest } from '../types';
+import type { ArticleFilters, UserSettings, BulletinGenerateRequest, ReprocessRequest } from '../types';
 
 // Articles hooks
 export const useArticleCounts = () => {
@@ -77,6 +78,45 @@ export const useUnstarAll = () => {
             queryClient.invalidateQueries({ queryKey: ['articleCounts'] });
         },
     });
+};
+
+// Re-run "Error" articles (no severity label) through the classification + summary workflow.
+export const useReprocessArticles = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (payload: ReprocessRequest) => articlesApi.reprocess(payload),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['reprocessStatus'] });
+            queryClient.invalidateQueries({ queryKey: ['articles'] });
+            queryClient.invalidateQueries({ queryKey: ['articleCounts'] });
+        },
+    });
+};
+
+// Progress of the background re-process job. Polls every 2s while it runs and refreshes
+// the article lists/counts whenever another article finishes.
+export const useReprocessStatus = () => {
+    const queryClient = useQueryClient();
+    const query = useQuery({
+        queryKey: ['reprocessStatus'],
+        queryFn: () => articlesApi.getReprocessStatus(),
+        refetchInterval: (q) => (q.state.data?.status === 'running' ? 2000 : false),
+    });
+
+    const done = query.data?.done;
+    const status = query.data?.status;
+    const prevStatus = useRef<typeof status>(undefined);
+    useEffect(() => {
+        // Only refresh while a run is in progress (or right as it finishes) — not on mount
+        // when a stale "done" from an earlier run is still reported by the server.
+        const wasRunning = prevStatus.current === 'running';
+        prevStatus.current = status;
+        if (status !== 'running' && !wasRunning) return;
+        queryClient.invalidateQueries({ queryKey: ['articles'] });
+        queryClient.invalidateQueries({ queryKey: ['articleCounts'] });
+    }, [done, status, queryClient]);
+
+    return query;
 };
 
 export const useMarkArticlesBulkRead = () => {

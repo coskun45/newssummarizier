@@ -9,6 +9,9 @@ import type {
     ArticleListResponse,
     ArticleFilters,
     ArticleCounts,
+    ReprocessRequest,
+    ReprocessResponse,
+    ReprocessStatus,
     Summary,
     Topic,
     UserSettings,
@@ -151,6 +154,14 @@ export const articlesApi = {
     markBulkRead: async (articleIds?: number[], filters?: ArticleFilters): Promise<{ marked_count: number }> => {
         const body = articleIds ? { article_ids: articleIds } : { mark_all: true, ...filters };
         const response = await api.post('/articles/mark-read-bulk', body);
+        return response.data;
+    },
+    reprocess: async (payload: ReprocessRequest): Promise<ReprocessResponse> => {
+        const response = await api.post('/articles/reprocess', payload);
+        return response.data;
+    },
+    getReprocessStatus: async (): Promise<ReprocessStatus> => {
+        const response = await api.get('/articles/reprocess-status');
         return response.data;
     },
     list: async (filters: ArticleFilters = {}): Promise<ArticleListResponse> => {

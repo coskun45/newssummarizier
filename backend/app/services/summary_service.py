@@ -463,8 +463,13 @@ That part is never BOLD: 
 
 async def process_article_by_id(article_id: int) -> dict:
     """
-    Process a single article by ID: extract content (if needed), categorize topics, generate summaries.
-    Returns a dict with result metadata.
+    (Re)process a single article by ID: extract content (if needed), re-categorize + prioritize,
+    then replace any previous topics/summaries and generate new summaries.
+
+    Returns a dict with `article_id`, `status`, `cost` and `success`. `success` is False when
+    categorization failed (or yielded no priority) — the article is then left as
+    `status="failed"` with no priority, so it stays in the "Error" group instead of being
+    silently marked summarized.
     """
     db = SessionLocal()
     try:
@@ -503,22 +508,40 @@ async def process_article_by_id(article_id: int) -> dict:
             priority = categorization.get("priority")
             topics = categorization.get("topics", [])
 
+            if importance != "unimportant" and priority not in ("high", "med", "low"):
+                raise TopicCategorizationError(f"Important article came back without a valid priority: {priority!r}")
+
+            # Only now that the re-classification succeeded is it safe to drop the old topics and
+            # summaries — clearing them earlier would lose good content when a retry fails. It
+            # also keeps a re-run from duplicating summaries or colliding on the
+            # (article_id, topic_id) primary key of ArticleTopic.
+            crud.remove_article_topics(db, article.id)
+            crud.delete_article_summaries(db, article.id)
+
             crud.update_article_importance(db=db, article_id=article.id, importance=importance, priority=priority)
 
             if importance == "unimportant":
                 crud.update_article_status(db=db, article_id=article.id, status="filtered")
                 crud.create_log(db=db, article_id=article.id, agent_name="topic_categorizer", status="success", message="Article filtered as unimportant — skipping summarization")
-                return {"article_id": article.id, "status": "filtered", "cost": 0.0}
+                return {"article_id": article.id, "status": "filtered", "cost": 0.0, "success": True}
 
             is_important = True
+            linked_topic_ids = set()
             for topic in topics:
                 topic_db = crud.get_topic_by_name(db, topic["name"]) if isinstance(topic, dict) else None
-                if topic_db:
+                if topic_db and topic_db.id not in linked_topic_ids:
+                    linked_topic_ids.add(topic_db.id)
                     crud.add_article_topic(db=db, article_id=article.id, topic_id=topic_db.id, confidence=topic.get("confidence", 1.0))
 
             crud.create_log(db=db, article_id=article.id, agent_name="topic_categorizer", status="success", message=f"Important ({priority}): classified into {len(topics)} topics")
         except Exception as e:
+            # A failed DB write above leaves the session unusable until it is rolled back.
+            db.rollback()
             crud.create_log(db=db, article_id=article.id, agent_name="topic_categorizer", status="error", message="Topic categorization failed", error_details=str(e))
+            # Priority is still missing — keep the article in the "Error" group so it can be retried.
+            crud.update_article_importance(db=db, article_id=article.id, importance=None, priority=None)
+            crud.update_article_status(db=db, article_id=article.id, status="failed")
+            return {"article_id": article.id, "status": "failed", "cost": 0.0, "success": False}
 
         # Generate summaries (only for important articles)
         if is_important:
@@ -547,7 +570,7 @@ async def process_article_by_id(article_id: int) -> dict:
         crud.update_article_status(db=db, article_id=article.id, status="summarized")
         crud.create_log(db=db, article_id=article.id, agent_name="article_processor", status="success", message=f"Article processing completed. Cost: ${total_cost:.4f}")
 
-        return {"article_id": article.id, "status": "summarized", "cost": total_cost}
+        return {"article_id": article.id, "status": "summarized", "cost": total_cost, "success": True}
 
     finally:
         db.close()

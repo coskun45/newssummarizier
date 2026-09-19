@@ -1,7 +1,7 @@
 """
 Article endpoints.
 """
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from pydantic import BaseModel
@@ -96,6 +96,7 @@ async def list_articles(
     fetched_to: Optional[datetime] = Query(None, description="Fetched date to (ISO 8601)"),
     is_read: Optional[bool] = Query(None, description="Filter by read status: true=read, false=unread"),
     is_starred: Optional[bool] = Query(None, description="Filter by the user-curated 'Önemli' group"),
+    is_error: Optional[bool] = Query(None, description="true = only articles without a severity label (\"Error\" group)"),
     db: Session = Depends(get_db)
 ):
     """
@@ -121,6 +122,7 @@ async def list_articles(
         fetched_to=fetched_to,
         is_read=is_read,
         is_starred=is_starred,
+        is_error=is_error,
     )
 
     # Get total count
@@ -138,6 +140,7 @@ async def list_articles(
         fetched_to=fetched_to,
         is_read=is_read,
         is_starred=is_starred,
+        is_error=is_error,
     )
 
     # Transform to response model
@@ -208,6 +211,7 @@ class BulkReadRequest(BaseModel):
     fetched_from: Optional[datetime] = None
     fetched_to: Optional[datetime] = None
     is_starred: Optional[bool] = None
+    is_error: Optional[bool] = None
 
 
 @router.post("/mark-read-bulk")
@@ -240,6 +244,7 @@ async def mark_articles_read_bulk(
             fetched_from=body.fetched_from,
             fetched_to=body.fetched_to,
             is_starred=body.is_starred,
+            is_error=body.is_error,
         )
     return {"marked_count": count}
 
@@ -319,6 +324,49 @@ async def archive_articles_unimportant(
     return {"archived_count": count}
 
 
+class ReprocessRequest(BaseModel):
+    """Request body for re-running "Error" articles through the workflow."""
+    article_ids: Optional[List[int]] = None
+    all_errors: bool = False
+    # With all_errors=true, optionally scope to these feeds.
+    feed_ids: Optional[List[int]] = None
+
+
+@router.post("/reprocess")
+async def reprocess_articles(
+    body: ReprocessRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Re-run classification + summarization for "Error" articles (no severity label).
+    Provide article_ids for specific articles, or all_errors=true for every Error article
+    (optionally scoped to feed_ids). Ids that aren't in the Error group are ignored.
+    Runs in the background — poll GET /reprocess-status for progress.
+    """
+    if not body.all_errors and not body.article_ids:
+        raise HTTPException(status_code=400, detail="Provide article_ids or set all_errors=true")
+    ids = crud.get_error_article_ids(
+        db,
+        article_ids=None if body.all_errors else body.article_ids,
+        feed_ids=body.feed_ids if body.all_errors else None,
+    )
+    if ids:
+        # Leave the Error group right away so the same article isn't queued twice.
+        crud.mark_articles_pending(db, ids)
+        from app.tasks.background import register_reprocess, reprocess_articles_task
+        register_reprocess(len(ids))
+        background_tasks.add_task(reprocess_articles_task, ids)
+    return {"queued": len(ids), "article_ids": ids}
+
+
+@router.get("/reprocess-status")
+async def get_reprocess_status():
+    """Progress of the re-process job: {status: idle|running|done, total, done, failed}."""
+    from app.tasks.background import get_reprocess_status as _get_status
+    return _get_status()
+
+
 @router.get("/counts")
 async def get_article_counts(db: Session = Depends(get_db)):
     """Get article counts grouped by priority and feed.
@@ -360,6 +408,8 @@ async def get_article_counts(db: Session = Depends(get_db)):
         models.Article.is_starred.is_(True)
     ).scalar() or 0
 
+    error_count = crud.count_error_articles(db)
+
     return {
         "by_priority": {p: c for p, c in priority_rows},
         "by_feed": {str(f): c for f, c in feed_rows},
@@ -367,6 +417,7 @@ async def get_article_counts(db: Session = Depends(get_db)):
         "unread_count": unread_count,
         "read_count": read_count,
         "starred_count": starred_count,
+        "error_count": error_count,
     }
 
 

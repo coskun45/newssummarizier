@@ -83,6 +83,7 @@ export interface ArticleFilters {
     fetched_to?: string;
     is_read?: boolean;
     is_starred?: boolean;
+    is_error?: boolean;
 }
 
 export interface UserSettings {
@@ -114,6 +115,25 @@ export interface ArticleCounts {
     unread_count: number;
     read_count: number;
     starred_count: number;
+    error_count: number;
+}
+
+export interface ReprocessRequest {
+    article_ids?: number[];
+    all_errors?: boolean;
+    feed_ids?: number[];
+}
+
+export interface ReprocessResponse {
+    queued: number;
+    article_ids: number[];
+}
+
+export interface ReprocessStatus {
+    status: 'idle' | 'running' | 'done';
+    total: number;
+    done: number;
+    failed: number;
 }
 
 export interface AuthUser {

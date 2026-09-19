@@ -165,6 +165,11 @@ export interface MockApiOverrides {
   generatedBulletins?: GeneratedBulletin[];
 }
 
+/** Mirrors the backend's "Error" group: no severity label (not even Önemsiz) and not mid-processing. */
+export function isErrorArticle(a: MockArticle): boolean {
+  return !a.priority && a.importance !== 'unimportant' && a.status !== 'pending' && a.status !== 'scraped';
+}
+
 function computeCounts(articles: MockArticle[]) {
   const by_priority: Record<string, number> = {};
   const by_feed: Record<string, number> = {};
@@ -172,6 +177,7 @@ function computeCounts(articles: MockArticle[]) {
   let unread_count = 0;
   let read_count = 0;
   let starred_count = 0;
+  let error_count = 0;
 
   for (const a of articles) {
     if (!a.is_read) {
@@ -185,9 +191,10 @@ function computeCounts(articles: MockArticle[]) {
       read_count += 1;
     }
     if (a.is_starred) starred_count += 1;
+    if (isErrorArticle(a)) error_count += 1;
   }
 
-  return { by_priority, by_feed, unimportant_count, unread_count, read_count, starred_count };
+  return { by_priority, by_feed, unimportant_count, unread_count, read_count, starred_count, error_count };
 }
 
 function computeTopicsWithCounts(topics: Topic[], articles: MockArticle[], feedId: number | null): Topic[] {
@@ -225,6 +232,8 @@ function matchesArticleFilters(a: MockArticle, params: URLSearchParams): boolean
 
   const isStarred = params.get('is_starred');
   if (isStarred !== null && a.is_starred !== (isStarred === 'true')) return false;
+
+  if (params.get('is_error') === 'true' && !isErrorArticle(a)) return false;
 
   const topicIds = parseIdList(params.get('topic_ids'));
   if (topicIds && !a.topics.some((t) => topicIds.includes(t.id))) return false;
@@ -404,6 +413,22 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
         }
       }
       return json({ marked_count: count });
+    }
+    // ---- re-process "Error" articles: the mock completes instantly, giving them a priority ----
+    if (method === 'POST' && path === '/articles/reprocess') {
+      const body = request.postDataJSON() as { article_ids?: number[]; all_errors?: boolean };
+      const targets = state.articles.filter(
+        (a) => isErrorArticle(a) && (body.all_errors || body.article_ids?.includes(a.id))
+      );
+      for (const a of targets) {
+        a.importance = 'important';
+        a.priority = 'med';
+        a.status = 'summarized';
+      }
+      return json({ queued: targets.length, article_ids: targets.map((a) => a.id) });
+    }
+    if (method === 'GET' && path === '/articles/reprocess-status') {
+      return json({ status: 'idle', total: 0, done: 0, failed: 0 });
     }
     if (method === 'POST' && path === '/articles/unstar-all') {
       let count = 0;

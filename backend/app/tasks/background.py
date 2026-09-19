@@ -1,8 +1,9 @@
 """
 Background tasks for feed processing.
 """
+import asyncio
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, List
 from app.agents.graph import get_workflow
 from app.db.database import SessionLocal
 from app.db import crud
@@ -121,3 +122,66 @@ async def process_feed_task(feed_id: int):
         await process_feed_async(feed_id)
     except Exception as e:
         logger.error(f"Background task failed: {e}", exc_info=True)
+
+
+# ==================== Article re-processing ("Error" group) ====================
+
+# Global progress of the user-triggered re-process job (the UI polls this).
+_reprocess_status: Dict[str, Any] = {"status": "idle", "total": 0, "done": 0, "failed": 0}
+# Serializes runs so overlapping requests queue up instead of hammering OpenAI in parallel.
+_reprocess_lock = asyncio.Lock()
+
+
+def get_reprocess_status() -> Dict[str, Any]:
+    """Return a copy of the latest re-process job status."""
+    return dict(_reprocess_status)
+
+
+def register_reprocess(count: int) -> None:
+    """Account for `count` newly queued articles. Starts a fresh run when idle/finished,
+    otherwise extends the run that is already in progress."""
+    if _reprocess_status["status"] != "running":
+        _reprocess_status.update({"status": "running", "total": 0, "done": 0, "failed": 0})
+    _reprocess_status["total"] += count
+
+
+async def reprocess_articles_task(article_ids: List[int]):
+    """Re-run classification + summarization for the given articles, one after another.
+
+    Never raises: a failing article is counted and left as `status="failed"` (still an
+    "Error" article) and the run moves on to the next one.
+    """
+    from app.services.summary_service import process_article_by_id
+
+    def _mark_failed(article_id: int) -> None:
+        # The route set the article to "pending"; put it back into the "Error" group.
+        db = SessionLocal()
+        try:
+            crud.update_article_status(db, article_id, "failed")
+        finally:
+            db.close()
+
+    async with _reprocess_lock:
+        remaining = list(article_ids)
+        try:
+            while remaining:
+                article_id = remaining[0]
+                try:
+                    result = await process_article_by_id(article_id)
+                    if not result.get("success"):
+                        _reprocess_status["failed"] += 1
+                except Exception as e:
+                    logger.error(f"Re-processing article {article_id} failed: {e}", exc_info=True)
+                    _reprocess_status["failed"] += 1
+                    _mark_failed(article_id)
+                remaining.pop(0)
+                _reprocess_status["done"] += 1
+        finally:
+            # Cancellation/shutdown mid-run: don't strand the rest as "pending" (invisible to
+            # the Error tab) and don't leave the status stuck on "running" (UI polls forever).
+            for article_id in remaining:
+                _mark_failed(article_id)
+                _reprocess_status["failed"] += 1
+                _reprocess_status["done"] += 1
+            if _reprocess_status["done"] >= _reprocess_status["total"]:
+                _reprocess_status["status"] = "done"

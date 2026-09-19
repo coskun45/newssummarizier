@@ -338,6 +338,10 @@ button svg {
   background: var(--color-warning-solid);
 }
 
+.section-tab-badge--error {
+  background: var(--color-danger-solid);
+}
+
 /* Bulk action bar */
 .bulk-action-bar {
   display: flex;
