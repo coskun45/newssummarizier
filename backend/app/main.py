@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.db.database import init_db
 from app.api.deps import get_current_user
-from app.api.routes import rss, articles, summaries, settings as settings_routes, topics, prompts, bulletin
+from app.api.routes import rss, articles, summaries, settings as settings_routes, topics, prompts, bulletin, playground
 from app.api.routes import auth as auth_routes
 from app.tasks.scheduler import start_scheduler, stop_scheduler
 import logging
@@ -117,3 +117,4 @@ app.include_router(settings_routes.router, prefix="/api/settings", tags=["settin
 app.include_router(topics.router, prefix="/api/topics", tags=["topics"], dependencies=auth_dep)
 app.include_router(prompts.router, prefix="/api/prompts", tags=["prompts"], dependencies=auth_dep)
 app.include_router(bulletin.router, prefix="/api/bulletin", tags=["bulletin"], dependencies=auth_dep)
+app.include_router(playground.router, prefix="/api/playground", tags=["playground"], dependencies=auth_dep)

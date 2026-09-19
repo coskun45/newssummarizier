@@ -23,6 +23,9 @@ import type {
     BulletinGenerateRequest,
     BulletinPreviewCountResponse,
     GeneratedBulletin,
+    PlaygroundSettings,
+    PlaygroundRunRequest,
+    PlaygroundRunResult,
 } from '../types';
 
 const API_BASE_URL = '/api';
@@ -382,6 +385,19 @@ export const bulletinApi = {
 
     deleteGenerated: async (id: number): Promise<void> => {
         await api.delete(`/bulletin/generated/${id}`);
+    },
+};
+
+export const playgroundApi = {
+    getSettings: async (): Promise<PlaygroundSettings> => {
+        const response = await api.get('/playground/settings');
+        return response.data;
+    },
+
+    // Runs up to four sequential LLM calls, so it needs far more than the default 20s timeout.
+    run: async (request: PlaygroundRunRequest): Promise<PlaygroundRunResult> => {
+        const response = await api.post('/playground/run', request, { timeout: 120000 });
+        return response.data;
     },
 };
 

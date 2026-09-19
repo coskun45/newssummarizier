@@ -350,3 +350,73 @@ def test_reprocess_recovers_labelled_failed_article(reprocess_env, monkeypatch, 
     db_session.expire_all()
     assert article.status == "summarized" and article.is_read is False
     assert crud.get_error_article_ids(db_session) == []
+
+
+# ---------------------------------------------------------------------------
+# categorize_and_prioritize_article / generate_summary keep their pre-Playground contract
+# (the Playground shares their _run_* helpers, so the public return shape must not drift).
+# ---------------------------------------------------------------------------
+
+def _fake_openai(monkeypatch, db_session, content):
+    from types import SimpleNamespace
+    from sqlalchemy.orm import sessionmaker
+
+    calls = []
+
+    async def create(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=content), finish_reason="stop")],
+            usage=SimpleNamespace(completion_tokens=5),
+        )
+
+    fake = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    monkeypatch.setattr(summary_service, "get_openai_client", lambda: fake)
+    monkeypatch.setattr(summary_service, "SessionLocal",
+                        sessionmaker(bind=db_session.get_bind(), expire_on_commit=False))
+    return calls
+
+
+def test_categorize_returns_only_importance_priority_topics(monkeypatch, db_session):
+    _make_topic(db_session, "NATO", description="Bündnis")
+    calls = _fake_openai(monkeypatch, db_session,
+                         '```json' + chr(10) + '{"importance": "important", "priority": "med", "topics": [{"name": "NATO", "confidence": 0.8}]}' + chr(10) + '```')
+
+    result = asyncio.run(summary_service.categorize_and_prioritize_article("NATO-Gipfel"))
+
+    assert result == {"importance": "important", "priority": "med",
+                      "topics": [{"name": "NATO", "confidence": 0.8}]}
+    assert calls[0]["model"] == settings.default_model
+    assert "- NATO: Bündnis" in calls[0]["messages"][0]["content"]
+
+
+def test_categorize_invalid_json_twice_raises(monkeypatch, db_session):
+    from app.core.exceptions import TopicCategorizationError
+
+    calls = _fake_openai(monkeypatch, db_session, "definitely not json")
+
+    with pytest.raises(TopicCategorizationError):
+        asyncio.run(summary_service.categorize_and_prioritize_article("Titel"))
+    assert len(calls) == 2
+
+
+def test_generate_summary_returns_persistable_fields(monkeypatch, db_session):
+    calls = _fake_openai(monkeypatch, db_session, "  Kurz und knapp.  ")
+
+    result = asyncio.run(summary_service.generate_summary("Titel", "Inhalt", "detailed"))
+
+    assert set(result) == {"summary_text", "model_used", "tokens_used", "cost"}
+    assert result["summary_text"] == "Kurz und knapp."
+    assert result["model_used"] == settings.detailed_model
+    assert calls[0]["max_completion_tokens"] == settings.max_tokens_output_detailed
+    assert summary_service.DEFAULT_SUMMARY_INSTRUCTIONS["detailed"] in calls[0]["messages"][1]["content"]
+
+
+def test_generate_summary_empty_response_and_bad_type_raise(monkeypatch, db_session):
+    from app.core.exceptions import SummarizationError
+
+    _fake_openai(monkeypatch, db_session, None)
+    with pytest.raises(SummarizationError):
+        asyncio.run(summary_service.generate_summary("Titel", "Inhalt", "brief"))
+    with pytest.raises(SummarizationError):
+        asyncio.run(summary_service.generate_summary("Titel", "Inhalt", "huge"))

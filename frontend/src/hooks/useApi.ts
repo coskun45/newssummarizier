@@ -3,8 +3,8 @@
  */
 import { useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
-import { articlesApi, summariesApi, topicsApi, settingsApi, statsApi, feedsApi, authApi, bulletinApi } from '../services/api';
-import type { ArticleFilters, UserSettings, BulletinGenerateRequest, ReprocessRequest } from '../types';
+import { articlesApi, summariesApi, topicsApi, settingsApi, statsApi, feedsApi, authApi, bulletinApi, playgroundApi } from '../services/api';
+import type { ArticleFilters, UserSettings, BulletinGenerateRequest, ReprocessRequest, PlaygroundRunRequest } from '../types';
 
 // Articles hooks
 export const useArticleCounts = () => {
@@ -456,5 +456,20 @@ export const useDeleteGeneratedBulletin = () => {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['generatedBulletins'] });
         },
+    });
+};
+
+// Playground hooks
+export const usePlaygroundSettings = () => {
+    return useQuery({
+        queryKey: ['playgroundSettings'],
+        queryFn: () => playgroundApi.getSettings(),
+    });
+};
+
+// A dry run persists nothing server-side, so there is no cache to invalidate.
+export const useRunPlayground = () => {
+    return useMutation({
+        mutationFn: (request: PlaygroundRunRequest) => playgroundApi.run(request),
     });
 };

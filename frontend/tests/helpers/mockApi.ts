@@ -9,6 +9,10 @@ import type {
   AppUser,
   BulletinCategory,
   GeneratedBulletin,
+  PlaygroundSettings,
+  PlaygroundRunRequest,
+  PlaygroundRunResult,
+  PlaygroundStageCall,
 } from '../../src/types';
 
 let idSeq = 1000;
@@ -143,6 +147,82 @@ export function makeUser(overrides: Partial<AppUser> = {}): AppUser {
   };
 }
 
+export function makePlaygroundSettings(overrides: Partial<PlaygroundSettings> = {}): PlaygroundSettings {
+  return {
+    classification_model: 'gpt-4o-mini',
+    classification_prompt: { text: 'CLS prompt {topic_list}', source: 'db' },
+    summarization_prompt: { text: 'SUM prompt', source: 'default' },
+    summary_types: [
+      { type: 'brief', model: 'gpt-4o-mini', max_tokens: 150, default_instructions: 'Brief instr', enabled: true },
+      { type: 'standard', model: 'gpt-4o-mini', max_tokens: 300, default_instructions: 'Standard instr', enabled: true },
+      { type: 'detailed', model: 'gpt-4o', max_tokens: 1000, default_instructions: 'Detailed instr', enabled: false },
+    ],
+    topics: [{ name: 'NATO', description: null }],
+    ...overrides,
+  };
+}
+
+function makeStageCall(model: string, systemPrompt: string, source: PlaygroundStageCall['prompt_source']): PlaygroundStageCall {
+  return {
+    model,
+    system_prompt: systemPrompt,
+    prompt_source: source,
+    temperature: 0.1,
+    max_completion_tokens: 300,
+    attempts: [{
+      attempt: 1,
+      user_prompt: 'USER PROMPT SENT',
+      raw_response: 'RAW MODEL ANSWER',
+      error: null,
+      input_tokens: 120,
+      output_tokens: 15,
+      finish_reason: 'stop',
+      latency_ms: 850,
+    }],
+    error: null,
+    input_tokens: 120,
+    output_tokens: 15,
+    cost: 0.0012,
+    latency_ms: 850,
+  };
+}
+
+/** Default dry-run response: classification says important/high; one summary per requested type. */
+export function buildPlaygroundRunResult(article: MockArticle, request: PlaygroundRunRequest): PlaygroundRunResult {
+  const content = article.cleaned_content ?? article.raw_content ?? '';
+  const types = request.summary_types ?? ['brief', 'standard'];
+  const source = (override?: string) => (override ? 'override' : 'db') as PlaygroundStageCall['prompt_source'];
+  return {
+    article: { id: article.id, title: article.title, url: article.url },
+    content_used: {
+      source: article.cleaned_content ? 'cleaned' : article.raw_content ? 'raw' : 'none',
+      chars: content.length,
+      used_chars: content.length,
+      truncated: false,
+    },
+    classification: request.stages.includes('classification')
+      ? {
+          ...makeStageCall('gpt-4o-mini', request.classification_prompt ?? 'CLS prompt', source(request.classification_prompt)),
+          importance: 'important',
+          priority: 'high',
+          topics: [{ name: 'NATO', confidence: 0.9, known: true }, { name: 'Ghost', confidence: 0.6, known: false }],
+          pipeline_outcome: 'continue',
+        }
+      : null,
+    summaries: request.stages.includes('summarization')
+      ? types.map((type) => ({
+          ...makeStageCall('gpt-4o-mini', request.summarization_prompt ?? 'SUM prompt', source(request.summarization_prompt)),
+          summary_type: type,
+          instructions: request.summary_instructions?.[type] ?? `${type} instr`,
+          summary_text: `Özet (${type}) für ${article.title}`,
+          tokens_used: 135,
+        }))
+      : [],
+    skipped_reason: null,
+    total_cost: 0.0024,
+  };
+}
+
 export interface MockState {
   feeds: Feed[];
   topics: Topic[];
@@ -153,6 +233,9 @@ export interface MockState {
   users: AppUser[];
   bulletinCategories: BulletinCategory[];
   generatedBulletins: GeneratedBulletin[];
+  playgroundSettings: PlaygroundSettings;
+  /** Every POST /playground/run body, in order — lets specs assert on what the UI sent. */
+  playgroundRuns: PlaygroundRunRequest[];
 }
 
 export interface MockApiOverrides {
@@ -165,6 +248,7 @@ export interface MockApiOverrides {
   users?: AppUser[];
   bulletinCategories?: BulletinCategory[];
   generatedBulletins?: GeneratedBulletin[];
+  playgroundSettings?: PlaygroundSettings;
 }
 
 /** Mirrors the backend's "Error" group: no severity label (not even Önemsiz) or status `failed`,
@@ -322,6 +406,8 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
     users: (overrides.users ?? []).map((u) => ({ ...u })),
     bulletinCategories: (overrides.bulletinCategories ?? []).map((c) => ({ ...c })),
     generatedBulletins: (overrides.generatedBulletins ?? []).map((b) => ({ ...b })),
+    playgroundSettings: overrides.playgroundSettings ?? makePlaygroundSettings(),
+    playgroundRuns: [],
   };
 
   await page.route('**/api/**', async (route: Route) => {
@@ -744,6 +830,18 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
       if (idx === -1) return json({ detail: 'Bülten bulunamadı' }, 404);
       state.generatedBulletins.splice(idx, 1);
       return json({ status: 'success' });
+    }
+
+    // ---- playground ----
+    if (method === 'GET' && path === '/playground/settings') {
+      return json(state.playgroundSettings);
+    }
+    if (method === 'POST' && path === '/playground/run') {
+      const body = request.postDataJSON() as PlaygroundRunRequest;
+      state.playgroundRuns.push(body);
+      const article = state.articles.find((a) => a.id === body.article_id);
+      if (!article) return json({ detail: 'Article not found' }, 404);
+      return json(buildPlaygroundRunResult(article, body));
     }
 
     // Unrecognized /api/* request — fail loudly instead of hanging.

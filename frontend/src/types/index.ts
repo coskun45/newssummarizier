@@ -183,3 +183,92 @@ export interface GeneratedBulletin {
     article_count: number;
     generated_at: string;
 }
+
+// Playground (dry-run of the pipeline on a single stored article)
+export type PlaygroundStage = 'classification' | 'summarization';
+export type PlaygroundSummaryType = 'brief' | 'standard' | 'detailed';
+
+export interface PlaygroundPromptInfo {
+    text: string;
+    source: 'db' | 'default';
+}
+
+export interface PlaygroundSummaryTypeInfo {
+    type: PlaygroundSummaryType;
+    model: string;
+    max_tokens: number;
+    default_instructions: string;
+    enabled: boolean;
+}
+
+export interface PlaygroundSettings {
+    classification_model: string;
+    classification_prompt: PlaygroundPromptInfo;
+    summarization_prompt: PlaygroundPromptInfo;
+    summary_types: PlaygroundSummaryTypeInfo[];
+    topics: { name: string; description: string | null }[];
+}
+
+export interface PlaygroundRunRequest {
+    article_id: number;
+    stages: PlaygroundStage[];
+    classification_prompt?: string;
+    summarization_prompt?: string;
+    summary_instructions?: Partial<Record<PlaygroundSummaryType, string>>;
+    summary_types?: PlaygroundSummaryType[];
+    force_summarize?: boolean;
+}
+
+export interface PlaygroundAttempt {
+    attempt: number;
+    user_prompt: string;
+    raw_response: string | null;
+    error: string | null;
+    input_tokens: number;
+    output_tokens: number;
+    finish_reason: string | null;
+    latency_ms: number;
+}
+
+export interface PlaygroundStageCall {
+    model: string;
+    system_prompt: string;
+    prompt_source: 'override' | 'db' | 'default';
+    temperature: number;
+    max_completion_tokens: number;
+    attempts: PlaygroundAttempt[];
+    error: string | null;
+    input_tokens: number;
+    output_tokens: number;
+    cost: number;
+    latency_ms: number;
+}
+
+export interface PlaygroundTopicResult {
+    name: string;
+    confidence: number | null;
+    known: boolean;
+}
+
+export interface PlaygroundClassificationResult extends PlaygroundStageCall {
+    importance: string | null;
+    priority: string | null;
+    topics: PlaygroundTopicResult[];
+    pipeline_outcome: 'continue' | 'filtered' | 'failed';
+}
+
+export interface PlaygroundSummaryResult extends PlaygroundStageCall {
+    summary_type: PlaygroundSummaryType;
+    instructions: string;
+    summary_text: string | null;
+    tokens_used: number;
+}
+
+export interface PlaygroundRunResult {
+    article: { id: number; title: string; url: string };
+    content_used: { source: 'cleaned' | 'raw' | 'none'; chars: number; used_chars: number; truncated: boolean };
+    classification: PlaygroundClassificationResult | null;
+    summaries: PlaygroundSummaryResult[];
+    skipped_reason: 'unimportant' | 'classification_failed' | null;
+    total_cost: number;
+}

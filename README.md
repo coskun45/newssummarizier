@@ -14,6 +14,10 @@ Deutsche Welle (DW) RSS beslemelerinden haber toplayan, kategorize eden ve yapay
 - **Word Bülten Raporu**: Seçilen zaman aralığı ve önem seviyesindeki haberleri, kullanıcı tanımlı üst
   düzey kategorilere (Avrupa, Amerika vb.) göre gruplayıp şablona uygun bir Word (.docx) raporu üretir —
   alt başlıklar ve gündem özeti her üretimde yapay zeka tarafından haberlere göre oluşturulur
+- **Playground**: Header'daki sekmeden mevcut RSS'lerdeki haberlerden biri seçilip pipeline'ın (sınıflandırma +
+  öncelik, kısa/standart/detaylı özet) sonucu görülebilir. Geçerli model ve prompt ayarları gösterilir; prompt'lar
+  ve özet talimatları o çalıştırma için geçici olarak değiştirilebilir. Her aşama ayrıntılı incelenir (modele giden
+  prompt, ham cevap, token, maliyet, süre). Hiçbir şey veritabanına yazılmaz.
 
 ## 🏗️ Mimari
 
@@ -303,6 +307,11 @@ Bulten/
   - "Özeti Göster"e tıklayın
   - Kısa, Standart, Detaylı arasından seçin
 - **Orijinali Aç**: Tam makale için "Orijinali Aç"a tıklayın
+- **Playground**: Header'daki "Playground" sekmesinde bir RSS kaynağı/haber seçin, isterseniz sınıflandırma ve
+  özetleme prompt'larını (ve özet türü talimatlarını) düzenleyip "Sınıflandır", "Özetle" veya "Tümünü
+  çalıştır" ile sonucu aşama aşama inceleyin. Düzenlenen prompt'lar kaydedilmez; kalıcı değişiklik için
+  Ayarlar › Sistem Promptları kullanılır. Çalıştırmalar OpenAI'ye gerçek istek atar (maliyet oluşur, ancak
+  günlük/aylık limit hesabına dahil edilmez).
 
 ### API Endpoints
 
@@ -347,6 +356,13 @@ Bulten/
 - `PUT /api/bulletin/categories/reorder` - Kategori görüntüleme sırasını güncelle (admin)
 - `POST /api/bulletin/generate` - Filtrelere (tarih aralığı, önem seviyesi) göre Word (.docx) bülten
   raporu oluşturur ve dosya olarak döner
+
+#### Playground (kayıt yapmayan deneme çalıştırması)
+
+- `GET /api/playground/settings` - Pipeline'ın şu an kullandığı model, prompt (kayıtlı/varsayılan), özet
+  türleri ve konu listesi
+- `POST /api/playground/run` - Seçilen tek bir haber için sınıflandırma ve/veya özetlemeyi (isteğe bağlı prompt
+  değişiklikleriyle) çalıştırıp her aşamanın ayrıntısını döner; veritabanına hiçbir şey yazmaz
 
 ## ⚙️ Yapılandırma
 

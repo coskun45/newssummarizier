@@ -16,6 +16,7 @@ import Settings, { type SettingsCategory } from '../Settings/Settings';
 import SettingsNav from '../Settings/SettingsNav';
 import UserMenu from '../UserMenu/UserMenu';
 import BulletinPanel from '../Bulletin/Bulletin';
+import Playground from '../Playground/Playground';
 import logo from '../../assets/logo.svg';
 import {
   Cog6ToothIcon,
@@ -54,7 +55,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
   const emptyDate: DateFilterState = { preset: null, customFrom: '', customTo: '' };
   const [publishedFilter, setPublishedFilter] = useState<DateFilterState>(emptyDate);
   const [fetchedFilter, setFetchedFilter] = useState<DateFilterState>(emptyDate);
-  const [activeView, setActiveView] = useState<'home' | 'news' | 'bulletin' | 'settings'>('home');
+  const [activeView, setActiveView] = useState<'home' | 'news' | 'bulletin' | 'playground' | 'settings'>('home');
   const [settingsCategory, setSettingsCategory] = useState<SettingsCategory>('feeds');
   const [activeSection, setActiveSection] = useState<'unread' | 'archive' | 'important' | 'error'>('unread');
   const [selectedArticleIds, setSelectedArticleIds] = useState<Set<number>>(new Set());
@@ -392,6 +393,12 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                 Bülten
               </button>
               <button
+                className={`header-nav-item${activeView === 'playground' ? ' header-nav-item--active' : ''}`}
+                onClick={() => setActiveView('playground')}
+              >
+                Playground
+              </button>
+              <button
                 className={`header-nav-item${activeView === 'settings' ? ' header-nav-item--active' : ''}`}
                 onClick={() => setActiveView('settings')}
               >
@@ -494,6 +501,8 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
               )}
 
               {activeView === 'bulletin' && <BulletinPanel />}
+
+              {activeView === 'playground' && <Playground />}
 
               {activeView === 'settings' && (
                 <Settings category={settingsCategory} currentUser={currentUser} />
