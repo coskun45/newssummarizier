@@ -204,7 +204,7 @@ Tüm değişkenler repo kökündeki **tek `.env`** dosyasından gelir (şablon: 
 `env_file`'ı olarak yükler. Sunucuda dosya `scripts/ensure_env.py` ile ilk deploy'da otomatik üretilir
 (rastgele `POSTGRES_PASSWORD` ve `JWT_SECRET_KEY` dahil), sonraki deploy'larda mevcut değerlere dokunulmaz.
 Aşağıdaki tablo öne çıkanlardır; tam liste `.env.example`'dadır. Container içinde yalnızca `DATABASE_URL`
-(`db` host'una çevrilir), `CHECKPOINTS_DB`, `BULLETIN_STORAGE_DIR` ve `DEBUG=false` compose tarafından ezilir.
+(`db` host'una çevrilir), `CHECKPOINTS_DB`, `BULLETIN_STORAGE_DIR` ve `DEBUG=false` compose tarafından ezilir; ayrıca `APP_VERSION` (aşağıya bakın) deploy'da CI'dan gelirse `.env`'yi ezer.
 
 | Değişken | Varsayılan | Açıklama |
 |---|---|---|
@@ -215,11 +215,23 @@ Aşağıdaki tablo öne çıkanlardır; tam liste `.env.example`'dadır. Contain
 | `POSTGRES_PASSWORD` | `changeme` | PostgreSQL şifresi — **production'da güçlü bir değer olmalı** (deploy rastgele üretir) |
 | `POSTGRES_DB` | `bulten` | PostgreSQL veritabanı adı |
 | `DATABASE_URL` | `postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}` | Backend'in bağlandığı veritabanı — `db` servisine işaret eder, doğrudan override edilmez |
+| `APP_VERSION` | `2.0.0` | Uygulama sürümü (`/api/info`, arayüzde profil menüsü) — deploy'da CI otomatik ayarlar, bkz. [Sürümleme](#sürümleme) |
 | `DEBUG` | `false` | Debug modu (container'da her zaman `false`) |
 | `CORS_ORIGINS` | `http://localhost:5173,...` | İzin verilen CORS origin'leri (deploy sunucu IP'sine ayarlar) |
 | `DEFAULT_MODEL` / `DETAILED_MODEL` | `gpt-4o-mini` / `gpt-4o` | Kategorizasyon/kısa özet ve detaylı özet modelleri |
 | `MAX_TOKENS_OUTPUT_BRIEF` / `_STANDARD` / `_DETAILED` | `1500` / `3000` / `10000` | Özet tipine göre çıktı token limiti |
 | `DAILY_COST_LIMIT` / `MONTHLY_COST_LIMIT` | `10.0` / `100.0` | Maliyet limitleri (USD) |
+
+### Sürümleme
+
+Her deploy (`master`'a push → testler → `ci-cd.yml`) uygulamaya otomatik bir sürüm verir; `scripts/next_version.py` hesaplar:
+
+- **Minor her deploy'da artar** (`2.0.0` → `2.1.0` → `2.2.0`); patch hep `0`.
+- **Major, `frontend/src/data/features.json`'daki en yüksek `vN`'dir.** Yeni ana sürüm başlatmak için oraya yeni bir
+  `vN` bloğu ekleyin; sonraki deploy `N.0.0` olur, sonra yine minor artar.
+- Mevcut sürüm git tag'lerinden (`vX.Y.Z`) okunur; deploy başarılı olunca yeni tag push'lanır.
+- Sürüm container'a `APP_VERSION` olarak iletilir, `/api/info` döndürür ve arayüzde profil simgesine tıklayınca
+  açılan menüde ve Ayarlar › Features'ta görünür.
 
 ### Veritabanı Kalıcılığı
 
@@ -278,6 +290,7 @@ Bulten/
 │   └── ...
 ├── docker-compose.yml      # Servis orkestrasyon (db: Postgres, backend, frontend)
 ├── scripts/ensure_env.py   # Sunucuda .env üretir/günceller (deploy tarafından çağrılır)
+├── scripts/next_version.py # Deploy sürümünü hesaplar (major: features.json, minor: git tag'leri)
 ├── .env.example            # Tek yapılandırma şablonu
 ├── .env                    # TÜM ayarlar + secret'lar — tek dosya (Git'e eklemeyin!)
 └── README.md

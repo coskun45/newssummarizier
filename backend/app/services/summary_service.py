@@ -339,9 +339,13 @@ def _summary_type_config(summary_type: str) -> Tuple[str, int]:
 
 
 def _resolve_system_prompt(db, prompt_type: str, default: str) -> Tuple[str, str]:
-    """Return (prompt text, source) — the active DB prompt ("db") or the built-in fallback ("default")."""
+    """
+    Return (prompt text, source) — the active, non-blank DB prompt ("db") or the built-in
+    fallback ("default"). A prompt the user emptied out (or that is missing/inactive) means
+    "use the default", so the pipeline never runs with an empty system message.
+    """
     prompt_obj = crud.get_system_prompt(db, prompt_type)
-    if prompt_obj and prompt_obj.is_active:
+    if prompt_obj and prompt_obj.is_active and (prompt_obj.prompt_text or "").strip():
         return prompt_obj.prompt_text, "db"
     return default, "default"
 
@@ -554,7 +558,8 @@ async def _run_summary(
     `error` is set when the model returned no content; API/transport errors propagate.
     """
     prompt = _build_summary_user_prompt(title, content, instructions)
-    input_tokens = count_tokens(prompt, model)
+    # The system prompt is billed too (and is long), so it must count towards cost/limits.
+    input_tokens = count_tokens(system_prompt + prompt, model)
 
     started = time.perf_counter()
     response = await get_openai_client().chat.completions.create(

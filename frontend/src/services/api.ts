@@ -16,6 +16,7 @@ import type {
     Topic,
     UserSettings,
     CostStats,
+    AppInfo,
     SystemPrompt,
     LockedPrompt,
     AppUser,
@@ -292,7 +293,7 @@ export const statsApi = {
 
 // App info
 export const appApi = {
-    getInfo: async (): Promise<{ app: string; version: string; status: string }> => {
+    getInfo: async (): Promise<AppInfo> => {
         const response = await api.get('/info');
         return response.data;
     },

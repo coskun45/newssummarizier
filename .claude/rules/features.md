@@ -32,6 +32,11 @@ stays correct if it is updated in the same change that alters a feature.
   new version, append a `{ "version": "vN", "title": "…", "features": [] }` object at the end — never renumber or
   move existing entries between versions unless asked.
 
+- **The highest `vN` is the app's major version.** `scripts/next_version.py` (called by the deploy job in
+  `ci-cd.yml`) builds `N.<minor>.0`: minor auto-increments per deploy from the `vX.Y.Z` git tags, and appending a new
+  `vN` block makes the next deploy `N.0.0`. So only add a `vN` block when the user actually wants a major release.
+  The running version is shown in the profile menu that opens from the avatar (`UserMenu`) and on this page, fed by `/api/info`.
+
 ## Schema (`FeaturesData` in `src/types/index.ts`)
 ```json
 { "versions": [ { "version": "v1", "title": "Temel haber özetleme",

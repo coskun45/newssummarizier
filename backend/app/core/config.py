@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     
     # Application Settings
     app_name: str = "News Summarizer"
-    app_version: str = "1.0.0"
+    app_version: str = "2.0.0"
     debug: bool = True
     
     # RSS Feed Configuration

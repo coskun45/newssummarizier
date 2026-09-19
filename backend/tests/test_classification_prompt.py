@@ -145,3 +145,11 @@ def test_seed_marks_fresh_install_as_migrated(seed_db):
     seed.seed_system_prompts()
 
     assert _stored(seed_db) == "Kriter {topic_list}"
+
+
+def test_seed_summarization_prompt_is_the_pipeline_default(seed_db):
+    """A fresh install stores the same summarization prompt the pipeline falls back to."""
+    seed.seed_system_prompts()
+
+    seed_db.expire_all()
+    assert crud.get_system_prompt(seed_db, "summarization").prompt_text == summary_service._DEFAULT_SUMMARIZATION_SYSTEM_PROMPT

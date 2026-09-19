@@ -78,13 +78,45 @@ jobs:
     needs: [ci-frontend, ci-backend]
     if: github.ref == 'refs/heads/master' && github.event_name == 'push'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # başarılı deploy'dan sonra vX.Y.0 tag'i push'lamak için
+    concurrency:
+      group: deploy     # eşzamanlı deploy'lar aynı sürümü hesaplayıp tag yarışına girmesin
+      cancel-in-progress: false
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # sürüm hesabı için tüm tag'ler gerekli
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Sürüm = features.json'daki en yüksek vN (major) + o major'daki deploy sayısı (minor).
+      # Yeni major başlatmak için features.json'a yeni bir vN bloğu ekleyin (bkz. scripts/next_version.py).
+      - name: Compute version
+        id: version
+        run: |
+          existing=$(git tag --points-at HEAD --list 'v[0-9]*.[0-9]*.[0-9]*' | head -n1)
+          if [ -n "$existing" ]; then
+            # Aynı commit için yeniden çalıştırma: sürümü tekrar artırma.
+            echo "version=${existing#v}" >> "$GITHUB_OUTPUT"
+            echo "tagged=true" >> "$GITHUB_OUTPUT"
+          else
+            version=$(git tag --list 'v*' | python scripts/next_version.py --features frontend/src/data/features.json)
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+            echo "tagged=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: APP_VERSION
           script: |
             cd /root/newssummarizier
             # One-time migration: move the legacy git-tracked db out of the working
@@ -94,9 +126,16 @@ jobs:
             [ -f backend/checkpoints.db ] && [ ! -f data/checkpoints.db ] && mv backend/checkpoints.db data/checkpoints.db
             git fetch origin
             git reset --hard origin/master
-            export APP_VERSION=1.0.$(git rev-list --count HEAD)
+            # APP_VERSION runner'daki "Compute version" adımından gelir (docker-compose.yml container'a iletir).
             echo "Deploying version $APP_VERSION"
             APP_VERSION=$APP_VERSION docker compose build --no-cache
             APP_VERSION=$APP_VERSION docker compose up -d
             docker compose ps
             echo "=== Deployed: $APP_VERSION ==="
+
+      # Başarısız deploy sürüm yakmasın diye tag deploy'dan SONRA atılır.
+      - name: Tag release
+        if: steps.version.outputs.tagged == 'false'
+        run: |
+          git tag "v${{ steps.version.outputs.version }}"
+          git push origin "v${{ steps.version.outputs.version }}"

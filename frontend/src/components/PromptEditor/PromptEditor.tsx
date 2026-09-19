@@ -123,7 +123,7 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ promptType, label, descript
                             <button
                                 className="btn btn-save"
                                 onClick={handleSave}
-                                disabled={loading || !editedText.trim()}
+                                disabled={loading}
                             >
                                 <CheckIcon /> Kaydet
                             </button>
@@ -169,6 +169,11 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ promptType, label, descript
                             <div className="char-count">
                                 {editedText.length} karakter
                             </div>
+                            {!editedText.trim() && (
+                                <small className="prompt-blank-hint">
+                                    Boş bırakılırsa varsayılan prompt kullanılır.
+                                </small>
+                            )}
                         </div>
                     </>
                 ) : (
@@ -179,7 +184,7 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ promptType, label, descript
                             </span>
                         </div>
                         {withLockedPart(
-                            <pre className="prompt-text">{prompt?.prompt_text || 'Prompt belirlenmemiş'}</pre>
+                            <pre className="prompt-text">{prompt?.prompt_text?.trim() ? prompt.prompt_text : 'Prompt belirlenmemiş — varsayılan prompt kullanılır'}</pre>
                         )}
                         {prompt && (
                             <div className="prompt-meta">

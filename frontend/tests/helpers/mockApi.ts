@@ -281,6 +281,8 @@ export interface MockApiOverrides {
   bulletinCategories?: BulletinCategory[];
   generatedBulletins?: GeneratedBulletin[];
   playgroundSettings?: PlaygroundSettings;
+  /** Version returned by GET /api/info (shown in the profile menu and on Ayarlar › Features). */
+  appVersion?: string;
 }
 
 /** Mirrors the backend's "Error" group: no severity label (not even Önemsiz) or status `failed`,
@@ -453,7 +455,7 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
 
     // ---- app info ----
     if (method === 'GET' && path === '/info') {
-      return json({ app: 'News Summarizer', version: '1.0.0', status: 'running' });
+      return json({ app: 'News Summarizer', version: overrides.appVersion ?? '2.0.0', status: 'running' });
     }
 
     // ---- feeds ----

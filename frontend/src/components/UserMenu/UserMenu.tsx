@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRightStartOnRectangleIcon } from '@heroicons/react/24/outline';
 import { useTheme } from '../../hooks/useTheme';
+import { useAppInfo } from '../../hooks/useApi';
 import type { Theme } from '../../contexts/theme-context';
 import './UserMenu.css';
 
@@ -31,6 +32,7 @@ function UserMenu({ email, onLogout }: UserMenuProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const { theme, setTheme } = useTheme();
+  const { data: appInfo } = useAppInfo();
 
   useEffect(() => {
     if (!open) return;
@@ -82,6 +84,12 @@ function UserMenu({ email, onLogout }: UserMenuProps) {
               ))}
             </select>
           </label>
+          {appInfo?.version && (
+            <div className="user-menu-row">
+              <span>Sürüm</span>
+              <span className="user-menu-version">v{appInfo.version}</span>
+            </div>
+          )}
           <div className="user-menu-divider" />
           <button type="button" className="user-menu-logout" onClick={onLogout}>
             <ArrowRightStartOnRectangleIcon /> Çıkış Yap

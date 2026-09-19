@@ -26,4 +26,8 @@ This is a two-service app: a Python **FastAPI** backend (`backend/`) and a **Rea
 
 ## Deploy
 - **Health check is `/api/health`** (also `/health`) — referenced by the docker smoke test. Don't remove it.
+- **The app version is computed, not hand-written.** The deploy job runs `scripts/next_version.py` (major = highest `vN` in
+  `frontend/src/data/features.json`, minor = deploys so far from `vX.Y.Z` git tags), passes it as `APP_VERSION`, and tags the
+  release after a successful deploy. `docker-compose.yml` must keep forwarding `APP_VERSION` to the backend — without it the
+  container reads the stale `.env` value. Never hardcode a version bump; see [[features]].
 - **Changes to build/deploy go through the existing pipeline** (`.github/workflows/`, `deploy.sh`, `docker-compose.yml`); don't introduce a parallel deploy path.

@@ -124,6 +124,11 @@
           "id": "settings-features",
           "title": "Features listeleme",
           "description": "Ayarlar altındaki Features sayfası, uygulamadaki feature'ları sürümlere göre (en yeni sürüm üstte) listeler; içerik features.json dosyasından okunur."
+        },
+        {
+          "id": "app-version",
+          "title": "Sürüm bilgisi",
+          "description": "Çalışan güncel sürüm profil simgesine tıklayınca açılan menüde ve Features sayfasında görünür; her deploy'da otomatik artar, features.json'a yeni bir sürüm bloğu eklenince ana sürüm yükselir."
         }
       ]
     }

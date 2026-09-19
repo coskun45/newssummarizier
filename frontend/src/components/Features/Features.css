@@ -4,6 +4,16 @@
   font-size: 0.9rem;
 }
 
+.features-current-version {
+  margin: -0.75rem 0 1.25rem 0;
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+}
+
+.features-current-version strong {
+  color: var(--color-text-primary);
+}
+
 .features-group + .features-group {
   margin-top: 1.5rem;
 }

@@ -97,7 +97,7 @@ test("when the prompt doesn't exist yet (404), no error is shown and saving uses
   await expect(editor.getByText('Prompt başarıyla kaydedildi!')).toBeVisible();
 });
 
-test('save is disabled when the textarea is emptied', async ({ page }) => {
+test('an emptied prompt can be saved and falls back to the default prompt', async ({ page }) => {
   await loginAs(page);
   const prompts = new Map([['classification', makePrompt('classification', { prompt_text: 'Original text', is_active: true })]]);
   await mockApi(page, { articles: [], prompts });
@@ -107,7 +107,17 @@ test('save is disabled when the textarea is emptied', async ({ page }) => {
   await editor.getByRole('button', { name: 'Düzenle' }).click();
   await editor.locator('textarea').fill('');
 
-  await expect(editor.getByRole('button', { name: 'Kaydet' })).toBeDisabled();
+  await expect(editor.getByText('Boş bırakılırsa varsayılan prompt kullanılır.')).toBeVisible();
+  await expect(editor.getByRole('button', { name: 'Kaydet' })).toBeEnabled();
+
+  const req = page.waitForRequest(
+    (r) => r.url().endsWith('/api/prompts/classification') && r.method() === 'PUT'
+  );
+  await editor.getByRole('button', { name: 'Kaydet' }).click();
+  expect((await req).postDataJSON().prompt_text).toBe('');
+
+  await expect(editor.getByText('Prompt başarıyla kaydedildi!')).toBeVisible();
+  await expect(editor.getByText('varsayılan prompt kullanılır')).toBeVisible();
 });
 
 test('classification prompt shows the locked system part read-only, in view and edit mode', async ({ page }) => {

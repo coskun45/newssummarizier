@@ -3,7 +3,7 @@
  */
 import { useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
-import { articlesApi, summariesApi, topicsApi, settingsApi, statsApi, feedsApi, authApi, bulletinApi, playgroundApi, promptsApi } from '../services/api';
+import { articlesApi, summariesApi, topicsApi, settingsApi, statsApi, appApi, feedsApi, authApi, bulletinApi, playgroundApi, promptsApi } from '../services/api';
 import type { ArticleFilters, UserSettings, BulletinGenerateRequest, ReprocessRequest, PlaygroundRunRequest } from '../types';
 
 // Articles hooks
@@ -285,6 +285,15 @@ export const useCostStats = () => {
         queryKey: ['costStats'],
         queryFn: statsApi.getCosts,
         refetchInterval: 60000, // Refetch every minute
+    });
+};
+
+// App info hook — the deployed version is fixed for the lifetime of the page.
+export const useAppInfo = () => {
+    return useQuery({
+        queryKey: ['appInfo'],
+        queryFn: appApi.getInfo,
+        staleTime: Infinity,
     });
 };
 

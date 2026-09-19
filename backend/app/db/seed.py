@@ -134,23 +134,15 @@ def seed_database():
 
 def seed_system_prompts():
     """Seed default system prompts."""
-    from app.services.summary_service import _CATEGORIZATION_SYSTEM_PROMPT
+    from app.services.summary_service import _CATEGORIZATION_SYSTEM_PROMPT, _DEFAULT_SUMMARIZATION_SYSTEM_PROMPT
     db = SessionLocal()
     try:
+        # Same texts the pipeline falls back to when a prompt is blank/missing, so a fresh
+        # install and a "cleared" prompt behave identically (and summaries stay Turkish — the
+        # per-request language line requires it).
         default_prompts = {
             "classification": _CATEGORIZATION_SYSTEM_PROMPT,
-
-            "summarization": """You are a professional news summarization assistant. Create clear, concise, and informative summaries of German news articles.
-
-Your task:
-1. Read the article carefully
-2. Extract the main points and key information
-3. Create a summary that captures the essence of the article
-4. Use clear and professional language in German
-5. Focus on facts and avoid personal opinions
-6. Maintain the original tone and context
-
-Return only the summary text without any additional formatting or explanations."""
+            "summarization": _DEFAULT_SUMMARIZATION_SYSTEM_PROMPT,
         }
 
         created_count = 0

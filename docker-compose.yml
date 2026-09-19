@@ -32,6 +32,8 @@ services:
       CHECKPOINTS_DB: /app/data/checkpoints.db
       BULLETIN_STORAGE_DIR: /app/data/bulletins
       DEBUG: "false"
+      # Deploy'da CI shell'e APP_VERSION verir (shell > .env > varsayılan); yoksa container hep .env'dekini görürdü.
+      APP_VERSION: ${APP_VERSION:-2.0.0}
     volumes:
       - ./data:/app/data
     depends_on:

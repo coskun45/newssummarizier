@@ -99,6 +99,12 @@ export interface CostStats {
     monthly_limit: number;
 }
 
+export interface AppInfo {
+    app: string;
+    version: string;
+    status: string;
+}
+
 export interface SystemPrompt {
     id: number;
     prompt_type: string;

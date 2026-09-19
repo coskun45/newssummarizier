@@ -420,3 +420,60 @@ def test_generate_summary_empty_response_and_bad_type_raise(monkeypatch, db_sess
         asyncio.run(summary_service.generate_summary("Titel", "Inhalt", "brief"))
     with pytest.raises(SummarizationError):
         asyncio.run(summary_service.generate_summary("Titel", "Inhalt", "huge"))
+
+
+# ---------------------------------------------------------------------------
+# Emptied / missing / inactive prompts: the pipeline must fall back to the built-in defaults.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("stored", ["", "   \n\t"])
+def test_blank_stored_prompts_fall_back_to_defaults_in_the_pipeline(monkeypatch, db_session, stored):
+    _make_topic(db_session, "NATO", description="Bündnis")
+    crud.upsert_system_prompt(db_session, "classification", stored, True)
+    crud.upsert_system_prompt(db_session, "summarization", stored, True)
+
+    calls = _fake_openai(
+        monkeypatch, db_session,
+        '{"importance": "important", "priority": "low", "topics": []}',
+    )
+    asyncio.run(summary_service.categorize_and_prioritize_article("NATO-Gipfel"))
+    cls_system = calls[0]["messages"][0]["content"]
+    assert cls_system.startswith(summary_service._CATEGORIZATION_SYSTEM_PROMPT.rstrip())
+    assert "- NATO: Bündnis" in cls_system and "JSON" in cls_system
+
+    calls = _fake_openai(monkeypatch, db_session, "Özet")
+    asyncio.run(summary_service.generate_summary("Titel", "Inhalt", "brief"))
+    assert calls[0]["messages"][0]["content"] == summary_service._DEFAULT_SUMMARIZATION_SYSTEM_PROMPT
+
+
+def test_blank_stored_prompts_are_reported_as_default(db_session):
+    crud.upsert_system_prompt(db_session, "classification", "", True)
+    crud.upsert_system_prompt(db_session, "summarization", "  ", True)
+
+    info = summary_service.get_pipeline_settings(db_session)
+
+    assert info["classification_prompt"] == {"text": summary_service._CATEGORIZATION_SYSTEM_PROMPT, "source": "default"}
+    assert info["summarization_prompt"] == {"text": summary_service._DEFAULT_SUMMARIZATION_SYSTEM_PROMPT, "source": "default"}
+
+
+def test_pipeline_works_with_no_stored_prompts_and_no_topics(monkeypatch, db_session):
+    """Every prompt row and every topic deleted: classification and summary calls still succeed."""
+    calls = _fake_openai(monkeypatch, db_session, '{"importance": "unimportant", "priority": null, "topics": []}')
+    result = asyncio.run(summary_service.categorize_and_prioritize_article("Titel"))
+    assert result["importance"] == "unimportant"
+    assert "JSON" in calls[0]["messages"][0]["content"]
+
+    calls = _fake_openai(monkeypatch, db_session, "Özet")
+    assert asyncio.run(summary_service.generate_summary("Titel", "Inhalt", "standard"))["summary_text"] == "Özet"
+    assert calls[0]["messages"][0]["content"].strip()
+
+
+def test_summary_input_tokens_include_the_system_prompt(monkeypatch, db_session):
+    _fake_openai(monkeypatch, db_session, "Özet")
+    crud.upsert_system_prompt(db_session, "summarization", "word " * 500, True)
+
+    result = asyncio.run(summary_service.generate_summary("T", "C", "brief"))
+
+    user_only = summary_service.count_tokens(summary_service._build_summary_user_prompt(
+        "T", "C", summary_service.DEFAULT_SUMMARY_INSTRUCTIONS["brief"]))
+    assert result["tokens_used"] > user_only + 400
