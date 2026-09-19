@@ -140,8 +140,14 @@ def test_settings_report_models_prompts_and_topics(client, auth_headers, db_sess
 
     assert body["classification_model"] == settings.default_model
     assert body["classification_prompt"]["source"] == "default"
-    assert "{topic_list}" in body["classification_prompt"]["text"]
+    # The editable text carries only the criteria; the topic list + output format are locked.
+    assert "{topic_list}" not in body["classification_prompt"]["text"]
+    assert "- NATO: Bündnis" not in body["classification_prompt"]["text"]
+    locked = body["classification_locked_text"]
+    assert "- NATO: Bündnis" in locked and '"importance"' in locked and "JSON" in locked
     assert body["summarization_prompt"]["source"] == "default"
+    locked = body["summarization_locked"]
+    assert locked["heading"] and summary_service.SUMMARY_LANGUAGE_INSTRUCTION in locked["language_line"]
     by_type = {t["type"]: t for t in body["summary_types"]}
     assert by_type["detailed"]["model"] == settings.detailed_model
     assert by_type["brief"]["max_tokens"] == settings.max_tokens_output_brief
@@ -150,13 +156,13 @@ def test_settings_report_models_prompts_and_topics(client, auth_headers, db_sess
 
 
 def test_settings_prefer_active_db_prompt_and_enabled_types(client, auth_headers, db_session):
-    crud.upsert_system_prompt(db_session, "classification", "DB classification {topic_list}", True)
+    crud.upsert_system_prompt(db_session, "classification", "DB classification", True)
     crud.upsert_system_prompt(db_session, "summarization", "DB summarization", False)
     crud.set_setting(db_session, "enabled_summary_types", "brief")
 
     body = client.get("/api/playground/settings", headers=auth_headers).json()
 
-    assert body["classification_prompt"] == {"text": "DB classification {topic_list}", "source": "db"}
+    assert body["classification_prompt"] == {"text": "DB classification", "source": "db"}
     assert body["summarization_prompt"]["source"] == "default"  # inactive DB prompt is ignored
     assert {t["type"]: t["enabled"] for t in body["summary_types"]} == {
         "brief": True, "standard": False, "detailed": False,
@@ -205,7 +211,7 @@ def test_run_uses_prompt_overrides_for_this_call_only(client, auth_headers, monk
 
     response = client.post("/api/playground/run", json={
         "article_id": article.id,
-        "classification_prompt": "OVERRIDE CLS. Topics:\n{topic_list}",
+        "classification_prompt": "OVERRIDE CLS.",
         "summarization_prompt": "OVERRIDE SUM",
         "summary_types": ["brief"],
         "summary_instructions": {"brief": "Nur ein Satz."},
@@ -213,7 +219,10 @@ def test_run_uses_prompt_overrides_for_this_call_only(client, auth_headers, monk
 
     body = response.json()
     cls_system = fake.classification_calls[0]["messages"][0]["content"]
-    assert cls_system.startswith("OVERRIDE CLS.") and "- NATO: Bündnis" in cls_system  # {topic_list} injected
+    # The override has no {topic_list}/format text, yet the locked block is still appended.
+    assert cls_system.startswith("OVERRIDE CLS.") and "- NATO: Bündnis" in cls_system
+    assert '"importance": "unimportant"' in cls_system and "confidence >= 0.5" in cls_system
+    assert body["classification"]["system_prompt"] == cls_system
     assert body["classification"]["prompt_source"] == "override"
     assert len(fake.summary_calls) == 1
     assert fake.summary_calls[0]["messages"][0]["content"] == "OVERRIDE SUM"

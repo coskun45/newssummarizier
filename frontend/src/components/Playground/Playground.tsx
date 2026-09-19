@@ -8,17 +8,27 @@ import type {
 } from '../../types';
 import PlaygroundArticlePicker from '../PlaygroundArticlePicker/PlaygroundArticlePicker';
 import PlaygroundResults from '../PlaygroundResults/PlaygroundResults';
+import PromptComposite from '../PromptComposite/PromptComposite';
+import { buildSummarizationLockedText } from '../../utils/summarizationLocked';
 import './Playground.css';
 
 const CONTENT_PREVIEW_CHARS = 2000;
 
 const PROMPT_SOURCE_LABELS = { db: 'kayıtlı prompt', default: 'varsayılan prompt' } as const;
 
+type StatusTone = 'live' | 'edited' | 'empty';
+
 // The server ignores blank prompts/instructions and uses the live ones, so the UI says so instead
 // of implying an empty prompt was tested.
-function promptStatus(text: string, dirty: boolean, source: keyof typeof PROMPT_SOURCE_LABELS): string {
-  if (!dirty) return PROMPT_SOURCE_LABELS[source];
-  return text.trim() === '' ? 'boş — canlı prompt kullanılır' : 'değiştirildi';
+function promptStatus(
+  text: string,
+  dirty: boolean,
+  source: keyof typeof PROMPT_SOURCE_LABELS,
+): { label: string; tone: StatusTone } {
+  if (!dirty) return { label: PROMPT_SOURCE_LABELS[source], tone: 'live' };
+  return text.trim() === ''
+    ? { label: 'boş — canlı prompt kullanılır', tone: 'empty' }
+    : { label: 'değiştirildi', tone: 'edited' };
 }
 
 // Keep the results of stages that were not part of this run, so classification and
@@ -48,7 +58,7 @@ function Playground() {
   const [result, setResult] = useState<PlaygroundRunResult | null>(null);
   const selectedArticleRef = useRef<number | null>(null);
 
-  const { data: settings, isLoading, isError } = usePlaygroundSettings();
+  const { data: settings, isLoading, isError, isFetching, refetch } = usePlaygroundSettings();
   const { data: article } = useArticle(articleId);
   const run = useRunPlayground();
 
@@ -74,6 +84,33 @@ function Playground() {
 
   const canRunSummary = selectedTypes.length > 0;
   const busy = run.isPending;
+
+  const systemTypes = settings.summary_types.filter((t) => t.enabled).map((t) => t.type);
+  const typeSelectionDirty =
+    selectedTypes.length !== systemTypes.length || selectedTypes.some((t) => !systemTypes.includes(t));
+  const instructionsDirty = settings.summary_types.some((info) => {
+    const edited = instructionEdits[info.type];
+    return edited !== undefined && edited !== info.default_instructions;
+  });
+  const hasEdits = classificationDirty || summarizationDirty || instructionsDirty || typeSelectionDirty;
+
+  // Back to what the pipeline uses right now: drop every edit and re-read the (possibly changed)
+  // system settings, so "current" really is current.
+  const handleResetAll = () => {
+    setPromptEdits({});
+    setInstructionEdits({});
+    setTypeSelection(null);
+    void refetch();
+  };
+
+  const summarizationLockedText = buildSummarizationLockedText(
+    settings.summarization_locked,
+    settings.summary_types,
+    selectedTypes,
+    instructionEdits,
+  );
+  const classificationStatus = promptStatus(classificationText, classificationDirty, settings.classification_prompt.source);
+  const summarizationStatus = promptStatus(summarizationText, summarizationDirty, settings.summarization_prompt.source);
 
   const handleRun = (stages: PlaygroundStage[]) => {
     if (articleId === null) return;
@@ -111,18 +148,33 @@ function Playground() {
 
         <div className="playground-main">
           <section className="playground-section">
-            <h2 className="playground-section-title">Mevcut pipeline ayarları</h2>
-            <p className="playground-section-description">
-              Sınıflandırma modeli <strong>{settings.classification_model}</strong>. Özet modelleri ve token limitleri
-              aşağıda. Model sunucu yapılandırmasından gelir ve burada değiştirilemez; prompt değişiklikleri yalnızca
-              bu çalıştırma için geçerlidir, kaydedilmez.
-            </p>
+            <div className="playground-section-head">
+              <div className="playground-section-intro">
+                <h2 className="playground-section-title">Mevcut pipeline ayarları</h2>
+                <p className="playground-section-description">
+                  Sınıflandırma modeli <strong>{settings.classification_model}</strong>. Özet modelleri ve token limitleri
+                  aşağıda. Model sunucu yapılandırmasından gelir ve burada değiştirilemez; prompt değişiklikleri yalnızca
+                  bu çalıştırma için geçerlidir, kaydedilmez.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn btn-sm btn-outline playground-reset-all"
+                disabled={!hasEdits || isFetching}
+                onClick={handleResetAll}
+                title="Prompt, talimat ve özet türü seçimini Ayarlar'daki güncel değerlere döndürür"
+              >
+                Sistem ayarlarına döndür
+              </button>
+            </div>
 
             <div className="playground-field">
               <div className="playground-field-head">
                 <label htmlFor="playground-classification-prompt">Sınıflandırma sistem prompt'u</label>
                 <span className="playground-field-meta">
-                  {promptStatus(classificationText, classificationDirty, settings.classification_prompt.source)}
+                  <span className={`badge playground-status playground-status--${classificationStatus.tone}`}>
+                    {classificationStatus.label}
+                  </span>
                   {classificationDirty && (
                     <button
                       type="button"
@@ -134,16 +186,21 @@ function Playground() {
                   )}
                 </span>
               </div>
-              <textarea
-                id="playground-classification-prompt"
-                className="textarea playground-prompt"
-                rows={10}
-                value={classificationText}
-                onChange={(e) => setPromptEdits((p) => ({ ...p, classification: e.target.value }))}
+              <PromptComposite
+                editable={(
+                  <textarea
+                    id="playground-classification-prompt"
+                    className="textarea playground-prompt"
+                    rows={8}
+                    value={classificationText}
+                    onChange={(e) => setPromptEdits((p) => ({ ...p, classification: e.target.value }))}
+                  />
+                )}
+                lockedText={settings.classification_locked_text}
+                lockedLabel="Kilitli sistem bölümü — sınıflandırma"
               />
               <p className="playground-hint">
-                <code>{'{topic_list}'}</code> yer tutucusu {settings.topics.length} konunun listesiyle değiştirilir
-                ({settings.topics.map((t) => t.name).join(', ') || 'konu yok'}).
+                Konu listesi ({settings.topics.length} konu) ve JSON çıktı formatı her çalıştırmada otomatik eklenir; değiştirilemez.
               </p>
             </div>
 
@@ -151,7 +208,9 @@ function Playground() {
               <div className="playground-field-head">
                 <label htmlFor="playground-summarization-prompt">Özetleme sistem prompt'u</label>
                 <span className="playground-field-meta">
-                  {promptStatus(summarizationText, summarizationDirty, settings.summarization_prompt.source)}
+                  <span className={`badge playground-status playground-status--${summarizationStatus.tone}`}>
+                    {summarizationStatus.label}
+                  </span>
                   {summarizationDirty && (
                     <button
                       type="button"
@@ -163,45 +222,57 @@ function Playground() {
                   )}
                 </span>
               </div>
-              <textarea
-                id="playground-summarization-prompt"
-                className="textarea playground-prompt"
-                rows={10}
-                value={summarizationText}
-                onChange={(e) => setPromptEdits((p) => ({ ...p, summarization: e.target.value }))}
+              <PromptComposite
+                editable={(
+                  <textarea
+                    id="playground-summarization-prompt"
+                    className="textarea playground-prompt"
+                    rows={8}
+                    value={summarizationText}
+                    onChange={(e) => setPromptEdits((p) => ({ ...p, summarization: e.target.value }))}
+                  />
+                )}
+                lockedText={summarizationLockedText}
+                lockedLabel="Kilitli sistem bölümü — özetleme"
               />
+              <p className="playground-hint">
+                İşaretli özet türlerinin talimatları ve dil satırı her özete otomatik eklenir; aşağıdaki özet türü
+                seçimi ve talimat düzenlemeleri bu bloğa yansır.
+              </p>
             </div>
 
             <fieldset className="playground-types">
               <legend>Özet türleri</legend>
-              {settings.summary_types.map((info) => {
-                const checked = selectedTypes.includes(info.type);
-                const instructionValue = instructionEdits[info.type] ?? info.default_instructions;
-                return (
-                  <div key={info.type} className="playground-type">
-                    <label className="playground-type-label">
-                      <input type="checkbox" checked={checked} onChange={() => toggleType(info.type)} />
-                      <span>{info.type}</span>
-                      <span className="playground-field-meta">
-                        {info.model} · max {info.max_tokens} token{info.enabled ? '' : ' · pipeline\'da kapalı'}
-                      </span>
-                    </label>
-                    {checked && (
-                      <textarea
-                        className="textarea"
-                        rows={2}
-                        aria-label={`${info.type} talimatı`}
-                        value={instructionValue}
-                        onChange={(e) => setInstructionEdits((p) => ({ ...p, [info.type]: e.target.value }))}
-                      />
-                    )}
-                  </div>
-                );
-              })}
+              <div className="playground-types-grid">
+                {settings.summary_types.map((info) => {
+                  const checked = selectedTypes.includes(info.type);
+                  const instructionValue = instructionEdits[info.type] ?? info.default_instructions;
+                  return (
+                    <div key={info.type} className={`playground-type${checked ? ' playground-type--checked' : ''}`}>
+                      <label className="playground-type-label">
+                        <input type="checkbox" checked={checked} onChange={() => toggleType(info.type)} />
+                        <span>{info.type}</span>
+                        <span className="playground-field-meta">
+                          {info.model} · max {info.max_tokens} token{info.enabled ? '' : ' · pipeline\'da kapalı'}
+                        </span>
+                      </label>
+                      {checked && (
+                        <textarea
+                          className="textarea"
+                          rows={3}
+                          aria-label={`${info.type} talimatı`}
+                          value={instructionValue}
+                          onChange={(e) => setInstructionEdits((p) => ({ ...p, [info.type]: e.target.value }))}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </fieldset>
           </section>
 
-          <section className="playground-section">
+          <section className="playground-section playground-run-bar">
             <h2 className="playground-section-title">Seçili haber</h2>
             {articleId === null && <p className="playground-hint">Soldan bir haber seçin.</p>}
             {article && (
@@ -218,36 +289,38 @@ function Playground() {
               </>
             )}
 
-            <label className="playground-force">
-              <input type="checkbox" checked={forceSummarize} onChange={(e) => setForceSummarize(e.target.checked)} />
-              Haber önemsiz çıksa bile özetle
-            </label>
+            <div className="playground-run-controls">
+              <label className="playground-force">
+                <input type="checkbox" checked={forceSummarize} onChange={(e) => setForceSummarize(e.target.checked)} />
+                Haber önemsiz çıksa bile özetle
+              </label>
 
-            <div className="playground-actions">
-              <button
-                type="button"
-                className="btn btn-outline"
-                disabled={articleId === null || busy}
-                onClick={() => handleRun(['classification'])}
-              >
-                Sınıflandır
-              </button>
-              <button
-                type="button"
-                className="btn btn-outline"
-                disabled={articleId === null || busy || !canRunSummary}
-                onClick={() => handleRun(['summarization'])}
-              >
-                Özetle
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={articleId === null || busy || !canRunSummary}
-                onClick={() => handleRun(['classification', 'summarization'])}
-              >
-                {busy ? 'Çalışıyor…' : 'Tümünü çalıştır'}
-              </button>
+              <div className="playground-actions">
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  disabled={articleId === null || busy}
+                  onClick={() => handleRun(['classification'])}
+                >
+                  Sınıflandır
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  disabled={articleId === null || busy || !canRunSummary}
+                  onClick={() => handleRun(['summarization'])}
+                >
+                  Özetle
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={articleId === null || busy || !canRunSummary}
+                  onClick={() => handleRun(['classification', 'summarization'])}
+                >
+                  {busy ? 'Çalışıyor…' : 'Tümünü çalıştır'}
+                </button>
+              </div>
             </div>
             {!canRunSummary && <p className="playground-hint">Özetlemek için en az bir özet türü seçin.</p>}
           </section>

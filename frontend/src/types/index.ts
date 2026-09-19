@@ -108,6 +108,12 @@ export interface SystemPrompt {
     updated_at: string;
 }
 
+/** Read-only part of a prompt that the pipeline appends itself (never stored, never editable). */
+export interface LockedPrompt {
+    prompt_type: string;
+    locked_text: string;
+}
+
 export interface ArticleCounts {
     by_priority: Record<string, number>;
     by_feed: Record<string, number>;
@@ -204,6 +210,10 @@ export interface PlaygroundSummaryTypeInfo {
 export interface PlaygroundSettings {
     classification_model: string;
     classification_prompt: PlaygroundPromptInfo;
+    /** Read-only part of the classification system message (live topic list + output format). */
+    classification_locked_text: string;
+    /** Pieces of the read-only summarization block; the client joins them with the selected types. */
+    summarization_locked: { heading: string; language_line: string };
     summarization_prompt: PlaygroundPromptInfo;
     summary_types: PlaygroundSummaryTypeInfo[];
     topics: { name: string; description: string | null }[];

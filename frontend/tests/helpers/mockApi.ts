@@ -147,15 +147,47 @@ export function makeUser(overrides: Partial<AppUser> = {}): AppUser {
   };
 }
 
+/** Stand-in for the server-rendered locked part of the classification system prompt. */
+export const LOCKED_CLASSIFICATION_TEXT = [
+  'KONU LİSTESİ:',
+  '- NATO: Bündnis',
+  '',
+  'ÇIKTI FORMATI:',
+  'Her zaman geçerli JSON döndür.',
+].join('\n');
+
+/** Pieces of the locked summarization block, as the server sends them to the playground. */
+export const SUMMARIZATION_LOCKED = {
+  heading: 'ÖZET TÜRÜ TALİMATLARI:',
+  language_line: 'DİL: Write the summary in Turkish.',
+};
+
+export const SUMMARY_INSTRUCTIONS = {
+  brief: 'Provide a very brief summary in 2-3 sentences.',
+  standard: 'Provide a concise summary in one paragraph.',
+  detailed: 'Provide a detailed summary with multiple paragraphs.',
+} as const;
+
+/** Like the real endpoint: only the summary types enabled in Settings are listed. */
+export function lockedSummarizationText(enabledSummaryTypes: string): string {
+  const enabled = enabledSummaryTypes.split(',').map((t) => t.trim());
+  const lines = Object.entries(SUMMARY_INSTRUCTIONS)
+    .filter(([type]) => enabled.includes(type))
+    .map(([type, text]) => `${type}: ${text}`);
+  return [SUMMARIZATION_LOCKED.heading, '', ...(lines.length ? lines : ['(etkin özet türü yok)']), '', SUMMARIZATION_LOCKED.language_line].join('\n');
+}
+
 export function makePlaygroundSettings(overrides: Partial<PlaygroundSettings> = {}): PlaygroundSettings {
   return {
     classification_model: 'gpt-4o-mini',
-    classification_prompt: { text: 'CLS prompt {topic_list}', source: 'db' },
+    classification_prompt: { text: 'CLS prompt', source: 'db' },
+    classification_locked_text: LOCKED_CLASSIFICATION_TEXT,
+    summarization_locked: SUMMARIZATION_LOCKED,
     summarization_prompt: { text: 'SUM prompt', source: 'default' },
     summary_types: [
-      { type: 'brief', model: 'gpt-4o-mini', max_tokens: 150, default_instructions: 'Brief instr', enabled: true },
-      { type: 'standard', model: 'gpt-4o-mini', max_tokens: 300, default_instructions: 'Standard instr', enabled: true },
-      { type: 'detailed', model: 'gpt-4o', max_tokens: 1000, default_instructions: 'Detailed instr', enabled: false },
+      { type: 'brief', model: 'gpt-4o-mini', max_tokens: 150, default_instructions: SUMMARY_INSTRUCTIONS.brief, enabled: true },
+      { type: 'standard', model: 'gpt-4o-mini', max_tokens: 300, default_instructions: SUMMARY_INSTRUCTIONS.standard, enabled: true },
+      { type: 'detailed', model: 'gpt-4o', max_tokens: 1000, default_instructions: SUMMARY_INSTRUCTIONS.detailed, enabled: false },
     ],
     topics: [{ name: 'NATO', description: null }],
     ...overrides,
@@ -681,6 +713,19 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
       });
       state.prompts.set(body.prompt_type, prompt);
       return json(prompt);
+    }
+    m = path.match(/^\/prompts\/([^/]+)\/locked$/);
+    if (m && method === 'GET') {
+      const promptType = decodeURIComponent(m[1]);
+      let lockedText = '';
+      if (promptType === 'classification') {
+        // Like the real endpoint, the classification locked part follows the live topic list.
+        lockedText = LOCKED_CLASSIFICATION_TEXT +
+          state.topics.map((t) => `\n- ${t.name}${t.description ? `: ${t.description}` : ''}`).join('');
+      } else if (promptType === 'summarization') {
+        lockedText = lockedSummarizationText(state.settings.enabled_summary_types);
+      }
+      return json({ prompt_type: promptType, locked_text: lockedText });
     }
     m = path.match(/^\/prompts\/([^/]+)$/);
     if (m) {

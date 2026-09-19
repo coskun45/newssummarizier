@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { promptsApi } from '../../services/api';
+import { usePromptLocked } from '../../hooks/useApi';
+import PromptComposite from '../PromptComposite/PromptComposite';
 import type { SystemPrompt } from '../../types';
 import { PencilIcon, CheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import './PromptEditor.css';
@@ -8,9 +10,18 @@ interface PromptEditorProps {
     promptType: string;
     label: string;
     description: string;
+    /** Show the read-only part the pipeline appends to this prompt (e.g. classification's topic list + output format). */
+    showLockedPart?: boolean;
 }
 
-const PromptEditor: React.FC<PromptEditorProps> = ({ promptType, label, description }) => {
+const PromptEditor: React.FC<PromptEditorProps> = ({ promptType, label, description, showLockedPart = false }) => {
+    const { data: locked } = usePromptLocked(showLockedPart ? promptType : null);
+    const lockedText = locked?.locked_text;
+    // Show the prompt as the model gets it: editable part + the locked part the pipeline appends.
+    // The frame is used from the first render (not only once the locked text has loaded) so the
+    // textarea is not remounted — and focus/caret lost — when the request resolves.
+    const withLockedPart = (editable: React.ReactNode) =>
+        showLockedPart ? <PromptComposite editable={editable} lockedText={lockedText} /> : editable;
     const [prompt, setPrompt] = useState<SystemPrompt | null>(null);
     const [editedText, setEditedText] = useState('');
     const [isActive, setIsActive] = useState(true);
@@ -146,13 +157,15 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ promptType, label, descript
                         </div>
                         <div className="form-group">
                             <label>Prompt Metni:</label>
-                            <textarea
-                                className="prompt-textarea"
-                                value={editedText}
-                                onChange={(e) => setEditedText(e.target.value)}
-                                rows={15}
-                                placeholder="Sistem promptunu girin..."
-                            />
+                            {withLockedPart(
+                                <textarea
+                                    className="prompt-textarea"
+                                    value={editedText}
+                                    onChange={(e) => setEditedText(e.target.value)}
+                                    rows={15}
+                                    placeholder="Sistem promptunu girin..."
+                                />
+                            )}
                             <div className="char-count">
                                 {editedText.length} karakter
                             </div>
@@ -165,7 +178,9 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ promptType, label, descript
                                 {isActive ? <><CheckIcon /> Aktif</> : <><XMarkIcon /> Pasif</>}
                             </span>
                         </div>
-                        <pre className="prompt-text">{prompt?.prompt_text || 'Prompt belirlenmemiş'}</pre>
+                        {withLockedPart(
+                            <pre className="prompt-text">{prompt?.prompt_text || 'Prompt belirlenmemiş'}</pre>
+                        )}
                         {prompt && (
                             <div className="prompt-meta">
                                 <small>

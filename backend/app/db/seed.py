@@ -8,6 +8,9 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Marker setting: the classification prompt was migrated to the criteria-only (locked-suffix) format.
+CLASSIFICATION_MIGRATION_KEY = "classification_prompt_locked_migrated"
+
 
 def seed_topics():
     """Seed predefined topics."""
@@ -162,15 +165,24 @@ Return only the summary text without any additional formatting or explanations."
                 )
                 created_count += 1
                 logger.info(f"Created system prompt: {prompt_type}")
-            elif prompt_type == "classification" and "{topic_list}" not in existing.prompt_text:
-                # One-time migration for the classification prompt ONLY: older copies had a
-                # hardcoded topic list; restore the dynamic {topic_list} placeholder.
-                # Must stay scoped to classification — applying this to other prompts would
-                # silently overwrite the user's edits on every startup (the summarization
-                # default has no {topic_list}, so the condition would always be true).
+            elif (
+                prompt_type == "classification"
+                and crud.get_setting(db, CLASSIFICATION_MIGRATION_KEY) is None
+                and "{topic_list}" in existing.prompt_text
+            ):
+                # One-time migration for the classification prompt ONLY: older copies embedded the
+                # {topic_list} placeholder and the JSON output format in the editable text. Those
+                # are now appended by the pipeline as a locked block, so reset to the criteria-only
+                # default. Guarded by a marker setting (set below) so it runs once: a prompt an
+                # admin saves later — even one still containing the legacy placeholder, which the
+                # pipeline keeps supporting — is never overwritten on restart. Must stay scoped to
+                # classification — the summarization prompt never contains {topic_list}.
                 existing.prompt_text = prompt_text
                 db.commit()
-                logger.info("Migrated classification prompt to dynamic topic list")
+                logger.info("Migrated classification prompt to criteria-only text (topic list + output format are now locked)")
+
+        if crud.get_setting(db, CLASSIFICATION_MIGRATION_KEY) is None:
+            crud.set_setting(db, CLASSIFICATION_MIGRATION_KEY, "1")
 
         logger.info(f"System prompts seeding completed. Created {created_count} new prompts.")
 

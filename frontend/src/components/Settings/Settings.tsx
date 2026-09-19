@@ -637,13 +637,15 @@ function Settings({ category, currentUser }: SettingsProps) {
             <PromptEditor
               promptType="classification"
               label="Sınıflandırma Promptu"
-              description="Bu prompt makaleleri otomatik olarak kategorilere ayırmak için kullanılır."
+              description="Makalelerin önem ve öncelik kriterlerini belirler. Konu listesi ve JSON çıktı formatı sistem tarafından otomatik eklenir; aşağıda kilitli olarak görünür."
+              showLockedPart
             />
 
             <PromptEditor
               promptType="summarization"
               label="Özetleme Promptu"
-              description="Bu prompt makale özetleri oluşturmak için kullanılır."
+              description="Bu prompt makale özetleri oluşturmak için kullanılır. Etkin özet türlerinin (Özet Türleri ayarı) talimatları sistem tarafından otomatik eklenir; aşağıda kilitli olarak görünür."
+              showLockedPart
             />
           </div>
         </div>

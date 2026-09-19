@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 from app.api.deps import get_db, require_admin
 from app.db import crud, models
+from app.services import summary_service
 
 router = APIRouter()
 
@@ -27,6 +28,12 @@ class SystemPromptUpdate(BaseModel):
     """Schema for updating system prompts."""
     prompt_text: Optional[str] = None
     is_active: Optional[bool] = None
+
+
+class LockedPromptResponse(BaseModel):
+    """Read-only part of a prompt that the pipeline appends itself (not editable, not stored)."""
+    prompt_type: str
+    locked_text: str
 
 
 class SystemPromptResponse(SystemPromptBase):
@@ -59,6 +66,24 @@ async def get_system_prompts(db: Session = Depends(get_db)):
         })
     
     return result
+
+
+@router.get("/{prompt_type}/locked", response_model=LockedPromptResponse)
+async def get_locked_prompt(prompt_type: str, db: Session = Depends(get_db)):
+    """
+    Get the locked (read-only) part the pipeline appends to a prompt, rendered with the live
+    data — for `classification` the current topic list plus the JSON output format, for
+    `summarization` the instructions of the enabled summary types plus the language line.
+    Other prompt types have no locked part and return an empty string.
+    """
+    if prompt_type == "classification":
+        locked_text = summary_service.build_classification_locked_text(crud.get_topics(db))
+    elif prompt_type == "summarization":
+        # Only the summary types enabled in Settings are generated, so only those are listed.
+        locked_text = summary_service.build_summarization_locked_text(summary_service.get_enabled_summary_types(db))
+    else:
+        locked_text = ""
+    return {"prompt_type": prompt_type, "locked_text": locked_text}
 
 
 @router.get("/{prompt_type}", response_model=SystemPromptResponse)

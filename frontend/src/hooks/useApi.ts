@@ -3,7 +3,7 @@
  */
 import { useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
-import { articlesApi, summariesApi, topicsApi, settingsApi, statsApi, feedsApi, authApi, bulletinApi, playgroundApi } from '../services/api';
+import { articlesApi, summariesApi, topicsApi, settingsApi, statsApi, feedsApi, authApi, bulletinApi, playgroundApi, promptsApi } from '../services/api';
 import type { ArticleFilters, UserSettings, BulletinGenerateRequest, ReprocessRequest, PlaygroundRunRequest } from '../types';
 
 // Articles hooks
@@ -220,6 +220,9 @@ export const useCreateTopic = () => {
             topicsApi.create(name, description, color),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['topics'] });
+            // The classification prompt's locked part renders the live topic list.
+            queryClient.invalidateQueries({ queryKey: ['promptLocked'] });
+            queryClient.invalidateQueries({ queryKey: ['playgroundSettings'] });
         },
     });
 };
@@ -232,6 +235,9 @@ export const useUpdateTopic = () => {
             topicsApi.update(topicId, name, description, color),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['topics'] });
+            // The classification prompt's locked part renders the live topic list.
+            queryClient.invalidateQueries({ queryKey: ['promptLocked'] });
+            queryClient.invalidateQueries({ queryKey: ['playgroundSettings'] });
         },
     });
 };
@@ -243,6 +249,9 @@ export const useDeleteTopic = () => {
         mutationFn: (topicId: number) => topicsApi.delete(topicId),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['topics'] });
+            // The classification prompt's locked part renders the live topic list.
+            queryClient.invalidateQueries({ queryKey: ['promptLocked'] });
+            queryClient.invalidateQueries({ queryKey: ['playgroundSettings'] });
         },
     });
 };
@@ -263,6 +272,9 @@ export const useUpdateSettings = () => {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['settings'] });
             queryClient.invalidateQueries({ queryKey: ['topics'] });
+            // The summarization prompt's locked part lists the enabled summary types.
+            queryClient.invalidateQueries({ queryKey: ['promptLocked'] });
+            queryClient.invalidateQueries({ queryKey: ['playgroundSettings'] });
         },
     });
 };
@@ -456,6 +468,16 @@ export const useDeleteGeneratedBulletin = () => {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['generatedBulletins'] });
         },
+    });
+};
+
+// System prompt hooks
+// The read-only part the pipeline appends to a prompt (null promptType = not needed, no request).
+export const usePromptLocked = (promptType: string | null) => {
+    return useQuery({
+        queryKey: ['promptLocked', promptType],
+        queryFn: () => promptsApi.getLocked(promptType!),
+        enabled: promptType !== null,
     });
 };
 

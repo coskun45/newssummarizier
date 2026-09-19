@@ -311,7 +311,18 @@ Bulten/
   özetleme prompt'larını (ve özet türü talimatlarını) düzenleyip "Sınıflandır", "Özetle" veya "Tümünü
   çalıştır" ile sonucu aşama aşama inceleyin. Düzenlenen prompt'lar kaydedilmez; kalıcı değişiklik için
   Ayarlar › Sistem Promptları kullanılır. Çalıştırmalar OpenAI'ye gerçek istek atar (maliyet oluşur, ancak
-  günlük/aylık limit hesabına dahil edilmez).
+  günlük/aylık limit hesabına dahil edilmez). Başlıktaki "Sistem ayarlarına döndür" butonu, düzenlenen
+  prompt'ları, özet türü talimatlarını ve özet türü seçimini Ayarlar'daki güncel değerlere geri alır.
+- **Sınıflandırma promptu**: Ayarlar › Sistem Promptları ve Playground'da yalnızca kriterler (önem filtresi,
+  keyword listesi, öncelik seviyeleri) düzenlenir. Uygulama mantığının dayandığı kısım — güncel konu listesi
+  (mevcut konular ve açıklamaları), JSON çıktı formatı ve `confidence >= 0.5` kuralı — her çağrıda sistem
+  tarafından otomatik eklenir; editörün altında "kilitli" olarak, modele giden haliyle görünür ama değiştirilemez.
+  Böylece prompt ne kadar değiştirilirse değiştirilsin sonuç ayrıştırılabilir kalır.
+- **Özetleme promptu**: Ayarlar › Sistem Promptları'nda düzenlenen metin system mesajıdır. Özet türlerinin
+  (kısa/standart/detaylı) talimatı ve sabit dil satırı ("Write the summary in Turkish.") haber metniyle
+  birlikte kullanıcı mesajına sistem tarafından eklenir; editörün altında "kilitli" olarak görünür, değiştirilemez.
+  Ayarlar'da yalnızca **etkin** özet türleri listelenir (Özet Türleri'ni değiştirip kaydedince güncellenir);
+  Playground'da ise o çalıştırma için **işaretli** türler ve (düzenlenmişse) talimatları gösterilir.
 
 ### API Endpoints
 
@@ -357,10 +368,16 @@ Bulten/
 - `POST /api/bulletin/generate` - Filtrelere (tarih aralığı, önem seviyesi) göre Word (.docx) bülten
   raporu oluşturur ve dosya olarak döner
 
+#### Sistem Promptları
+
+- `GET /api/prompts/{prompt_type}/locked` - Promptun düzenlenemeyen, pipeline'ın kendisinin eklediği kısmı.
+  `classification` için güncel konu listesi + JSON çıktı formatı, `summarization` için etkin özet türlerinin
+  talimatları + dil satırı döner; diğer tiplerde boş metin
+
 #### Playground (kayıt yapmayan deneme çalıştırması)
 
-- `GET /api/playground/settings` - Pipeline'ın şu an kullandığı model, prompt (kayıtlı/varsayılan), özet
-  türleri ve konu listesi
+- `GET /api/playground/settings` - Pipeline'ın şu an kullandığı model, prompt (kayıtlı/varsayılan), sınıflandırma
+  promptunun kilitli kısmı (`classification_locked_text`), özet türleri ve konu listesi
 - `POST /api/playground/run` - Seçilen tek bir haber için sınıflandırma ve/veya özetlemeyi (isteğe bağlı prompt
   değişiklikleriyle) çalıştırıp her aşamanın ayrıntısını döner; veritabanına hiçbir şey yazmaz
 

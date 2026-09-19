@@ -1,0 +1,51 @@
+.prompt-composite {
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--color-surface);
+}
+
+/* The editable part sits inside the shared frame, so it drops its own border/rounding. */
+.prompt-composite .prompt-composite-editable > * {
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.prompt-composite-locked {
+  border-top: 1px dashed var(--color-border-strong);
+  background: var(--color-surface-alt);
+}
+
+.prompt-composite-locked-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.prompt-composite-locked-head svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.prompt-composite-locked-text {
+  margin: 0;
+  padding: 0.75rem 0.85rem;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  max-height: 320px;
+  overflow-y: auto;
+  cursor: default;
+}

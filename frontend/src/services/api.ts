@@ -17,6 +17,7 @@ import type {
     UserSettings,
     CostStats,
     SystemPrompt,
+    LockedPrompt,
     AppUser,
     LoginResponse,
     BulletinCategory,
@@ -306,6 +307,11 @@ export const promptsApi = {
 
     get: async (promptType: string): Promise<SystemPrompt> => {
         const response = await api.get(`/prompts/${promptType}`);
+        return response.data;
+    },
+
+    getLocked: async (promptType: string): Promise<LockedPrompt> => {
+        const response = await api.get(`/prompts/${promptType}/locked`);
         return response.data;
     },
 

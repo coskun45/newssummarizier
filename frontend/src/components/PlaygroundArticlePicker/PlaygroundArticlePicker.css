@@ -6,6 +6,10 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: 1.25rem;
+  /* Stays in view next to the (long) settings column; only its list scrolls. */
+  position: sticky;
+  top: var(--playground-sticky-top, 9rem);
+  max-height: calc(100vh - var(--playground-sticky-top, 9rem) - 1rem);
 }
 
 .playground-picker-title {
@@ -34,6 +38,8 @@
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .playground-picker-item {
@@ -80,4 +86,15 @@
   background: var(--color-surface);
   color: var(--color-text-secondary);
   border: 1px solid var(--color-border);
+}
+
+@media (max-width: 900px) {
+  .playground-picker {
+    position: static;
+    max-height: none;
+  }
+
+  .playground-picker-list {
+    max-height: 320px;
+  }
 }

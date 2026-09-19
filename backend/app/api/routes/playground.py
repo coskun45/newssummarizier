@@ -37,10 +37,19 @@ class TopicInfo(BaseModel):
     description: Optional[str] = None
 
 
+class SummarizationLockedInfo(BaseModel):
+    heading: str
+    language_line: str
+
+
 class PlaygroundSettingsResponse(BaseModel):
     classification_model: str
     classification_prompt: PromptInfo
+    # Read-only part of the classification system message (live topic list + output format).
+    classification_locked_text: str
     summarization_prompt: PromptInfo
+    # Pieces of the read-only summarization block; the client joins them with the selected types.
+    summarization_locked: SummarizationLockedInfo
     summary_types: List[SummaryTypeInfo]
     topics: List[TopicInfo]
 
