@@ -1,4 +1,4 @@
-import { RssIcon, FolderIcon, DocumentTextIcon, SparklesIcon, UsersIcon } from '@heroicons/react/24/outline';
+import { RssIcon, FolderIcon, DocumentTextIcon, SparklesIcon, Squares2X2Icon, UsersIcon } from '@heroicons/react/24/outline';
 import type { SettingsCategory } from './Settings';
 
 interface SettingsNavProps {
@@ -12,6 +12,7 @@ const CATEGORIES: { id: SettingsCategory; label: string; Icon: typeof RssIcon }[
   { id: 'topics', label: 'Kategoriler', Icon: FolderIcon },
   { id: 'summaryTypes', label: 'Özet Türleri', Icon: DocumentTextIcon },
   { id: 'prompts', label: 'Sistem Promptları', Icon: SparklesIcon },
+  { id: 'features', label: 'Features', Icon: Squares2X2Icon },
 ];
 
 function SettingsNav({ activeCategory, onCategoryChange, isAdmin }: SettingsNavProps) {

@@ -1,0 +1,131 @@
+{
+  "versions": [
+    {
+      "version": "v1",
+      "title": "Temel haber özetleme",
+      "features": [
+        {
+          "id": "login-jwt",
+          "title": "E-posta ve şifre ile giriş",
+          "description": "JWT tabanlı oturum. Token tarayıcıda saklanır; süresi dolduğunda (401) kullanıcı otomatik çıkış yapar. Auth dışındaki tüm API uçları JWT ister."
+        },
+        {
+          "id": "user-menu",
+          "title": "Profil menüsü",
+          "description": "Baş harfli profil yuvarlağı: e-posta, tema seçimi (Açık / Koyu / Sistem) ve çıkış yap."
+        },
+        {
+          "id": "user-management",
+          "title": "Kullanıcı yönetimi (admin)",
+          "description": "Yöneticiler kullanıcı ekleyip silebilir. Bölüm yalnızca admin rolündeki kullanıcılara görünür."
+        },
+        {
+          "id": "background-scheduler",
+          "title": "Saatlik otomatik RSS işleme",
+          "description": "Zamanlayıcı her saat başı tüm aktif RSS beslemelerini işler."
+        },
+        {
+          "id": "agent-pipeline",
+          "title": "LangGraph haber işleme hattı",
+          "description": "RSS çekme, tam içerik scraping, sınıflandırma + önceliklendirme ve özet üretimi adımlarından oluşan agent iş akışı."
+        },
+        {
+          "id": "openai-summaries",
+          "title": "OpenAI özetleme ve maliyet takibi",
+          "description": "Tüm OpenAI çağrıları tek serviste yapılır; kısa, standart ve detaylı özetler üretilir ve maliyet limitleri izlenir."
+        },
+        {
+          "id": "home-hero",
+          "title": "Top News karuseli",
+          "description": "Ana sayfada öne çıkan haberlerin karuseli."
+        },
+        {
+          "id": "stats-panel",
+          "title": "İstatistik paneli",
+          "description": "Önem seviyesine göre okunmamış haber sayıları ve özet istatistikleri."
+        },
+        {
+          "id": "article-list",
+          "title": "Haber listesi ve özetler",
+          "description": "Haberler Okunmamışlar, Arşiv, Favori ve Error sekmelerinde listelenir. Her haber kısa, standart veya detaylı özet olarak açılabilir; sayfalama (sayfa başına 20) vardır."
+        },
+        {
+          "id": "article-actions",
+          "title": "Haber işlemleri",
+          "description": "Haberi favorilere ekleme, okundu işaretleme, silme, orijinal sayfayı açma ve tam içeriği modalda görüntüleme."
+        },
+        {
+          "id": "article-filters",
+          "title": "Filtreleme ve arama",
+          "description": "RSS kaynağına, konuya, önem ve önceliğe, yayın/çekilme tarihine göre filtreleme ve gecikmeli (debounce) metin araması."
+        },
+        {
+          "id": "bulk-actions",
+          "title": "Toplu işlemler",
+          "description": "Öncelik veya önemsiz haberlere göre toplu arşivleme/silme, seçili haberleri toplu okundu işaretleme ve tüm favorileri kaldırma."
+        },
+        {
+          "id": "article-export",
+          "title": "Dışa aktarma",
+          "description": "Seçilen haberleri Word dosyası olarak indirme veya WhatsApp için metin olarak kopyalama."
+        },
+        {
+          "id": "error-tab-reprocess",
+          "title": "Error sekmesi ve yeniden işleme",
+          "description": "Sınıflandırılamayan haberler Error sekmesinde toplanır; yeniden işleme başlatılabilir ve durumu izlenir."
+        },
+        {
+          "id": "feed-refresh",
+          "title": "Manuel RSS yenileme",
+          "description": "Seçili RSS beslemesini elle yenileme; işlem durumu düzenli olarak sorgulanır."
+        },
+        {
+          "id": "settings-feeds",
+          "title": "RSS Beslemeleri",
+          "description": "RSS beslemesi ekleme, düzenleme, silme ve bağlantı testi."
+        },
+        {
+          "id": "settings-topics",
+          "title": "Kategoriler",
+          "description": "Haber konularını (kategorilerini) ekleme, düzenleme, silme ve etkinleştirme."
+        },
+        {
+          "id": "settings-summary-types",
+          "title": "Özet Türleri",
+          "description": "Hangi özet türlerinin (kısa, standart, detaylı) üretileceğini seçme."
+        }
+      ]
+    },
+    {
+      "version": "v2",
+      "title": "Bülten ve Playground",
+      "features": [
+        {
+          "id": "bulletin-report",
+          "title": "Word bülten raporu",
+          "description": "Seçilen zaman aralığı ve önem seviyesindeki haberleri kullanıcı tanımlı üst düzey kategorilere göre gruplayıp şablona uygun bir Word (.docx) raporu üretir; geçmiş raporlar indirilebilir veya silinebilir."
+        },
+        {
+          "id": "bulletin-categories",
+          "title": "Bülten kategorileri",
+          "description": "Üst düzey bülten kategorilerini (Avrupa, Amerika vb.) ekleme, düzenleme, silme ve sıralama; rapor öncesi haber sayısı önizlemesi."
+        },
+        {
+          "id": "playground",
+          "title": "Pipeline denemesi",
+          "description": "Bir haber seçilip sınıflandırma, öncelik ve özet aşamaları çalıştırılır. Prompt ve özet talimatları o çalıştırma için geçici değiştirilebilir; prompt, ham cevap, token, maliyet ve süre gösterilir. Veritabanına hiçbir şey yazılmaz."
+        },
+        {
+          "id": "settings-prompts",
+          "title": "Sistem Promptları",
+          "description": "Sınıflandırma ve özetleme prompt'larını düzenleme; sistemin kilitli kısmı salt okunur olarak gösterilir. Playground bu prompt'ları başlangıç değeri olarak kullanır."
+        },
+        {
+          "id": "settings-features",
+          "title": "Features listeleme",
+          "description": "Ayarlar altındaki Features sayfası, uygulamadaki feature'ları sürümlere göre (en yeni sürüm üstte) listeler; içerik features.json dosyasından okunur."
+        }
+      ]
+    }
+  ]
+}

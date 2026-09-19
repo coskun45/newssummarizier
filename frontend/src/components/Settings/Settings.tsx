@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useSettings, useUpdateSettings, useTopics, useCreateTopic, useUpdateTopic, useDeleteTopic, useUsers, useCreateUser, useDeleteUser, useFeeds, useCreateFeed, useUpdateFeed, useDeleteFeed, useTestFeedConnection } from '../../hooks/useApi';
 import PromptEditor from '../PromptEditor/PromptEditor';
+import Features from '../Features/Features';
 import { FolderIcon, DocumentTextIcon, SparklesIcon, PencilIcon, TrashIcon, CheckIcon, XMarkIcon, PlusIcon, UsersIcon, RssIcon, ExclamationTriangleIcon, SignalIcon } from '@heroicons/react/24/outline';
 import type { AuthUser } from '../../types';
 import './Settings.css';
 
-export type SettingsCategory = 'feeds' | 'topics' | 'summaryTypes' | 'prompts' | 'users';
+export type SettingsCategory = 'feeds' | 'topics' | 'summaryTypes' | 'prompts' | 'features' | 'users';
 
 interface SettingsProps {
   category: SettingsCategory;
@@ -650,6 +651,8 @@ function Settings({ category, currentUser }: SettingsProps) {
           </div>
         </div>
       )}
+
+      {category === 'features' && <Features />}
 
       {category === 'users' && currentUser.role === 'admin' && (
                 <div className="settings-category">

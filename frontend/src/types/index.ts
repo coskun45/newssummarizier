@@ -282,3 +282,19 @@ export interface PlaygroundRunResult {
     skipped_reason: 'unimportant' | 'classification_failed' | null;
     total_cost: number;
 }
+
+export interface Feature {
+    id: string;
+    title: string;
+    description: string;
+}
+
+export interface FeatureVersion {
+    version: string;
+    title: string;
+    features: Feature[];
+}
+
+export interface FeaturesData {
+    versions: FeatureVersion[];
+}

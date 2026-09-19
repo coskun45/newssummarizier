@@ -70,6 +70,8 @@ files). The essentials:
   old, buggy behavior, then confirm it passes after the fix. A bug isn't done being fixed until a
   test exists that would catch it coming back. Do this for every fix, however small; only skip it
   if the change is truly untestable (e.g. a comment/typo fix).
+- **Feature added/removed/changed** → update `frontend/src/data/features.json` (rendered by
+  Ayarlar › Features) in the same change — see `.claude/rules/features.md`.
 - **Learned a new recurring convention/gotcha** → record it with the `/add-rule` skill into
   `.claude/rules/` (do not bloat this file).
 - **Before a PR** → run the `/update-docs` skill to sync `README.md` + `.env.example`.
