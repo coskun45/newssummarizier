@@ -2,11 +2,16 @@ import { test, expect } from '@playwright/test';
 import { loginAs } from './helpers/auth';
 import { mockApi, makeArticle, makeSummary } from './helpers/mockApi';
 
+// Explicit, spaced published_at: the mock API sorts by it, and makeArticle's default
+// (real-clock, ms resolution) can tie between calls and flip the slide order under
+// parallel load, making "first slide" nondeterministic.
 function heroFixtures() {
+  const now = Date.now();
+  const at = (hoursAgo: number) => new Date(now - hoursAgo * 3600_000).toISOString();
   return [
-    makeArticle({ title: 'Hero Story One', priority: 'high', is_read: true, cleaned_content: 'Full body of story one.' }),
-    makeArticle({ title: 'Hero Story Two', priority: 'high', is_read: true, cleaned_content: 'Full body of story two.' }),
-    makeArticle({ title: 'Hero Story Three', priority: 'high', is_read: true }),
+    makeArticle({ title: 'Hero Story One', priority: 'high', is_read: true, published_at: at(0), cleaned_content: 'Full body of story one.' }),
+    makeArticle({ title: 'Hero Story Two', priority: 'high', is_read: true, published_at: at(1), cleaned_content: 'Full body of story two.' }),
+    makeArticle({ title: 'Hero Story Three', priority: 'high', is_read: true, published_at: at(2) }),
     // Not high priority - must never appear in the hero.
     makeArticle({ title: 'Low Priority Piece', priority: 'low', is_read: false }),
   ];
