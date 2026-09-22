@@ -197,6 +197,34 @@ docker compose build --no-cache
 docker compose ps
 ```
 
+### Sunucuya Bağlanma ve Canlı Loglar
+
+Uygulama `deploy.sh` ile bir sunucuya deploy edildiğinde (bkz. `.github/workflows/deploy.yml`), kod `~/newssummarizier` dizinine klonlanır ve Docker Compose ile ayağa kaldırılır. Canlı loglara bakmak için:
+
+```bash
+# 1. Sunucuya SSH ile bağlan
+ssh <kullanıcı>@<sunucu-ip>
+
+# 2. Proje dizinine geç
+cd ~/newssummarizier
+
+# 3. Tüm servislerin canlı loglarını izle
+docker compose logs -f
+
+# Sadece belirli bir servis
+docker compose logs -f backend     # FastAPI / agent pipeline
+docker compose logs -f frontend    # Nginx
+docker compose logs -f db          # PostgreSQL
+
+# Son N satırı görüp sonra takibe devam et
+docker compose logs --tail=200 -f backend
+
+# Servislerin ayakta olup olmadığını kontrol et
+docker compose ps
+```
+
+> `<sunucu-ip>` ve SSH kullanıcı adı deploy'un yapıldığı ortama özeldir (bkz. `.github/workflows/deploy.yml` secrets). Loglar Docker'ın container log sürücüsünden okunur; ayrı bir log dosyasına yazılmaz.
+
 ### Ortam Değişkenleri
 
 Tüm değişkenler repo kökündeki **tek `.env`** dosyasından gelir (şablon: `.env.example`);
