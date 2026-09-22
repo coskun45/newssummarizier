@@ -32,15 +32,25 @@ async def rss_fetcher_node(state: NewsProcessingState) -> Dict[str, Any]:
         db = SessionLocal()
         try:
             deleted_urls = crud.get_deleted_urls(db)
+            seen_urls = set()
             new_articles = []
             for article in articles:
                 if article["url"] in deleted_urls:
                     logger.info(f"Article was deleted by user, skipping: {article['url']}")
                     continue
+                if article["url"] in seen_urls:
+                    # Some feeds (e.g. multi-category aggregates) list the same
+                    # URL more than once in a single poll. Only the DB is
+                    # checked below, so a same-batch duplicate would otherwise
+                    # pass that check twice and crash article_processor_node
+                    # on the unique constraint when the second copy is inserted.
+                    logger.info(f"Duplicate URL within this feed poll, skipping: {article['url']}")
+                    continue
                 existing = crud.get_article_by_url(db, article["url"])
                 if not existing:
                     article["status"] = "pending"
                     new_articles.append(article)
+                    seen_urls.add(article["url"])
                 else:
                     logger.info(f"Article already exists: {article['url']}")
             
