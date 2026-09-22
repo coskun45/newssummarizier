@@ -99,6 +99,17 @@ export interface CostStats {
     monthly_limit: number;
 }
 
+export interface DailyArticleStatsDay {
+    date: string;
+    incoming: number;
+    processed: number;
+}
+
+export interface DailyArticleStats {
+    days: DailyArticleStatsDay[];
+    today: DailyArticleStatsDay;
+}
+
 export interface AppInfo {
     app: string;
     version: string;

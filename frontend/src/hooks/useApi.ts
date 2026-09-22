@@ -288,6 +288,14 @@ export const useCostStats = () => {
     });
 };
 
+export const useDailyArticleStats = () => {
+    return useQuery({
+        queryKey: ['dailyArticleStats'],
+        queryFn: statsApi.getDailyArticleStats,
+        refetchInterval: 5 * 60 * 1000, // scheduler runs hourly; 5 min is plenty
+    });
+};
+
 // App info hook — the deployed version is fixed for the lifetime of the page.
 export const useAppInfo = () => {
     return useQuery({

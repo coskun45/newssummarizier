@@ -1,6 +1,7 @@
 """
 Tests for app/api/routes/summaries.py (article summaries + cost stats).
 """
+from datetime import datetime, timezone, timedelta
 from app.core.config import settings
 from tests.conftest import _make_feed, _make_article, _make_summary
 
@@ -120,3 +121,50 @@ def test_get_cost_stats_reflects_recent_summary_cost(client, auth_headers, db_se
     body = response.json()
     assert body["daily_cost"] >= 1.5
     assert body["monthly_cost"] >= 1.5
+
+
+# ==================== GET /stats/daily-articles ====================
+
+def test_get_daily_article_stats_requires_auth(client):
+    response = client.get("/api/stats/daily-articles")
+    assert response.status_code == 401
+
+
+def test_get_daily_article_stats_buckets_by_utc_day_and_excludes_failed(client, auth_headers, db_session):
+    feed = _make_feed(db_session)
+
+    today = datetime.now(timezone.utc).replace(hour=12, minute=0, second=0, microsecond=0)
+    yesterday = today - timedelta(days=1)
+
+    a1 = _make_article(db_session, feed.id, status="summarized")
+    a2 = _make_article(db_session, feed.id, status="failed")
+    a3 = _make_article(db_session, feed.id, status="filtered")
+
+    a1.fetched_at = today
+    a2.fetched_at = today
+    a3.fetched_at = yesterday
+    db_session.commit()
+
+    response = client.get("/api/stats/daily-articles", headers=auth_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["days"]) == 7
+    assert body["days"][-1] == body["today"]
+    assert body["today"]["date"] == today.date().isoformat()
+    assert body["today"]["incoming"] == 2
+    assert body["today"]["processed"] == 1  # failed excluded
+
+    yesterday_entry = body["days"][-2]
+    assert yesterday_entry["date"] == yesterday.date().isoformat()
+    assert yesterday_entry["incoming"] == 1
+    assert yesterday_entry["processed"] == 1  # filtered still counts as processed
+
+
+def test_get_daily_article_stats_zero_fills_days_with_no_articles(client, auth_headers):
+    response = client.get("/api/stats/daily-articles", headers=auth_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["days"]) == 7
+    assert all(d["incoming"] == 0 and d["processed"] == 0 for d in body["days"])

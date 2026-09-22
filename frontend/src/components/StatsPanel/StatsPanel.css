@@ -131,6 +131,144 @@
   line-height: 1.3;
 }
 
+.stats-daily-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.stats-daily-today {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.9rem 1rem;
+  background: var(--color-surface-alt);
+  border-radius: var(--radius-md);
+}
+
+.stats-daily-today-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.stats-daily-today-values {
+  display: flex;
+  gap: 1.25rem;
+}
+
+.stats-daily-today-value {
+  font-size: 1.3rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.stats-daily-today-value--incoming {
+  color: var(--color-primary);
+}
+
+.stats-daily-today-value--processed {
+  color: var(--color-success-solid);
+}
+
+.stats-daily-today-sub {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: none;
+}
+
+.stats-daily-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.stats-daily-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+.stats-daily-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-sm);
+}
+
+.stats-daily-legend-swatch--incoming {
+  background: var(--color-primary);
+}
+
+.stats-daily-legend-swatch--processed {
+  background: var(--color-success-solid);
+}
+
+.stats-daily-bars {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.5rem;
+  height: 120px;
+  padding: 0.5rem 0.25rem 0;
+}
+
+.stats-daily-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  flex: 1;
+  height: 100%;
+}
+
+.stats-daily-day-bars {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+  flex: 1;
+  width: 100%;
+  border-radius: var(--radius-sm);
+}
+
+.stats-daily-day--today .stats-daily-day-bars {
+  background: var(--color-surface-alt);
+}
+
+.stats-daily-bar {
+  width: 10px;
+  min-height: 2px;
+  border-radius: 4px 4px 0 0;
+}
+
+.stats-daily-bar--incoming {
+  background: var(--color-primary);
+}
+
+.stats-daily-bar--processed {
+  background: var(--color-success-solid);
+}
+
+.stats-daily-day-values {
+  font-size: 0.65rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.stats-daily-day-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+}
+
 @media (max-width: 768px) {
   .stats-tiles {
     grid-template-columns: repeat(2, 1fr);
@@ -151,5 +289,23 @@
 
   .stats-priority-card-value {
     font-size: 1.15rem;
+  }
+
+  .stats-daily-today {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .stats-daily-bars {
+    height: 90px;
+    gap: 0.25rem;
+  }
+
+  .stats-daily-bar {
+    width: 7px;
+  }
+
+  .stats-daily-day-values {
+    font-size: 0.6rem;
   }
 }

@@ -35,6 +35,19 @@ class CostStatsResponse(BaseModel):
     monthly_limit: float
 
 
+class DailyArticleStatsDay(BaseModel):
+    """One UTC day's article counts."""
+    date: str
+    incoming: int
+    processed: int
+
+
+class DailyArticleStatsResponse(BaseModel):
+    """Last 7 UTC days (oldest first) of incoming vs. successfully-processed articles."""
+    days: List[DailyArticleStatsDay]
+    today: DailyArticleStatsDay
+
+
 @router.get("/articles/{article_id}/summaries", response_model=List[SummaryResponse])
 async def get_article_summaries(
     article_id: int,
@@ -98,3 +111,12 @@ async def get_cost_stats(db: Session = Depends(get_db)):
         daily_limit=settings.daily_cost_limit,
         monthly_limit=settings.monthly_cost_limit
     )
+
+
+@router.get("/stats/daily-articles", response_model=DailyArticleStatsResponse)
+async def get_daily_article_stats(db: Session = Depends(get_db)):
+    """
+    Get daily incoming vs. processed article counts for the last 7 days (UTC, incl. today).
+    """
+    days = crud.get_daily_article_stats(db, days=7)
+    return DailyArticleStatsResponse(days=days, today=days[-1])

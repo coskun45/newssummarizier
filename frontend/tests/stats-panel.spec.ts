@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { loginAs } from './helpers/auth';
-import { mockApi, makeArticle, makeFeed, makeTopic } from './helpers/mockApi';
+import { mockApi, makeArticle, makeFeed, makeTopic, makeDailyArticleStats } from './helpers/mockApi';
 
 test('shows feed/priority/archive/favorite/category stats on Ana Sayfa without any click', async ({ page }) => {
   await loginAs(page);
@@ -70,4 +70,26 @@ test('shows zeroed stats and an empty-category message with no data', async ({ p
   const highCard = page.locator('.stats-priority-card').filter({ hasText: 'Yüksek' });
   await expect(highCard).toContainText('0');
   await expect(page.getByText('Henüz kategori yok')).toBeVisible();
+});
+
+test('shows the last 7 days daily incoming/processed article chart with a Bugün callout', async ({ page }) => {
+  await loginAs(page);
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() - (6 - i));
+    return { date: d.toISOString().slice(0, 10), incoming: 10 + i, processed: 8 + i };
+  });
+  const dailyArticleStats = makeDailyArticleStats({ days, today: days[days.length - 1] });
+
+  await mockApi(page, { feeds: [], topics: [], articles: [], dailyArticleStats });
+
+  await page.goto('/');
+
+  await expect(page.getByRole('heading', { name: 'Son 7 Gün' })).toBeVisible();
+
+  const todayBlock = page.locator('.stats-daily-today');
+  await expect(todayBlock).toContainText(String(dailyArticleStats.today.incoming));
+  await expect(todayBlock).toContainText(String(dailyArticleStats.today.processed));
+
+  await expect(page.locator('.stats-daily-day')).toHaveCount(7);
 });

@@ -1,14 +1,16 @@
 import { GlobeAltIcon, InboxIcon, ArchiveBoxIcon, TagIcon } from '@heroicons/react/24/outline';
 import { StarIcon } from '@heroicons/react/24/solid';
-import { useFeeds, useArticleCounts, useTopics } from '../../hooks/useApi';
+import { useFeeds, useArticleCounts, useTopics, useDailyArticleStats } from '../../hooks/useApi';
 import { PRIORITIES } from '../../constants/priorities';
 import { withAlpha } from '../../utils/color';
+import DailyStatsChart from './DailyStatsChart';
 import './StatsPanel.css';
 
 function StatsPanel() {
     const { data: feeds, isLoading: feedsLoading } = useFeeds();
     const { data: counts, isLoading: countsLoading } = useArticleCounts();
     const { data: topics, isLoading: topicsLoading } = useTopics();
+    const { data: dailyStats, isLoading: dailyStatsLoading } = useDailyArticleStats();
 
     const isLoading = feedsLoading || countsLoading || topicsLoading;
 
@@ -91,6 +93,17 @@ function StatsPanel() {
                         </div>
                     ) : (
                         <p className="text-small text-muted">Henüz kategori yok</p>
+                    )}
+                </div>
+
+                <div className="stats-section">
+                    <h3 className="stats-section-title">Son 7 Gün</h3>
+                    {dailyStatsLoading ? (
+                        <div className="skeleton skeleton-line skeleton-line--body" />
+                    ) : dailyStats ? (
+                        <DailyStatsChart stats={dailyStats} />
+                    ) : (
+                        <p className="text-small text-muted">İstatistikler yüklenemedi</p>
                     )}
                 </div>
             </div>

@@ -13,6 +13,7 @@ import type {
   PlaygroundRunRequest,
   PlaygroundRunResult,
   PlaygroundStageCall,
+  DailyArticleStats,
 } from '../../src/types';
 
 let idSeq = 1000;
@@ -116,6 +117,20 @@ export function makeBulletinCategory(overrides: Partial<BulletinCategory> = {}):
     id,
     name: `Category ${id}`,
     display_order: 0,
+    ...overrides,
+  };
+}
+
+export function makeDailyArticleStats(overrides: Partial<DailyArticleStats> = {}): DailyArticleStats {
+  const today = new Date().toISOString().slice(0, 10);
+  const days = overrides.days ?? Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() - (6 - i));
+    return { date: d.toISOString().slice(0, 10), incoming: 0, processed: 0 };
+  });
+  return {
+    days,
+    today: overrides.today ?? days[days.length - 1] ?? { date: today, incoming: 0, processed: 0 },
     ...overrides,
   };
 }
@@ -268,6 +283,7 @@ export interface MockState {
   playgroundSettings: PlaygroundSettings;
   /** Every POST /playground/run body, in order — lets specs assert on what the UI sent. */
   playgroundRuns: PlaygroundRunRequest[];
+  dailyArticleStats: DailyArticleStats;
 }
 
 export interface MockApiOverrides {
@@ -283,6 +299,7 @@ export interface MockApiOverrides {
   playgroundSettings?: PlaygroundSettings;
   /** Version returned by GET /api/info (shown in the profile menu and on Ayarlar › Features). */
   appVersion?: string;
+  dailyArticleStats?: DailyArticleStats;
 }
 
 /** Mirrors the backend's "Error" group: no severity label (not even Önemsiz) or status `failed`,
@@ -442,6 +459,7 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
     generatedBulletins: (overrides.generatedBulletins ?? []).map((b) => ({ ...b })),
     playgroundSettings: overrides.playgroundSettings ?? makePlaygroundSettings(),
     playgroundRuns: [],
+    dailyArticleStats: overrides.dailyArticleStats ?? makeDailyArticleStats(),
   };
 
   await page.route('**/api/**', async (route: Route) => {
@@ -452,6 +470,11 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
     const params = url.searchParams;
     const json = (data: unknown, status = 200) =>
       route.fulfill({ status, json: data as object });
+
+    // ---- stats ----
+    if (method === 'GET' && path === '/stats/daily-articles') {
+      return json(state.dailyArticleStats);
+    }
 
     // ---- app info ----
     if (method === 'GET' && path === '/info') {

@@ -4,7 +4,7 @@ CRUD (Create, Read, Update, Delete) operations for database models.
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import desc, func, or_, case
 from typing import List, Optional, Dict, Any, Set
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from app.db import models
 
 
@@ -763,6 +763,38 @@ def get_monthly_cost(db: Session) -> float:
     now = datetime.now(timezone.utc)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     return get_total_cost(db, start_date=month_start)
+
+
+def get_daily_article_stats(db: Session, days: int = 7) -> List[Dict[str, Any]]:
+    """Per-UTC-day incoming vs. successfully-processed article counts for the last
+    `days` UTC days (oldest first, including today). "Processed" = status != 'failed'
+    (summarized or filtered both count; only failed does not)."""
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    range_start = today - timedelta(days=days - 1)
+
+    day_expr = func.date(models.Article.fetched_at)
+    rows = (
+        db.query(
+            day_expr.label("day"),
+            func.count(models.Article.id).label("incoming"),
+            func.sum(case((models.Article.status != "failed", 1), else_=0)).label("processed"),
+        )
+        .filter(models.Article.fetched_at >= range_start)
+        .group_by(day_expr)
+        .all()
+    )
+    by_day = {
+        (r.day if isinstance(r.day, str) else r.day.isoformat()): (r.incoming, r.processed or 0)
+        for r in rows
+    }
+
+    result = []
+    for i in range(days):
+        day = (range_start + timedelta(days=i)).date()
+        key = day.isoformat()
+        incoming, processed = by_day.get(key, (0, 0))
+        result.append({"date": key, "incoming": incoming, "processed": processed})
+    return result
 
 
 # ==================== Topic Operations ====================

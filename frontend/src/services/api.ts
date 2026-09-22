@@ -16,6 +16,7 @@ import type {
     Topic,
     UserSettings,
     CostStats,
+    DailyArticleStats,
     AppInfo,
     SystemPrompt,
     LockedPrompt,
@@ -287,6 +288,10 @@ export const settingsApi = {
 export const statsApi = {
     getCosts: async (): Promise<CostStats> => {
         const response = await api.get('/stats/costs');
+        return response.data;
+    },
+    getDailyArticleStats: async (): Promise<DailyArticleStats> => {
+        const response = await api.get('/stats/daily-articles');
         return response.data;
     },
 };

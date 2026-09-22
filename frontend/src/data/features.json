@@ -42,7 +42,7 @@
         {
           "id": "stats-panel",
           "title": "İstatistik paneli",
-          "description": "Önem seviyesine göre okunmamış haber sayıları ve özet istatistikleri."
+          "description": "Önem seviyesine göre okunmamış haber sayıları, kategori dağılımı ve son 7 günün gelen/işlenen haber grafiği."
         },
         {
           "id": "article-list",
