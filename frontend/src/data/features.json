@@ -129,6 +129,11 @@
           "id": "app-version",
           "title": "Sürüm bilgisi",
           "description": "Çalışan güncel sürüm profil simgesine tıklayınca açılan menüde ve Features sayfasında görünür; her deploy'da otomatik artar, features.json'a yeni bir sürüm bloğu eklenince ana sürüm yükselir."
+        },
+        {
+          "id": "analysis-tab",
+          "title": "Analiz sekmesi",
+          "description": "Üst menüde Playground'un yanında yer alan Analiz sekmesi; içerik henüz hazırlanıyor ve şimdilik \"Coming soon\" olarak gösterilir."
         }
       ]
     }
