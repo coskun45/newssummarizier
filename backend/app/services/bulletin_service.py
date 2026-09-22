@@ -14,7 +14,9 @@ import hashlib
 import io
 import json
 import logging
+import re
 from datetime import datetime, timezone
+from html import unescape
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
@@ -88,6 +90,22 @@ def _format_feed_lines(feeds: List[models.Feed]) -> List[str]:
     return lines
 
 
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_WHITESPACE_RUN_RE = re.compile(r"\s+")
+
+
+def _strip_html(text: str) -> str:
+    """Collapse embedded HTML markup down to plain text.
+
+    raw_content is the RSS <description>, which for several feeds (e.g.
+    Aydinlik) is itself an HTML fragment (<a>/<img>/<h4>/<div> tags) rather
+    than plain text. cleaned_content falls back to that same raw_content
+    verbatim when article scraping fails (see agents/nodes.py), so without
+    this the markup — and HTML entities like &#039; — leaked straight into
+    the rendered bulletin as visible text."""
+    return unescape(_WHITESPACE_RUN_RE.sub(" ", _HTML_TAG_RE.sub(" ", text))).strip()
+
+
 def _article_snippet(article: models.Article) -> str:
     """Prefer the existing brief summary (already paid for) over a fresh LLM
     call; falls back to truncated raw/cleaned content."""
@@ -95,7 +113,7 @@ def _article_snippet(article: models.Article) -> str:
     if brief:
         return brief
     content = article.cleaned_content or article.raw_content or article.title
-    return truncate_content(content, max_tokens=150)
+    return truncate_content(_strip_html(content), max_tokens=150)
 
 
 def _build_category_list(category_names: List[str]) -> str:

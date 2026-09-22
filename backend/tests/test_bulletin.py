@@ -261,6 +261,39 @@ def test_generate_bulletin_success(client, auth_headers, db_session, monkeypatch
     assert '<w:updateFields w:val="true"/>' in settings_xml
 
 
+def test_generate_bulletin_strips_html_from_raw_content_fallback(client, auth_headers, db_session, monkeypatch):
+    """Regression test: when an article has no "brief" summary yet,
+    bulletin_service._article_snippet falls back to raw_content, which for
+    several feeds (e.g. Aydinlik) is an HTML fragment straight from the RSS
+    <description> rather than plain text. A real generated bulletin showed
+    this markup — <a>/<img>/<h4> tags and &#039;-style entities — rendered
+    verbatim as visible text in the Word document."""
+    monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", _fake_classify)
+    monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
+
+    _make_bulletin_category(db_session, name="AVRUPA")
+    feed = _make_feed(db_session)
+    now = datetime.now(timezone.utc)
+    _make_article(
+        db_session, feed.id, title="HTML Kirli Haber",
+        raw_content=(
+            '<a href="https://example.com/haber">'
+            '<img align="right" border="0" height="84" src="https://img.example.com/x.jpg" width="150" />'
+            '</a>\n<h4>Firari şüpheli &#039;yakalandı&#039;</h4>'
+        ),
+        published_at=now - timedelta(hours=1),
+    )
+
+    response = client.post("/api/bulletin/generate", json={}, headers=auth_headers)
+
+    assert response.status_code == 200
+    document = DocxDocument(io.BytesIO(response.content))
+    paragraph_texts = [p.text for p in document.paragraphs if p.text.strip()]
+
+    assert not any("<a href" in t or "<img " in t or "<h4>" in t for t in paragraph_texts)
+    assert any("Firari şüpheli 'yakalandı'" in t for t in paragraph_texts)
+
+
 def test_generate_bulletin_uses_only_user_defined_categories(client, auth_headers, db_session, monkeypatch):
     """A category set unrelated to the bundled template's default region
     headings must fully replace them in the output — regression test for a
