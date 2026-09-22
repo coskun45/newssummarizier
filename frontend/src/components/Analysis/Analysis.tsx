@@ -7,7 +7,7 @@ function Analysis() {
     <section className="analysis-placeholder">
       <ChartBarIcon className="analysis-placeholder-icon" aria-hidden="true" />
       <h2 className="analysis-placeholder-title">Analiz</h2>
-      <p className="analysis-placeholder-text">Coming soon</p>
+      <p className="analysis-placeholder-text">Yakında</p>
     </section>
   );
 }

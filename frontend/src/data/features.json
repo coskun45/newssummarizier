@@ -133,7 +133,7 @@
         {
           "id": "analysis-tab",
           "title": "Analiz sekmesi",
-          "description": "Üst menüde Playground'un yanında yer alan Analiz sekmesi; içerik henüz hazırlanıyor ve şimdilik \"Coming soon\" olarak gösterilir."
+          "description": "Üst menüde Playground'un yanında yer alan Analiz sekmesi; içerik henüz hazırlanıyor ve şimdilik \"Yakında\" olarak gösterilir."
         }
       ]
     }

@@ -13,7 +13,7 @@ test('Analiz sits right after Playground in the header', async ({ page }) => {
   expect(navLabels[playgroundIndex + 1]?.trim()).toBe('Analiz');
 });
 
-test('clicking Analiz shows the Coming soon placeholder and hides the news view', async ({ page }) => {
+test('clicking Analiz shows the Yakında placeholder and hides the news view', async ({ page }) => {
   await loginAs(page);
   await mockApi(page, { articles: [] });
   await page.goto('/');
@@ -21,7 +21,7 @@ test('clicking Analiz shows the Coming soon placeholder and hides the news view'
   await page.getByRole('button', { name: 'Analiz', exact: true }).click();
 
   await expect(page.getByRole('heading', { name: 'Analiz' })).toBeVisible();
-  await expect(page.getByText('Coming soon')).toBeVisible();
+  await expect(page.getByText('Yakında')).toBeVisible();
   await expect(page.locator('.dashboard-sidebar')).not.toBeVisible();
   await expect(page.getByRole('button', { name: 'Okunmamışlar' })).not.toBeVisible();
 });

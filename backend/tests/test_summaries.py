@@ -161,6 +161,26 @@ def test_get_daily_article_stats_buckets_by_utc_day_and_excludes_failed(client, 
     assert yesterday_entry["processed"] == 1  # filtered still counts as processed
 
 
+def test_get_daily_article_stats_excludes_in_flight_pending_and_scraped(client, auth_headers, db_session):
+    """Regression test: articles still mid-pipeline (pending/scraped) must not be
+    counted as "processed" just because their status isn't 'failed'."""
+    feed = _make_feed(db_session)
+    today = datetime.now(timezone.utc).replace(hour=12, minute=0, second=0, microsecond=0)
+
+    a1 = _make_article(db_session, feed.id, status="pending")
+    a2 = _make_article(db_session, feed.id, status="scraped")
+    a1.fetched_at = today
+    a2.fetched_at = today
+    db_session.commit()
+
+    response = client.get("/api/stats/daily-articles", headers=auth_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["today"]["incoming"] == 2
+    assert body["today"]["processed"] == 0
+
+
 def test_get_daily_article_stats_zero_fills_days_with_no_articles(client, auth_headers):
     response = client.get("/api/stats/daily-articles", headers=auth_headers)
 

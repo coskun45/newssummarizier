@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
+from bs4 import BeautifulSoup
 from sqlalchemy.orm import Session
 
 from app.agents.tools import truncate_content
@@ -90,7 +91,6 @@ def _format_feed_lines(feeds: List[models.Feed]) -> List[str]:
     return lines
 
 
-_HTML_TAG_RE = re.compile(r"<[^>]+>")
 _WHITESPACE_RUN_RE = re.compile(r"\s+")
 
 
@@ -102,8 +102,13 @@ def _strip_html(text: str) -> str:
     than plain text. cleaned_content falls back to that same raw_content
     verbatim when article scraping fails (see agents/nodes.py), so without
     this the markup — and HTML entities like &#039; — leaked straight into
-    the rendered bulletin as visible text."""
-    return unescape(_WHITESPACE_RUN_RE.sub(" ", _HTML_TAG_RE.sub(" ", text))).strip()
+    the rendered bulletin as visible text.
+
+    Uses a real HTML parser (not a "<[^>]+>" regex) so literal bracketed text
+    that isn't actually markup, e.g. "büyüme <10 yaş grubunda> daha hızlı",
+    isn't mistaken for a tag and deleted."""
+    plain = BeautifulSoup(text, "html.parser").get_text(separator=" ")
+    return _WHITESPACE_RUN_RE.sub(" ", unescape(plain)).strip()
 
 
 def _article_snippet(article: models.Article) -> str:

@@ -294,6 +294,21 @@ def test_generate_bulletin_strips_html_from_raw_content_fallback(client, auth_he
     assert any("Firari şüpheli 'yakalandı'" in t for t in paragraph_texts)
 
 
+def test_strip_html_preserves_literal_angle_bracket_text():
+    """Regression test: a real HTML parser (not a "<[^>]+>" regex) must not mistake
+    literal bracketed text that isn't markup for a tag and delete it."""
+    result = bulletin_service._strip_html("büyüme <10 yaş grubunda> daha hızlı oldu")
+    assert "10 yaş grubunda" in result
+
+
+def test_strip_html_collapses_whitespace_from_entities():
+    """Regression test: entities that decode to whitespace (e.g. repeated &nbsp;)
+    must be unescaped before whitespace collapsing runs, or they leak through
+    uncollapsed since at collapse-time they're still literal "&nbsp;" text."""
+    result = bulletin_service._strip_html("Ankara&nbsp;&nbsp;&nbsp;Istanbul")
+    assert result == "Ankara Istanbul"
+
+
 def test_generate_bulletin_uses_only_user_defined_categories(client, auth_headers, db_session, monkeypatch):
     """A category set unrelated to the bundled template's default region
     headings must fully replace them in the output — regression test for a

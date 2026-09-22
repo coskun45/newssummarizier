@@ -767,8 +767,9 @@ def get_monthly_cost(db: Session) -> float:
 
 def get_daily_article_stats(db: Session, days: int = 7) -> List[Dict[str, Any]]:
     """Per-UTC-day incoming vs. successfully-processed article counts for the last
-    `days` UTC days (oldest first, including today). "Processed" = status != 'failed'
-    (summarized or filtered both count; only failed does not)."""
+    `days` UTC days (oldest first, including today). "Processed" = status in
+    ('summarized', 'filtered') — articles still `pending`/`scraped` (mid-pipeline)
+    are not yet decided and don't count as processed, matching `ERROR_EXCLUDED_STATUSES`."""
     today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     range_start = today - timedelta(days=days - 1)
 
@@ -777,7 +778,7 @@ def get_daily_article_stats(db: Session, days: int = 7) -> List[Dict[str, Any]]:
         db.query(
             day_expr.label("day"),
             func.count(models.Article.id).label("incoming"),
-            func.sum(case((models.Article.status != "failed", 1), else_=0)).label("processed"),
+            func.sum(case((models.Article.status.in_(("summarized", "filtered")), 1), else_=0)).label("processed"),
         )
         .filter(models.Article.fetched_at >= range_start)
         .group_by(day_expr)
