@@ -65,7 +65,7 @@ files). The essentials:
 - **New feature/requirement** → follow the `/implement-requirement` skill (bottom-up across layers,
   including a required test — `backend/tests/` pytest and/or `frontend/tests/` Playwright — for what
   you build).
-- **Bug fix** → always add or extend a regression test (`backend/tests/` pytest and/or
+- **Bug fix** → follow the `/fix-bug` skill (reproduce → failing test → fix → prove). Always add or extend a regression test (`backend/tests/` pytest and/or
   `frontend/tests/` Playwright) that reproduces it — write it so it would have failed against the
   old, buggy behavior, then confirm it passes after the fix. A bug isn't done being fixed until a
   test exists that would catch it coming back. Do this for every fix, however small; only skip it
