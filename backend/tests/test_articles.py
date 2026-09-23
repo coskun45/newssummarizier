@@ -228,6 +228,49 @@ def test_list_articles_search_matches_title_or_content(client, auth_headers, db_
     assert no_match.id not in ids
 
 
+def test_list_articles_search_matches_word_starts_not_substrings(client, auth_headers, db_session):
+    feed = _make_feed(db_session)
+    upper = _make_article(db_session, feed.id, url="https://example.com/w1", title="NATO summit opens")
+    compound = _make_article(db_session, feed.id, url="https://example.com/w2", title="Nato-Gipfel in Den Haag")
+    in_content = _make_article(db_session, feed.id, url="https://example.com/w3", title="Defence news",
+                               cleaned_content="Leaders of the (Nato) alliance met.")
+    # "nato" only appears inside other words — must not match
+    donations = _make_article(db_session, feed.id, url="https://example.com/w4", title="Farage's donations plan")
+    senator = _make_article(db_session, feed.id, url="https://example.com/w5", title="Other",
+                            cleaned_content="The senator spoke.")
+
+    response = client.get("/api/articles/", params={"search": "nato"}, headers=auth_headers)
+
+    assert response.status_code == 200
+    ids = {a["id"] for a in response.json()["articles"]}
+    assert ids == {upper.id, compound.id, in_content.id}
+    assert donations.id not in ids and senator.id not in ids
+
+
+def test_list_articles_search_matches_word_prefixes_and_turkish_letters(client, auth_headers, db_session):
+    feed = _make_feed(db_session)
+    quantum = _make_article(db_session, feed.id, url="https://example.com/p1", title="Quantum leap")
+    turkiye = _make_article(db_session, feed.id, url="https://example.com/p2", title="Türkiye ve AB")
+    _make_article(db_session, feed.id, url="https://example.com/p3", title="Unrelated")
+
+    by_prefix = client.get("/api/articles/", params={"search": "quant"}, headers=auth_headers)
+    by_turkish = client.get("/api/articles/", params={"search": "türk"}, headers=auth_headers)
+
+    assert {a["id"] for a in by_prefix.json()["articles"]} == {quantum.id}
+    assert {a["id"] for a in by_turkish.json()["articles"]} == {turkiye.id}
+
+
+def test_list_articles_search_treats_regex_characters_literally(client, auth_headers, db_session):
+    feed = _make_feed(db_session)
+    cpp = _make_article(db_session, feed.id, url="https://example.com/r1", title="C++ (update) released")
+    _make_article(db_session, feed.id, url="https://example.com/r2", title="Cats released")
+
+    response = client.get("/api/articles/", params={"search": "c++ (update"}, headers=auth_headers)
+
+    assert response.status_code == 200
+    assert {a["id"] for a in response.json()["articles"]} == {cpp.id}
+
+
 def test_list_articles_feed_ids_takes_precedence_over_feed_id(client, auth_headers, db_session):
     feed_a = _make_feed(db_session, url="https://example.com/feed-a")
     feed_b = _make_feed(db_session, url="https://example.com/feed-b")

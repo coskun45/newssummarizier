@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Article } from '../../types';
-import { useSummaries, useArticle, useDeleteArticle, useSetArticleStarred, useReprocessArticles } from '../../hooks/useApi';
+import { useSummaries, useArticle, useDeleteArticle, useSetArticleStarred, useReprocessArticles, useMarkArticleRead } from '../../hooks/useApi';
 import ContentModal from '../ContentModal/ContentModal';
 import { copyToClipboard } from '../../utils/exportArticles';
 import { withAlpha } from '../../utils/color';
@@ -10,6 +10,7 @@ import {
   StarIcon as StarIconOutline,
   NoSymbolIcon,
   ArrowPathIcon,
+  ArchiveBoxArrowDownIcon,
   CheckIcon,
   ClipboardDocumentIcon,
   ExclamationTriangleIcon,
@@ -43,6 +44,7 @@ function ArticleCard({ article, isSelected = false, onToggleSelect, onDeleted, i
   const deleteArticleMutation = useDeleteArticle();
   const setStarredMutation = useSetArticleStarred();
   const reprocessMutation = useReprocessArticles();
+  const markReadMutation = useMarkArticleRead();
 
   // "Error": no severity label (not even Önemsiz) or processing failed (e.g. no summary could be
   // generated) — and not currently being processed. Mirrors the backend's error_clause.
@@ -177,6 +179,16 @@ function ArticleCard({ article, isSelected = false, onToggleSelect, onDeleted, i
         >
           Kaynağı aç →
         </a>
+        {!article.is_read && !isArchiveView && (
+          <button
+            className="btn btn-outline"
+            // Leaves the current list like a delete does, so drop it from the selection too
+            onClick={() => markReadMutation.mutate(article.id, { onSuccess: () => onDeleted?.(article.id) })}
+            disabled={markReadMutation.isPending}
+          >
+            <ArchiveBoxArrowDownIcon /> Arşive gönder
+          </button>
+        )}
         {isError && (
           <button
             className="btn btn-outline"

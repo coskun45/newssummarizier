@@ -117,6 +117,9 @@ function BulletinPanel() {
   };
   const { data: previewCountData, isFetching: previewCountLoading, isError: previewCountError } =
     useBulletinPreviewCount(bulletinParams);
+  // The backend rejects /generate when nothing matches, so don't offer it. Only a known 0
+  // disables — while the count loads or if the preview fails, generation stays possible.
+  const hasNoMatchingArticles = !previewCountLoading && !previewCountError && previewCountData?.count === 0;
 
   const handleAddCategory = () => {
     const name = newCategoryName.trim();
@@ -338,8 +341,14 @@ function BulletinPanel() {
         <button
           className="btn btn-primary btn-lg bulletin-generate-btn"
           onClick={handleGenerate}
-          disabled={generateMutation.isPending || !hasCategories}
-          title={!hasCategories ? 'Önce en az bir kategori ekleyin' : undefined}
+          disabled={generateMutation.isPending || !hasCategories || hasNoMatchingArticles}
+          title={
+            !hasCategories
+              ? 'Önce en az bir kategori ekleyin'
+              : hasNoMatchingArticles
+                ? 'Bu seçimlerle bültene girecek haber yok'
+                : undefined
+          }
         >
           {generateMutation.isPending ? (
             <>

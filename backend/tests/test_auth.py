@@ -22,6 +22,35 @@ def test_login_with_wrong_password_is_rejected(client, test_user):
         json={"email": test_user.email, "password": "wrong-password"},
     )
     assert response.status_code == 401
+    # Shown verbatim on the (Turkish) login page
+    assert response.json()["detail"] == "E-posta veya şifre hatalı"
+
+
+def test_login_to_inactive_account_is_rejected_in_turkish(client, test_user, db_session):
+    test_user.is_active = False
+    db_session.commit()
+    response = client.post(
+        "/api/auth/login",
+        json={"email": test_user.email, "password": "testpass123"},
+    )
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Hesap devre dışı"
+
+
+def test_create_user_with_existing_email_is_rejected_in_turkish(client, admin_headers, test_user):
+    response = client.post(
+        "/api/auth/users",
+        json={"email": test_user.email, "password": "whatever123", "role": "user"},
+        headers=admin_headers,
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Bu e-posta adresi zaten kayıtlı"
+
+
+def test_admin_cannot_delete_own_account_message_is_turkish(client, admin_headers, admin_user):
+    response = client.delete(f"/api/auth/users/{admin_user.id}", headers=admin_headers)
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Kendi hesabınızı silemezsiniz"
 
 
 def test_login_success_returns_token_and_me_works(client, test_user):

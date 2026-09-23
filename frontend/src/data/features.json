@@ -57,7 +57,7 @@
         {
           "id": "article-filters",
           "title": "Filtreleme ve arama",
-          "description": "RSS kaynağına, konuya, önem ve önceliğe, yayın/çekilme tarihine göre filtreleme ve gecikmeli (debounce) metin araması."
+          "description": "RSS kaynağına, konuya, önem ve önceliğe, yayın/çekilme tarihine göre filtreleme ve gecikmeli (debounce) metin araması; arama kelime başlarında eşleşir (ör. „nato“, „donations“ içinde bulunmaz)."
         },
         {
           "id": "bulk-actions",

@@ -5,7 +5,25 @@ from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import desc, func, or_, case
 from typing import List, Optional, Dict, Any, Set
 from datetime import datetime, timezone, timedelta
+import re
 from app.db import models
+
+
+def _article_search_filter(search_query: str):
+    r"""Case-insensitive match of the query at the START of a word in the title or content.
+
+    Plain substring matching made "nato" hit "donations"/"senator". Anchoring to a word start
+    (string start or a non-word character before it) keeps prefix search ("quant" -> "quantum",
+    "Nato-Gipfel") while dropping those false hits. `regexp_match` compiles to `~` on PostgreSQL
+    and to Python's `re` on the SQLite test DB. Case-insensitivity uses the embedded `(?i)` option,
+    which both engines understand (SQLite's REGEXP ignores the separate `flags` argument), and
+    `(^|\W)` plus `re.escape` output mean the same in both.
+    """
+    pattern = r"(?i)(^|\W)" + re.escape(search_query.strip())
+    return or_(
+        models.Article.title.regexp_match(pattern),
+        models.Article.cleaned_content.regexp_match(pattern),
+    )
 
 
 # ==================== Feed Operations ====================
@@ -248,12 +266,8 @@ def get_articles(
         query = query.filter(models.Article.fetched_at <= fetched_to)
 
     # Search in title and content
-    if search_query:
-        search_filter = or_(
-            models.Article.title.ilike(f"%{search_query}%"),
-            models.Article.cleaned_content.ilike(f"%{search_query}%")
-        )
-        query = query.filter(search_filter)
+    if search_query and search_query.strip():
+        query = query.filter(_article_search_filter(search_query))
 
     # Order by published date descending
     query = query.order_by(desc(models.Article.published_at))
@@ -319,12 +333,8 @@ def count_articles(
     if fetched_to:
         query = query.filter(models.Article.fetched_at <= fetched_to)
 
-    if search_query:
-        search_filter = or_(
-            models.Article.title.ilike(f"%{search_query}%"),
-            models.Article.cleaned_content.ilike(f"%{search_query}%")
-        )
-        query = query.filter(search_filter)
+    if search_query and search_query.strip():
+        query = query.filter(_article_search_filter(search_query))
 
     return query.scalar()
 
@@ -463,12 +473,8 @@ def mark_articles_read_bulk(
         if fetched_to:
             query = query.filter(models.Article.fetched_at <= fetched_to)
 
-        if search_query:
-            search_filter = or_(
-                models.Article.title.ilike(f"%{search_query}%"),
-                models.Article.cleaned_content.ilike(f"%{search_query}%")
-            )
-            query = query.filter(search_filter)
+        if search_query and search_query.strip():
+            query = query.filter(_article_search_filter(search_query))
 
     count = query.update({models.Article.is_read: True}, synchronize_session=False)
     db.commit()

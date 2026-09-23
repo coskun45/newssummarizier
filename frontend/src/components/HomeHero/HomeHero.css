@@ -111,7 +111,9 @@
   border: none;
   border-right: 1px solid rgba(255, 255, 255, 0.15);
   background: var(--color-primary-active);
-  color: #ffffff;
+  /* primary-active/-hover are dark blues in the light theme but light blues in the dark theme,
+     so the label uses the surface colour (white / slate) instead of a fixed white. */
+  color: var(--color-surface);
   font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
@@ -133,9 +135,11 @@
 
 .home-hero-pager-item--active {
   background: var(--color-warning-solid);
+  color: var(--color-text-on-primary);
   font-weight: 800;
 }
 
+/* Inverted chip (text-primary background); keeps the surface-coloured label from the base rule */
 .home-hero-pager-item--all {
   flex: 0 0 3rem;
   background: var(--color-text-primary);

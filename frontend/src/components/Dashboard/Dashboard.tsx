@@ -318,6 +318,9 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
   };
 
   const handleMarkAll = () => {
+    // Archives every article matching the filters (not just this page) — can be hundreds
+    const total = articlesData?.total ?? 0;
+    if (!confirm(`Listelenen ${total} haberin tümü arşive gönderilecek. Devam edilsin mi?`)) return;
     markBulkReadMutation.mutate({ filters }, { onSuccess: () => setSelectedArticleIds(new Set()) });
   };
 

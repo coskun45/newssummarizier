@@ -271,3 +271,36 @@ test('a background poll that shrinks the high-priority list past the current sli
   // Must not crash: the hero recovers and shows the sole remaining article.
   await expect(page.getByText('Hero Story One')).toBeVisible();
 });
+
+for (const scheme of ['light', 'dark'] as const) {
+  test(`every carousel pager button label is readable in the ${scheme} theme`, async ({ page }) => {
+    // Regression: the pager used a fixed white label on backgrounds that turn light in the dark
+    // theme (numbered items on --color-primary-active, "T" on --color-text-primary), so the
+    // labels were white on light blue / near-white.
+    await page.emulateMedia({ colorScheme: scheme });
+    await loginAs(page);
+    await mockApi(page, { articles: heroFixtures() });
+    await page.goto('/');
+
+    // "1" is the active (highlighted) slide, "2" a regular one, "T" the view-all button
+    for (const name of ['1. haber', '2. haber', 'Tüm haberler']) {
+      const button = page.getByRole('button', { name, exact: true });
+      await expect(button).toBeVisible();
+      const ratio = await button.evaluate((el) => {
+        const parse = (c: string) => (c.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+        const lum = (rgb: number[]) => {
+          const [r, g, b] = rgb.map((v) => {
+            const s = v / 255;
+            return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+          });
+          return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        };
+        const style = getComputedStyle(el);
+        const [l1, l2] = [lum(parse(style.color)), lum(parse(style.backgroundColor))].sort((a, b) => b - a);
+        return (l1 + 0.05) / (l2 + 0.05);
+      });
+      // WCAG AA for normal text
+      expect(ratio, `${name} contrast`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+}

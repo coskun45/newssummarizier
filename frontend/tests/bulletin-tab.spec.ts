@@ -48,7 +48,7 @@ test('generate is disabled until at least one category exists', async ({ page })
 
 test('adding a category sends POST and shows it in the list', async ({ page }) => {
   await loginAs(page);
-  await mockApi(page, { articles: [] });
+  await mockApi(page, { articles: [makeArticle()] });
   await page.goto('/');
 
   const panel = await openBulletinTab(page);
@@ -84,7 +84,7 @@ test('deleting a category shows a confirm dialog and sends DELETE on accept', as
 test('clicking "Oluştur ve İndir" requests the report and downloads it', async ({ page }) => {
   await loginAs(page);
   const category = makeBulletinCategory({ name: 'Avrupa' });
-  await mockApi(page, { articles: [], bulletinCategories: [category] });
+  await mockApi(page, { articles: [makeArticle()], bulletinCategories: [category] });
   await page.goto('/');
 
   const panel = await openBulletinTab(page);
@@ -109,7 +109,9 @@ test('generating a bulletin for a past custom range downloads a file named for t
   // under today's date.
   await loginAs(page);
   const category = makeBulletinCategory({ name: 'Avrupa' });
-  await mockApi(page, { articles: [], bulletinCategories: [category] });
+  const inRange = new Date();
+  inRange.setDate(inRange.getDate() - 17);
+  await mockApi(page, { articles: [makeArticle({ published_at: inRange.toISOString() })], bulletinCategories: [category] });
   await page.goto('/');
 
   const panel = await openBulletinTab(page);
@@ -161,7 +163,7 @@ test('live preview count reflects priority and favorites selections', async ({ p
 test('include_favorites is sent to /generate when Favoriler is checked', async ({ page }) => {
   await loginAs(page);
   const category = makeBulletinCategory({ name: 'Avrupa' });
-  await mockApi(page, { articles: [], bulletinCategories: [category] });
+  await mockApi(page, { articles: [makeArticle({ is_starred: true })], bulletinCategories: [category] });
   await page.goto('/');
 
   const panel = await openBulletinTab(page);
@@ -243,7 +245,7 @@ test('deleting a previously generated bulletin shows a confirm dialog and remove
 test('generating a bulletin adds it to the previously generated list', async ({ page }) => {
   await loginAs(page);
   const category = makeBulletinCategory({ name: 'Avrupa' });
-  await mockApi(page, { articles: [], bulletinCategories: [category] });
+  await mockApi(page, { articles: [makeArticle()], bulletinCategories: [category] });
   await page.goto('/');
 
   const panel = await openBulletinTab(page);
@@ -254,4 +256,27 @@ test('generating a bulletin adds it to the previously generated list', async ({ 
   await downloadPromise;
 
   await expect(panel.locator('.generated-bulletin-item')).toHaveCount(1);
+});
+
+test('generate is disabled while the selection matches no articles', async ({ page }) => {
+  // Regression: the button stayed enabled at "0 haber özeti" and the backend then
+  // rejected the request ("Seçilen aralıkta haber bulunamadı").
+  await loginAs(page);
+  const category = makeBulletinCategory({ name: 'Avrupa' });
+  await mockApi(page, { articles: [makeArticle({ priority: 'med' })], bulletinCategories: [category] });
+  await page.goto('/');
+
+  const panel = await openBulletinTab(page);
+  const generate = panel.getByRole('button', { name: 'Oluştur ve İndir' });
+  await expect(panel.getByText('Bu seçimlerle 1 haber özeti bültende yer alacak.')).toBeVisible();
+  await expect(generate).toBeEnabled();
+
+  // Only Yüksek selected -> nothing matches
+  await panel.getByLabel('Yüksek').check();
+  await expect(panel.getByText('Bu seçimlerle 0 haber özeti bültende yer alacak.')).toBeVisible();
+  await expect(generate).toBeDisabled();
+  await expect(generate).toHaveAttribute('title', 'Bu seçimlerle bültene girecek haber yok');
+
+  await panel.getByLabel('Orta').check();
+  await expect(generate).toBeEnabled();
 });

@@ -76,6 +76,7 @@ test('an unread-tab "archive all" leaves error articles alone', async ({ page })
 
   const req = page.waitForRequest((r) => r.url().endsWith('/articles/mark-read-bulk')
     && r.postDataJSON()?.mark_all === true && r.postDataJSON()?.is_error === false);
+  page.once('dialog', (dialog) => void dialog.accept()); // "archive all" asks for confirmation
   await page.getByRole('button', { name: 'Tümünü Arşive Gönder', exact: true }).first().click();
   await req;
 

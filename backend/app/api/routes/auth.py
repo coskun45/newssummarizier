@@ -55,7 +55,7 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
     if locked_seconds > 0:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Too many failed login attempts. Try again in {int(locked_seconds // 60) + 1} minute(s).",
+            detail=f"Çok fazla başarısız giriş denemesi. {int(locked_seconds // 60) + 1} dakika sonra tekrar deneyin.",
         )
 
     user = crud.get_user_by_email(db, request.email)
@@ -63,12 +63,12 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
         rate_limit.record_failure(request.email)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
+            detail="E-posta veya şifre hatalı",
         )
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Account is inactive",
+            detail="Hesap devre dışı",
         )
     rate_limit.record_success(request.email)
     token = create_access_token({"sub": str(user.id), "email": user.email, "role": user.role})
@@ -112,13 +112,13 @@ def create_user(
     if request.role not in ("admin", "user"):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Role must be 'admin' or 'user'",
+            detail="Rol 'admin' veya 'user' olmalı",
         )
     existing = crud.get_user_by_email(db, request.email)
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="A user with this email already exists",
+            detail="Bu e-posta adresi zaten kayıtlı",
         )
     return crud.create_user(
         db=db,
@@ -138,12 +138,12 @@ def delete_user(
     if user_id == current_user.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot delete your own account",
+            detail="Kendi hesabınızı silemezsiniz",
         )
     deleted = crud.delete_user(db, user_id)
     if not deleted:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
+            detail="Kullanıcı bulunamadı",
         )
     return {"status": "deleted", "user_id": user_id}

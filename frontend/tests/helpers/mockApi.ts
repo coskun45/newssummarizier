@@ -387,11 +387,12 @@ function matchesArticleFilters(a: MockArticle, params: URLSearchParams): boolean
     if (feedId && a.feedId !== parseInt(feedId, 10)) return false;
   }
 
-  const search = params.get('search');
+  const search = params.get('search')?.trim();
   if (search) {
-    const needle = search.toLowerCase();
-    const haystack = `${a.title} ${a.cleaned_content ?? ''}`.toLowerCase();
-    if (!haystack.includes(needle)) return false;
+    // Mirrors crud._article_search_filter: case-insensitive match at the start of a word
+    const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const wordStart = new RegExp(`(^|[^\\p{L}\\p{N}_])${escaped}`, 'iu');
+    if (!wordStart.test(a.title) && !wordStart.test(a.cleaned_content ?? '')) return false;
   }
 
   const publishedFrom = params.get('published_from');
@@ -855,6 +856,9 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
         const starredMatches = includeFavorites && a.is_starred;
         return priorityMatches || starredMatches;
       }).length;
+      if (articleCount === 0) {
+        return json({ detail: 'Seçilen aralıkta haber bulunamadı' }, 400);
+      }
 
       // Mirrors the real backend: every successful /generate persists a row
       // the "Daha Önce Oluşturulan Bültenler" list picks up, and the
