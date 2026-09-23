@@ -2,7 +2,11 @@ import { test, expect } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => {
   // Unauthenticated: no auth_user in localStorage, so App renders <Login/>,
-  // which is where the theme toggle also lives — no backend needed.
+  // which is where the theme toggle also lives — no backend needed. Dev auto-login is
+  // mocked off (404) so a local backend running with DEV_AUTO_LOGIN=true can't skip <Login/>.
+  await page.route('**/api/auth/dev-login', (route) =>
+    route.fulfill({ status: 404, json: { detail: 'Not Found' } })
+  );
   await page.goto('/');
 });
 
