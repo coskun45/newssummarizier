@@ -1072,6 +1072,16 @@ def get_user_by_email(db: Session, email: str) -> Optional[models.User]:
     return db.query(models.User).filter(models.User.email == email).first()
 
 
+def get_first_active_admin(db: Session, preferred_email: Optional[str] = None) -> Optional[models.User]:
+    """Get the active admin with `preferred_email` if given, else the oldest active admin."""
+    query = db.query(models.User).filter(models.User.role == "admin", models.User.is_active.is_(True))
+    if preferred_email:
+        preferred = query.filter(models.User.email == preferred_email).first()
+        if preferred:
+            return preferred
+    return query.order_by(models.User.created_at, models.User.id).first()
+
+
 def get_users(db: Session) -> List[models.User]:
     """Get all users ordered by creation date."""
     return db.query(models.User).order_by(models.User.created_at).all()

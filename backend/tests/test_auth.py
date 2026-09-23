@@ -46,3 +46,52 @@ def test_create_user_requires_admin_role(client, auth_headers):
         headers=auth_headers,
     )
     assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# POST /api/auth/dev-login — local-dev-only auto login (DEV_AUTO_LOGIN + DEBUG)
+# ---------------------------------------------------------------------------
+
+def _dev_mode(monkeypatch, *, dev_auto_login=True, debug=True, admin_email=None):
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "dev_auto_login", dev_auto_login)
+    monkeypatch.setattr(settings, "debug", debug)
+    monkeypatch.setattr(settings, "admin_email", admin_email)
+
+
+def test_dev_login_returns_admin_token_that_works(client, monkeypatch, test_user, admin_user):
+    _dev_mode(monkeypatch)
+    response = client.post("/api/auth/dev-login")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["user"]["email"] == admin_user.email
+
+    me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {body['access_token']}"})
+    assert me.status_code == 200
+    assert me.json()["role"] == "admin"
+
+
+def test_dev_login_prefers_configured_admin_email(client, monkeypatch, admin_user, db_session):
+    from app.db import crud
+    from app.core.security import hash_password
+    crud.create_user(db=db_session, email="second-admin@example.com",
+                     hashed_password=hash_password("x" * 12), role="admin")
+    _dev_mode(monkeypatch, admin_email="second-admin@example.com")
+    response = client.post("/api/auth/dev-login")
+    assert response.status_code == 200
+    assert response.json()["user"]["email"] == "second-admin@example.com"
+
+
+def test_dev_login_disabled_by_default(client, monkeypatch, admin_user):
+    _dev_mode(monkeypatch, dev_auto_login=False)
+    assert client.post("/api/auth/dev-login").status_code == 404
+
+
+def test_dev_login_refused_outside_debug(client, monkeypatch, admin_user):
+    _dev_mode(monkeypatch, debug=False)
+    assert client.post("/api/auth/dev-login").status_code == 404
+
+
+def test_dev_login_without_admin_user_is_404(client, monkeypatch, test_user):
+    _dev_mode(monkeypatch)
+    assert client.post("/api/auth/dev-login").status_code == 404

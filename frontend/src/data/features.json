@@ -134,6 +134,11 @@
           "id": "analysis-tab",
           "title": "Analiz sekmesi",
           "description": "Üst menüde Playground'un yanında yer alan Analiz sekmesi; içerik henüz hazırlanıyor ve şimdilik \"Yakında\" olarak gösterilir."
+        },
+        {
+          "id": "dev-auto-login",
+          "title": "Lokal geliştirmede otomatik giriş",
+          "description": "DEV_AUTO_LOGIN=true ve DEBUG=true iken giriş sayfası atlanır, uygulama doğrudan admin kullanıcısıyla açılır. Sunucuda (DEBUG=false) her zaman kapalıdır."
         }
       ]
     }

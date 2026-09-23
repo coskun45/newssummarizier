@@ -80,6 +80,12 @@ class Settings(BaseSettings):
     admin_email: Optional[str] = None
     admin_password: Optional[str] = None
 
+    # Local dev only: POST /api/auth/dev-login issues an admin token without a password.
+    # Honoured only while DEBUG is also true (Docker forces DEBUG=false). Note that DEBUG
+    # defaults to true for local `uvicorn` (and in .env.example), so outside Docker this
+    # flag alone is what exposes the passwordless admin login — never set it on a shared host.
+    dev_auto_login: bool = False
+
     @property
     def cors_origins_list(self) -> List[str]:
         """Parse CORS origins string into list."""

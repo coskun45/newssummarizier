@@ -10,6 +10,7 @@ from app.db.database import get_db
 from app.db import models, crud
 from app.core.security import verify_password, hash_password, create_access_token
 from app.core import rate_limit
+from app.core.config import settings
 from app.api.deps import get_current_user, require_admin
 
 router = APIRouter()
@@ -70,6 +71,18 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
             detail="Account is inactive",
         )
     rate_limit.record_success(request.email)
+    token = create_access_token({"sub": str(user.id), "email": user.email, "role": user.role})
+    return TokenResponse(access_token=token, user=UserResponse.model_validate(user))
+
+
+@router.post("/dev-login", response_model=TokenResponse)
+def dev_login(db: Session = Depends(get_db)):
+    """Local dev only: return an admin token without credentials (DEV_AUTO_LOGIN + DEBUG)."""
+    if not (settings.dev_auto_login and settings.debug):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
+    user = crud.get_first_active_admin(db, settings.admin_email)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active admin user")
     token = create_access_token({"sub": str(user.id), "email": user.email, "role": user.role})
     return TokenResponse(access_token=token, user=UserResponse.model_validate(user))
 

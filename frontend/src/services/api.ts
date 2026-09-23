@@ -22,6 +22,7 @@ import type {
     LockedPrompt,
     AppUser,
     LoginResponse,
+    AuthUser,
     BulletinCategory,
     BulletinGenerateRequest,
     BulletinPreviewCountResponse,
@@ -63,10 +64,28 @@ api.interceptors.response.use(
     }
 );
 
+/** Persist a successful login's token + user (read back by the request interceptor and App). */
+export function saveSession(response: LoginResponse): AuthUser {
+    localStorage.setItem('auth_token', response.access_token);
+    const authUser: AuthUser = {
+        id: response.user.id,
+        email: response.user.email,
+        role: response.user.role as 'admin' | 'user',
+    };
+    localStorage.setItem('auth_user', JSON.stringify(authUser));
+    return authUser;
+}
+
 // Auth endpoints
 export const authApi = {
     login: async (email: string, password: string): Promise<LoginResponse> => {
         const response = await api.post('/auth/login', { email, password });
+        return response.data;
+    },
+
+    /** Local dev only: backend returns 404 unless DEV_AUTO_LOGIN and DEBUG are both true. */
+    devLogin: async (): Promise<LoginResponse> => {
+        const response = await api.post('/auth/dev-login');
         return response.data;
     },
 

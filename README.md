@@ -239,6 +239,7 @@ Aşağıdaki tablo öne çıkanlardır; tam liste `.env.example`'dadır. Contain
 | `OPENAI_API_KEY` | – | **(Zorunlu)** OpenAI API Key |
 | `JWT_SECRET_KEY` | – (şablondaki placeholder yalnızca `DEBUG=true`'da kabul edilir) | JWT imza anahtarı — **`DEBUG=false` iken varsayılan değerde bırakılırsa uygulama başlamayı reddeder** |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | – | İlk admin kullanıcısını oluşturmak için (ikisi de set edilmelidir). Boş bırakılırsa hiç admin oluşturulmaz — bkz. `db/seed.py` |
+| `DEV_AUTO_LOGIN` | `false` | Yalnızca lokal geliştirme: `DEBUG=true` ile birlikte `true` yapılırsa giriş sayfası atlanır, uygulama admin kullanıcısıyla açılır (`POST /api/auth/dev-login`). Container'da `DEBUG=false` olduğu için etkisizdir |
 | `POSTGRES_USER` | `bulten` | PostgreSQL kullanıcı adı (`db` servisine ve backend'in `DATABASE_URL`'ine enjekte edilir) |
 | `POSTGRES_PASSWORD` | `changeme` | PostgreSQL şifresi — **production'da güçlü bir değer olmalı** (deploy rastgele üretir) |
 | `POSTGRES_DB` | `bulten` | PostgreSQL veritabanı adı |

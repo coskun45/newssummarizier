@@ -1,5 +1,5 @@
 import { useState, FormEvent } from 'react';
-import { authApi } from '../../services/api';
+import { authApi, saveSession } from '../../services/api';
 import type { AuthUser } from '../../types';
 import ThemeToggle from '../ThemeToggle/ThemeToggle';
 import './Login.css';
@@ -20,14 +20,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
         setLoading(true);
         try {
             const response = await authApi.login(email, password);
-            localStorage.setItem('auth_token', response.access_token);
-            const authUser: AuthUser = {
-                id: response.user.id,
-                email: response.user.email,
-                role: response.user.role as 'admin' | 'user',
-            };
-            localStorage.setItem('auth_user', JSON.stringify(authUser));
-            onLoginSuccess(authUser);
+            onLoginSuccess(saveSession(response));
         } catch (err: unknown) {
             const axiosErr = err as { response?: { data?: { detail?: string } } };
             setError(axiosErr.response?.data?.detail ?? 'Giriş başarısız. Lütfen tekrar deneyin.');

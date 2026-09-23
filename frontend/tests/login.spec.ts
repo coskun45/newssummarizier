@@ -1,7 +1,10 @@
 import { test, expect } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => {
-  // Unauthenticated: no auth_user in localStorage, so App renders <Login/>.
+  // Unauthenticated: no auth_user in localStorage and dev auto-login off (404), so App renders <Login/>.
+  await page.route('**/api/auth/dev-login', (route) =>
+    route.fulfill({ status: 404, json: { detail: 'Not Found' } })
+  );
   await page.goto('/');
 });
 
