@@ -32,12 +32,29 @@ def get_openai_client() -> AsyncOpenAI:
         )
     return _client
 
-# Pricing per 1K tokens (as of early 2024 - verify current pricing)
+# Pricing per 1K tokens (OpenAI list prices, checked 2026-09). Every model configurable via
+# DEFAULT_MODEL / DETAILED_MODEL needs an entry here, or its cost is only an approximation.
 PRICING = {
+    "gpt-4o-mini": {"input": 0.00015, "output": 0.0006},
+    "gpt-4o": {"input": 0.0025, "output": 0.01},
     "gpt-3.5-turbo": {"input": 0.0005, "output": 0.0015},
     "gpt-4-turbo-preview": {"input": 0.01, "output": 0.03},
     "gpt-4": {"input": 0.03, "output": 0.06}
 }
+
+
+def model_pricing(model: str) -> Optional[Dict[str, float]]:
+    """
+    Price entry for a model, or None if unknown. A dated snapshot name
+    ("gpt-4o-mini-2024-07-18") uses its base model's price; the longest base name wins so
+    "gpt-4o-mini-..." never resolves to "gpt-4o".
+    """
+    if model in PRICING:
+        return PRICING[model]
+    for name in sorted(PRICING, key=len, reverse=True):
+        if model.startswith(f"{name}-"):
+            return PRICING[name]
+    return None
 
 
 def count_tokens(text: str, model: str = "gpt-3.5-turbo") -> int:
@@ -72,7 +89,10 @@ def calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
     Returns:
         Cost in USD
     """
-    pricing = PRICING.get(model, PRICING["gpt-3.5-turbo"])
+    pricing = model_pricing(model)
+    if pricing is None:
+        logger.warning(f"No PRICING entry for model '{model}'; cost uses gpt-3.5-turbo prices and is inaccurate.")
+        pricing = PRICING["gpt-3.5-turbo"]
     input_cost = (input_tokens / 1000) * pricing["input"]
     output_cost = (output_tokens / 1000) * pricing["output"]
     return input_cost + output_cost

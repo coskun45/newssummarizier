@@ -28,6 +28,35 @@ def test_get_openai_client_sets_bounded_timeout(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# calculate_cost — per-model pricing
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("model, expected_usd", [
+    # 1M input + 1M output tokens at OpenAI list prices
+    ("gpt-4o-mini", 0.15 + 0.60),
+    ("gpt-4o", 2.50 + 10.00),
+    # dated snapshot names cost the same as their base model
+    ("gpt-4o-mini-2024-07-18", 0.15 + 0.60),
+    ("gpt-4o-2024-08-06", 2.50 + 10.00),
+])
+def test_calculate_cost_uses_the_models_own_price(model, expected_usd):
+    assert summary_service.calculate_cost(model, 1_000_000, 1_000_000) == pytest.approx(expected_usd)
+
+
+def test_configured_models_have_a_price():
+    # A model missing from PRICING silently fell back to gpt-3.5-turbo prices, making recorded
+    # costs and the daily/monthly cost limits wrong.
+    for model in (settings.default_model, settings.detailed_model):
+        assert summary_service.model_pricing(model) is not None, f"{model} has no PRICING entry"
+
+
+def test_unknown_model_cost_logs_a_warning(caplog):
+    with caplog.at_level("WARNING", logger=summary_service.logger.name):
+        summary_service.calculate_cost("some-future-model", 1000, 1000)
+    assert "some-future-model" in caplog.text
+
+
+# ---------------------------------------------------------------------------
 # process_article_by_id — re-processing of "Error" articles
 # ---------------------------------------------------------------------------
 
