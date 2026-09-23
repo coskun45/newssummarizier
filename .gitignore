@@ -10,7 +10,9 @@ frontend/node_modules
 !.env.example
 backend/app/__pycache__
 
-# SQLite data — lives on the host, never in git (deploys bind-mount ./data into the container)
+# Host data dir (deploys bind-mount ./data into the container: bulletins, checkpoints).
+# Legacy SQLite files: the app uses PostgreSQL now, but migrate_sqlite_to_postgres.py / deploy.sh
+# still read an old news_summary.db if one exists — never commit it.
 /data/
 backend/news_summary.db
 backend/news_summary.db-shm

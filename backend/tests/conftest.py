@@ -5,7 +5,7 @@ and its auth headers for protected routes.
 
 The `client` fixture never enters the app's lifespan (no `with TestClient(...)`),
 so `init_db()`/`seed_database()`/the APScheduler never touch the real
-`news_summary.db` or start background jobs during tests.
+PostgreSQL DB or start background jobs during tests.
 """
 import itertools
 
