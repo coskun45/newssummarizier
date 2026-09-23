@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { ChevronLeftIcon, ChevronRightIcon, ArrowPathIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { useArticles, useArticle, useSummaries } from '../../hooks/useApi';
 import { formatPublishedAt } from '../../utils/formatDate';
+import type { Summary } from '../../types';
 import './HomeHero.css';
 
 const HERO_LIMIT = 10;
 const AUTO_ROTATE_MS = 6000;
-
 interface HomeHeroProps {
     /** Jump to the full "Haberler" list — wired to the pager's "T" (Tümü) button. */
     onViewAll: () => void;
@@ -54,8 +54,16 @@ function HomeHero({ onViewAll }: HomeHeroProps) {
     const safeIndex = index < articles.length ? index : 0;
     const current = articles[safeIndex];
     const { data: detail, isLoading: detailLoading } = useArticle(detailOpen && current ? current.id : null);
-    const { data: summaries, isLoading: summaryLoading } = useSummaries(current ? current.id : null);
-    const briefSummary = summaries?.find((s) => s.summary_type === 'brief');
+    const { data: summaries, isLoading: summaryLoading } = useSummaries(
+        current ? current.id : null,
+        current?.has_summaries,
+    );
+    // The card has room for one short blurb: show the shortest summary text among
+    // the generated types (any type can be turned off in Ayarlar).
+    const heroSummary = summaries?.reduce<Summary | undefined>(
+        (shortest, s) => (!shortest || s.summary_text.length < shortest.summary_text.length ? s : shortest),
+        undefined,
+    );
 
     if (isLoading) {
         return (
@@ -124,7 +132,7 @@ function HomeHero({ onViewAll }: HomeHeroProps) {
                     <h1 className="home-hero-title">{current.title}</h1>
                     {timeAgo && <span className="home-hero-time">{timeAgo}</span>}
                     <p className="home-hero-summary">
-                        {summaryLoading ? 'Özet yükleniyor...' : briefSummary ? briefSummary.summary_text : 'Özet mevcut değil'}
+                        {summaryLoading ? 'Özet yükleniyor...' : heroSummary ? heroSummary.summary_text : 'Özet mevcut değil'}
                     </p>
                 </div>
             </div>

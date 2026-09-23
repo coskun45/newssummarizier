@@ -58,6 +58,95 @@ test('shows the Turkish brief summary directly on the card, no image, without ne
   await expect(page.locator('.home-hero-slide')).not.toHaveCSS('background-image', /url/);
 });
 
+test('falls back to the standard summary when the brief type is disabled in Settings', async ({ page }) => {
+  // Regression test: the hero only looked for a 'brief' summary, so with brief
+  // turned off in Ayarlar every slide said "Özet mevcut değil" even though the
+  // article had summaries.
+  await loginAs(page);
+  const story = makeArticle({ title: 'Hero Story One', priority: 'high', is_read: true, has_summaries: true });
+  await mockApi(page, {
+    articles: [story],
+    settings: { enabled_summary_types: 'standard,detailed' },
+    summaries: new Map([
+      [story.id, [
+        makeSummary(story.id, { summary_type: 'detailed', summary_text: 'Detaylı, birden fazla cümleden oluşan uzun özet. İkinci cümle.' }),
+        makeSummary(story.id, { summary_type: 'standard', summary_text: 'Standart Türkçe özet.' }),
+      ]],
+    ]),
+  });
+  await page.clock.install();
+  await page.goto('/');
+
+  await expect(page.getByText('Standart Türkçe özet.')).toBeVisible();
+  await expect(page.getByText('Özet mevcut değil')).toHaveCount(0);
+});
+
+test('shows the shortest summary text when the article has several summary types', async ({ page }) => {
+  // The hero card has room for one short blurb: pick by actual text length, not
+  // by type — a "brief" can come back longer than the "standard" one.
+  await loginAs(page);
+  const story = makeArticle({ title: 'Hero Story One', priority: 'high', is_read: true, has_summaries: true });
+  await mockApi(page, {
+    articles: [story],
+    summaries: new Map([
+      [story.id, [
+        makeSummary(story.id, { summary_type: 'brief', summary_text: 'Kısa diye üretilmiş ama beklenenden epey uzun çıkan bir özet metni.' }),
+        makeSummary(story.id, { summary_type: 'standard', summary_text: 'En kısa özet.' }),
+        makeSummary(story.id, { summary_type: 'detailed', summary_text: 'Detaylı ve uzun, birden fazla cümleden oluşan bir özet. İkinci cümle.' }),
+      ]],
+    ]),
+  });
+  await page.clock.install();
+  await page.goto('/');
+
+  await expect(page.getByText('En kısa özet.')).toBeVisible();
+  await expect(page.getByText(/beklenenden epey uzun/)).toHaveCount(0);
+});
+
+test('shows the summary once it is generated after the slide was first rendered', async ({ page }) => {
+  // Regression test: the pipeline sets priority=high before it writes the
+  // summaries, so the hero can fetch an empty summary list for a fresh story.
+  // useSummaries cached that [] forever (staleTime: Infinity, never invalidated),
+  // leaving "Özet mevcut değil" until a full page reload.
+  await loginAs(page);
+  const story = makeArticle({ title: 'Hero Story One', priority: 'high', is_read: true, has_summaries: false });
+  const state = await mockApi(page, { articles: [story] });
+  await page.clock.install();
+  await page.goto('/');
+
+  await expect(page.getByText('Özet mevcut değil')).toBeVisible();
+
+  // The pipeline finishes summarizing the article.
+  state.summaries.set(story.id, [makeSummary(story.id, { summary_type: 'brief', summary_text: 'Sonradan gelen özet.' })]);
+  // mockApi clones the fixtures — flip the flag on its copy, which the next
+  // 60s article poll will return.
+  state.articles.find((a) => a.id === story.id)!.has_summaries = true;
+  await page.clock.runFor(61000);
+
+  await expect(page.getByText('Sonradan gelen özet.')).toBeVisible();
+});
+
+test('does not keep re-fetching summaries for an article that has none', async ({ page }) => {
+  // Regression test: an empty summary list was re-polled every 30s forever, even
+  // for articles whose summaries will never be generated.
+  await loginAs(page);
+  const story = makeArticle({ title: 'Hero Story One', priority: 'high', is_read: true, has_summaries: false });
+  await mockApi(page, { articles: [story] });
+  let summaryRequests = 0;
+  page.on('request', (req) => {
+    if (/\/api\/articles\/\d+\/summaries/.test(req.url())) summaryRequests++;
+  });
+  await page.clock.install();
+  await page.goto('/');
+
+  await expect(page.getByText('Özet mevcut değil')).toBeVisible();
+  const afterLoad = summaryRequests;
+
+  await page.clock.runFor(5 * 60_000);
+  await expect(page.getByText('Özet mevcut değil')).toBeVisible();
+  expect(summaryRequests).toBe(afterLoad);
+});
+
 test('does not render the hero when there are no high-priority articles', async ({ page }) => {
   await loginAs(page);
   await mockApi(page, { articles: [makeArticle({ title: 'Only Medium', priority: 'med', is_read: false })] });

@@ -37,7 +37,7 @@
         {
           "id": "home-hero",
           "title": "Top News karuseli",
-          "description": "Ana sayfada öne çıkan haberlerin karuseli."
+          "description": "Ana sayfada öne çıkan haberlerin karuseli; her haberin mevcut özetlerinden en kısası kartta gösterilir."
         },
         {
           "id": "stats-panel",

@@ -194,13 +194,24 @@ export const useSummary = (articleId: number | null, summaryType: 'brief' | 'sta
     });
 };
 
-export const useSummaries = (articleId: number | null) => {
-    return useQuery({
+/**
+ * `hasSummaries` is the article's `has_summaries` flag from the (polled) article list.
+ * The pipeline marks an article's priority before writing its summaries, so a cached
+ * empty list can go stale; refetch once when the flag says summaries now exist.
+ */
+export const useSummaries = (articleId: number | null, hasSummaries = false) => {
+    const query = useQuery({
         queryKey: ['summaries', articleId],
         queryFn: () => summariesApi.getByArticle(articleId!),
         enabled: articleId !== null,
         staleTime: Infinity,
     });
+    const cachedEmpty = query.data?.length === 0;
+    const { refetch } = query;
+    useEffect(() => {
+        if (hasSummaries && cachedEmpty) void refetch();
+    }, [hasSummaries, cachedEmpty, refetch]);
+    return query;
 };
 
 // Topics hooks

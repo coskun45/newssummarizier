@@ -62,7 +62,8 @@ function ArticleCard({ article, isSelected = false, onToggleSelect, onDeleted, i
   };
 
   const { data: summaries, isLoading: summaryLoading } = useSummaries(
-    expanded ? article.id : null
+    expanded ? article.id : null,
+    article.has_summaries
   );
 
   // Only the summary types that were actually generated for this article
