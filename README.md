@@ -18,6 +18,9 @@ Deutsche Welle (DW) RSS beslemelerinden haber toplayan, kategorize eden ve yapay
   öncelik, kısa/standart/detaylı özet) sonucu görülebilir. Geçerli model ve prompt ayarları gösterilir; prompt'lar
   ve özet talimatları o çalıştırma için geçici olarak değiştirilebilir. Her aşama ayrıntılı incelenir (modele giden
   prompt, ham cevap, token, maliyet, süre). Hiçbir şey veritabanına yazılmaz.
+- **Kaynak ve Yazar**: Haber kartında RSS beslemesinin adı "Kaynak" olarak, yazarın üstünde gösterilir (besleme
+  adı bu yüzden zorunludur). Özetin 📌 başlığında da aynı kaynak kullanılır; yazarı ise özetle birlikte yapay zeka
+  belirler — yalnızca gerçek bir kişi adıysa yazılır ("Sputnik Türkiye" gibi kurum adları yazar sayılmaz), yoksa boş kalır
 
 ## 🏗️ Mimari
 
@@ -361,7 +364,8 @@ Bulten/
   tarafından otomatik eklenir; editörün altında "kilitli" olarak, modele giden haliyle görünür ama değiştirilemez.
   Böylece prompt ne kadar değiştirilirse değiştirilsin sonuç ayrıştırılabilir kalır.
 - **Özetleme promptu**: Ayarlar › Sistem Promptları'nda düzenlenen metin system mesajıdır. Özet türlerinin
-  (kısa/standart/detaylı) talimatı ve sabit dil satırı ("Write the summary in Turkish.") haber metniyle
+  (kısa/standart/detaylı) talimatı, haberin kaynağı (besleme adı) ile RSS'teki yazar ipucu, JSON çıktı formatı
+  (`{"summary": ..., "author": ...}`) ve sabit dil satırı ("Write the summary in Turkish.") haber metniyle
   birlikte kullanıcı mesajına sistem tarafından eklenir; editörün altında "kilitli" olarak görünür, değiştirilemez.
   Ayarlar'da yalnızca **etkin** özet türleri listelenir (Özet Türleri'ni değiştirip kaydedince güncellenir);
   Playground'da ise o çalıştırma için **işaretli** türler ve (düzenlenmişse) talimatları gösterilir.
@@ -371,13 +375,14 @@ Bulten/
 #### Beslemeler (Feeds)
 
 - `GET /api/feeds` - Tüm RSS beslemelerini listele
-- `POST /api/feeds` - Yeni besleme ekle
+- `POST /api/feeds` - Yeni besleme ekle (`title` zorunlu: haberlerde "Kaynak" olarak görünür; boşsa 422)
 - `POST /api/feeds/{id}/refresh` - Beslemeyi manuel olarak yenile
 
 #### Makaleler
 
 - `GET /api/articles` - Makaleleri listele (filtrelerle; `is_error=true` sadece önem etiketi olmayan "Error" haberleri döner)
   - Query params: `skip`, `limit`, `topic_ids`, `search`, `status`
+  - Her makalede `source` (besleme adı; adı olmayan eski beslemelerde alan adı) ve `author` (özetin belirlediği kişi, yoksa `null`) döner
 - `GET /api/articles/{id}` - Tek bir makale
 - `GET /api/articles/topic/{topic_name}` - Konuya göre makaleler
 - `POST /api/articles/topic/{topic_id}/delete-all` - Konudaki tüm okunmamış makaleleri sil
@@ -414,7 +419,7 @@ Bulten/
 
 - `GET /api/prompts/{prompt_type}/locked` - Promptun düzenlenemeyen, pipeline'ın kendisinin eklediği kısmı.
   `classification` için güncel konu listesi + JSON çıktı formatı, `summarization` için etkin özet türlerinin
-  talimatları + dil satırı döner; diğer tiplerde boş metin
+  talimatları + kaynak/yazar ve JSON çıktı kuralı + dil satırı döner; diğer tiplerde boş metin
 
 #### Playground (kayıt yapmayan deneme çalıştırması)
 
@@ -600,6 +605,14 @@ npm install
 2. Feed'in var olup olmadığını kontrol edin: `curl http://localhost:8000/api/feeds`
 3. Feed'i manuel olarak yenileyin: `curl -X POST http://localhost:8000/api/feeds/1/refresh`
 4. 2-3 dakika bekleyin (işleme zaman alır)
+
+### Kartta kaynak yanlış veya yazar boş
+
+- **Kaynak yanlış/alan adı görünüyor**: Kaynak, beslemenin adıdır. Ayarlar › RSS Beslemeleri'nde adı düzeltin
+  (ör. "DW Türkçe"); o beslemenin tüm kartları hemen güncellenir. Özet başlığı ise bir sonraki işlemede değişir.
+- **Yazar boş**: Yazar yalnızca metinde veya RSS'te gerçek bir kişi adı varsa yazılır; kurum adları (ör.
+  "Sputnik Türkiye") bilinçli olarak gösterilmez. Eski haberler "Tekrar dene" ile yeniden işlenene kadar eski
+  yazarı gösterir.
 
 ### Yüksek OpenAI maliyetleri
 

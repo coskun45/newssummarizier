@@ -83,6 +83,7 @@ test('running the pipeline shows classification and per-type summary details wit
 
   const summaries = page.getByRole('region', { name: 'Özet sonuçları' });
   await expect(summaries.getByText('Özet (brief) für NATO erweitert Präsenz')).toBeVisible();
+  await expect(summaries.getByText("Model'in döndürdüğü yazar: Burak Bir")).toBeVisible();
   await summaries.getByRole('tab', { name: 'standard' }).click();
   await expect(summaries.getByText('Özet (standard) für NATO erweitert Präsenz')).toBeVisible();
 

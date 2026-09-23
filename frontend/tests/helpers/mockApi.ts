@@ -63,6 +63,7 @@ export function makeArticle(overrides: Partial<MockArticle> = {}): MockArticle {
     url: `https://example.com/article-${id}`,
     title: `Article ${id}`,
     author: null,
+    source: 'Test Feed',
     published_at: now,
     fetched_at: now,
     status: 'summarized',
@@ -262,6 +263,7 @@ export function buildPlaygroundRunResult(article: MockArticle, request: Playgrou
           summary_type: type,
           instructions: request.summary_instructions?.[type] ?? `${type} instr`,
           summary_text: `Özet (${type}) für ${article.title}`,
+          author: 'Burak Bir',
           tokens_used: 135,
         }))
       : [],

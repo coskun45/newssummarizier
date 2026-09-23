@@ -32,7 +32,8 @@ class Article(Base):
     feed_id = Column(Integer, ForeignKey("feeds.id"), nullable=False)
     url = Column(String, unique=True, nullable=False, index=True)
     title = Column(String, nullable=False)
-    author = Column(String)
+    author = Column(String)  # Shown author: the person the summarizer named (None: no person)
+    feed_author = Column(String, nullable=True)  # Author as the RSS feed / page reported it — kept as the summarizer's hint on re-runs
     published_at = Column(UTCDateTime())
     fetched_at = Column(UTCDateTime(), server_default=func.now())
     raw_content = Column(Text)  # Full HTML/text content

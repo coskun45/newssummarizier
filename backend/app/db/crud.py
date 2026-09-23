@@ -119,6 +119,7 @@ def create_article(
         url=url,
         title=title,
         author=author,
+        feed_author=author,
         published_at=published_at,
         raw_content=raw_content,
         cleaned_content=cleaned_content,
@@ -135,6 +136,7 @@ def get_article(db: Session, article_id: int) -> Optional[models.Article]:
     """Get an article by ID with relationships loaded."""
     return db.query(models.Article).options(
         selectinload(models.Article.summaries),
+        selectinload(models.Article.feed),
         selectinload(models.Article.topics).selectinload(models.ArticleTopic.topic)
     ).filter(models.Article.id == article_id).first()
 
@@ -213,6 +215,7 @@ def get_articles(
     """Get articles with optional filtering."""
     query = db.query(models.Article).options(
         selectinload(models.Article.summaries),
+        selectinload(models.Article.feed),
         selectinload(models.Article.topics).selectinload(models.ArticleTopic.topic)
     )
 
@@ -366,6 +369,7 @@ def get_bulletin_candidate_articles(
     (priority-matched OR starred, per include_favorites)."""
     query = db.query(models.Article).options(
         selectinload(models.Article.summaries),
+        selectinload(models.Article.feed),
         selectinload(models.Article.topics).selectinload(models.ArticleTopic.topic)
     )
     query = _bulletin_candidate_filter(query, priorities, include_favorites)
@@ -665,9 +669,26 @@ def update_article_importance(
 
 
 def update_article_author(db: Session, article_id: int, author: str) -> Optional[models.Article]:
-    """Set an article's author (used to backfill from the page when RSS lacks one)."""
+    """Set an article's author (used to backfill from the page when RSS lacks one). It is the
+    feed-reported author too, so it is also stored as `feed_author`."""
     article = get_article(db, article_id)
     if article and author:
+        article.author = author
+        article.feed_author = author
+        db.commit()
+        db.refresh(article)
+    return article
+
+
+def set_article_author(db: Session, article_id: int, author: Optional[str]) -> Optional[models.Article]:
+    """Store the author the summarizer returned. Unlike `update_article_author`, None clears the
+    field — the feed's value may have been an organization name, not a person. The feed-reported
+    value survives in `feed_author` (captured here for rows created before that column existed)
+    so later re-runs can still send it to the model as a hint."""
+    article = get_article(db, article_id)
+    if article:
+        if article.feed_author is None:
+            article.feed_author = article.author
         article.author = author
         db.commit()
         db.refresh(article)

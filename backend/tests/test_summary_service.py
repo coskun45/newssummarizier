@@ -69,8 +69,13 @@ def reprocess_env(monkeypatch, db_session):
     monkeypatch.setattr(summary_service, "SessionLocal",
                         sessionmaker(bind=db_session.get_bind(), expire_on_commit=False))
 
-    async def fake_summary(title, content, summary_type="standard"):
-        return {"summary_text": f"{summary_type} summary", "model_used": "m", "tokens_used": 1, "cost": 0.0}
+    async def fake_summary(title, content, summary_type="standard", source=None, author_hint=None):
+        summary_service._summary_calls.append({"summary_type": summary_type, "source": source, "author_hint": author_hint})
+        return {"summary_text": f"{summary_type} summary", "model_used": "m", "tokens_used": 1, "cost": 0.0,
+                "author": summary_service._summary_author, "structured": True}
+
+    monkeypatch.setattr(summary_service, "_summary_calls", [], raising=False)
+    monkeypatch.setattr(summary_service, "_summary_author", None, raising=False)
 
     monkeypatch.setattr(summary_service, "generate_summary", fake_summary)
     return summary_service
@@ -434,10 +439,10 @@ def test_generate_summary_returns_persistable_fields(monkeypatch, db_session):
 
     result = asyncio.run(summary_service.generate_summary("Titel", "Inhalt", "detailed"))
 
-    assert set(result) == {"summary_text", "model_used", "tokens_used", "cost"}
+    assert set(result) == {"summary_text", "model_used", "tokens_used", "cost", "author", "structured"}
     assert result["summary_text"] == "Kurz und knapp."
     assert result["model_used"] == settings.detailed_model
-    assert calls[0]["max_completion_tokens"] == settings.max_tokens_output_detailed
+    assert calls[0]["max_completion_tokens"] == settings.max_tokens_output_detailed + summary_service.SUMMARY_JSON_OVERHEAD_TOKENS
     assert summary_service.DEFAULT_SUMMARY_INSTRUCTIONS["detailed"] in calls[0]["messages"][1]["content"]
 
 
@@ -506,3 +511,180 @@ def test_summary_input_tokens_include_the_system_prompt(monkeypatch, db_session)
     user_only = summary_service.count_tokens(summary_service._build_summary_user_prompt(
         "T", "C", summary_service.DEFAULT_SUMMARY_INSTRUCTIONS["brief"]))
     assert result["tokens_used"] > user_only + 400
+
+
+# ---------------------------------------------------------------------------
+# Source (= feed name) and author: sent with every summary call; the model returns the author.
+# ---------------------------------------------------------------------------
+
+def test_summary_prompt_carries_source_and_author_hint_and_asks_for_json(monkeypatch, db_session):
+    calls = _fake_openai(monkeypatch, db_session, '{"summary": "📌 Anadolu Ajansı / Burak Bir - X", "author": "Burak Bir"}')
+
+    result = asyncio.run(summary_service.generate_summary(
+        "T", "C", "brief", source="Anadolu Ajansı", author_hint="Burak Bir"))
+
+    user = calls[0]["messages"][1]["content"]
+    assert "<article_source>\nAnadolu Ajansı\n</article_source>" in user
+    assert "<author_hint>\nBurak Bir\n</author_hint>" in user
+    assert summary_service.SUMMARY_OUTPUT_INSTRUCTION in user
+    assert calls[0]["response_format"] == {"type": "json_object"}
+    assert (result["summary_text"], result["author"], result["structured"]) == (
+        "📌 Anadolu Ajansı / Burak Bir - X", "Burak Bir", True)
+
+
+def test_summary_author_that_is_the_source_name_is_dropped(monkeypatch, db_session):
+    """Regression: "Yazar: Sputnik Türkiye" — the feed's own name is not an author."""
+    _fake_openai(monkeypatch, db_session, '{"summary": "S", "author": "Sputnik Türkiye"}')
+
+    result = asyncio.run(summary_service.generate_summary("T", "C", "brief", source="Sputnik Türkiye"))
+
+    assert (result["author"], result["structured"]) == (None, True)
+
+
+@pytest.mark.parametrize("raw", ["Düz metin özet", '{"author": "X"}', '["not", "an", "object"]'])
+def test_non_json_summary_answer_is_kept_as_text(monkeypatch, db_session, raw):
+    _fake_openai(monkeypatch, db_session, raw)
+
+    result = asyncio.run(summary_service.generate_summary("T", "C", "brief", source="AA"))
+
+    assert (result["summary_text"], result["author"], result["structured"]) == (raw, None, False)
+
+
+def test_fenced_json_summary_answer_is_parsed(monkeypatch, db_session):
+    _fake_openai(monkeypatch, db_session, '```json\n{"summary": "S", "author": "Max Bird"}\n```')
+
+    result = asyncio.run(summary_service.generate_summary("T", "C", "brief", source="DW"))
+
+    assert (result["summary_text"], result["author"]) == ("S", "Max Bird")
+
+
+@pytest.mark.parametrize("feed_title, url, expected", [
+    ("Sputnik Türkiye", "https://tr.sputniknews.com/a", "Sputnik Türkiye"),
+    ("  AA  ", "https://aa.com.tr/a", "AA"),
+    (None, "https://www.dw.com/tr/a", "dw.com"),
+    ("", "https://tr.sputniknews.com/a", "tr.sputniknews.com"),
+])
+def test_article_source_name_is_the_feed_title_or_domain(feed_title, url, expected):
+    assert summary_service.article_source_name(feed_title, url) == expected
+
+
+@pytest.mark.parametrize("results, fallback, expected", [
+    ([{"structured": True, "author": None}, {"structured": True, "author": "Burak Bir"}], "X", "Burak Bir"),
+    ([{"structured": True, "author": None}], "Old Author", None),  # model: no person → stays empty
+    ([{"structured": False, "author": None}], "Max Bird", "Max Bird"),  # unparsable → keep feed's
+])
+def test_resolve_summary_author(results, fallback, expected):
+    assert summary_service.resolve_summary_author(results, fallback) == expected
+
+
+def test_reprocess_sends_feed_name_as_source_and_stores_the_returned_author(reprocess_env, monkeypatch, db_session):
+    feed = _make_feed(db_session, title="Anadolu Ajansı")
+    article = _make_article(db_session, feed.id, status="failed", cleaned_content="body", author="Anadolu Ajansı")
+    _set_categorization(monkeypatch, reprocess_env, {"importance": "important", "priority": "high", "topics": []})
+    monkeypatch.setattr(reprocess_env, "_summary_author", "Burak Bir")
+
+    asyncio.run(reprocess_env.process_article_by_id(article.id))
+
+    db_session.expire_all()
+    assert article.author == "Burak Bir"
+    assert reprocess_env._summary_calls
+    # the org-name author never reaches the model as a hint
+    assert all(c["source"] == "Anadolu Ajansı" and c["author_hint"] is None for c in reprocess_env._summary_calls)
+
+
+def test_reprocess_clears_author_when_the_model_names_none(reprocess_env, monkeypatch, db_session):
+    feed = _make_feed(db_session, title="Sputnik Türkiye")
+    article = _make_article(db_session, feed.id, status="failed", cleaned_content="body", author="Sputnik Türkiye")
+    _set_categorization(monkeypatch, reprocess_env, {"importance": "important", "priority": "high", "topics": []})
+
+    asyncio.run(reprocess_env.process_article_by_id(article.id))
+
+    db_session.expire_all()
+    assert article.author is None
+
+
+def test_pipeline_node_sends_feed_name_and_stores_model_author(monkeypatch, db_session):
+    """Regression: the RSS author "Sputnik Türkiye" was shown as the author and the summary header
+    source was guessed; now the feed name is the source and the model's answer sets the author."""
+    from sqlalchemy.orm import sessionmaker
+    from app.agents import nodes
+
+    monkeypatch.setattr(nodes, "SessionLocal", sessionmaker(bind=db_session.get_bind(), expire_on_commit=False))
+    feed = _make_feed(db_session, title="Sputnik Türkiye")
+
+    async def fake_extract(url):
+        return "Guterres BM'de konuştu.", None, None
+
+    async def fake_categorize(title):
+        return {"importance": "important", "priority": "high", "topics": []}
+
+    summary_calls = []
+
+    async def fake_summary(**kwargs):
+        summary_calls.append(kwargs)
+        return {"summary_text": "s", "model_used": "m", "tokens_used": 1, "cost": 0.0,
+                "author": None, "structured": True}
+
+    monkeypatch.setattr(nodes, "extract_article_content", fake_extract)
+    monkeypatch.setattr(nodes, "categorize_and_prioritize_article", fake_categorize)
+    monkeypatch.setattr(nodes, "generate_summary", fake_summary)
+
+    state = {
+        "feed_id": feed.id, "feed_url": feed.url, "current_article_index": 0,
+        "rss_articles": [{"url": "https://tr.sputniknews.com/g", "title": "Guterres",
+                          "author": "Sputnik Türkiye", "raw_content": "raw"}],
+        "processed_articles": [], "errors": [], "total_cost": 0.0, "should_continue": True,
+    }
+
+    asyncio.run(nodes.article_processor_node(state))
+
+    db_session.expire_all()
+    article = crud.get_article_by_url(db_session, "https://tr.sputniknews.com/g")
+    assert article.author is None and article.status == "summarized"
+    assert summary_calls and all(c["source"] == "Sputnik Türkiye" and c["author_hint"] is None for c in summary_calls)
+
+
+# ---------------------------------------------------------------------------
+# Regressions from review: truncated JSON answers and the lost feed author on re-runs.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("raw, expected", [
+    ('{"summary": "📌 DW - Başlık\n🔹 Birinci madde yar', "📌 DW - Başlık\n🔹 Birinci madde yar"),
+    ('{"summary": "\ud83d\udccc DW - X\n\ud83d', "📌 DW - X"),  # cut inside an escaped emoji
+    ('{"summary": "Cut after escape\\', "Cut after escape"),
+])
+def test_truncated_json_summary_is_recovered_as_plain_text(monkeypatch, db_session, raw, expected):
+    """Regression: an answer cut at the token cap was stored as raw JSON (`{"summary": "...\n...`)."""
+    _fake_openai(monkeypatch, db_session, raw)
+
+    result = asyncio.run(summary_service.generate_summary("T", "C", "brief", source="DW", author_hint="Max Bird"))
+
+    assert result["summary_text"] == expected
+    assert (result["author"], result["structured"]) == (None, False)  # author unknown → feed's is kept
+
+
+def test_summary_call_reserves_room_for_the_json_wrapper(monkeypatch, db_session):
+    """Regression: the JSON wrapper ate into the summary's own token budget, so answers got cut."""
+    calls = _fake_openai(monkeypatch, db_session, '{"summary": "S", "author": null}')
+
+    asyncio.run(summary_service.generate_summary("T", "C", "brief"))
+
+    assert calls[0]["max_completion_tokens"] == settings.max_tokens_output_brief + summary_service.SUMMARY_JSON_OVERHEAD_TOKENS
+
+
+def test_reprocess_keeps_the_feed_author_as_hint_after_a_run_cleared_it(reprocess_env, monkeypatch, db_session):
+    """Regression: the first run's "no author" overwrote `author`, so every later re-run lost the
+    RSS dc:creator value it should still send to the model as a hint."""
+    feed = _make_feed(db_session, title="DW Türkçe")
+    article = _make_article(db_session, feed.id, status="failed", cleaned_content="body", author="Max Bird")
+    _set_categorization(monkeypatch, reprocess_env, {"importance": "important", "priority": "high", "topics": []})
+
+    asyncio.run(reprocess_env.process_article_by_id(article.id))  # model: no author
+    db_session.expire_all()
+    assert article.author is None
+
+    reprocess_env._summary_calls.clear()
+    asyncio.run(reprocess_env.process_article_by_id(article.id))
+
+    assert reprocess_env._summary_calls
+    assert all(c["author_hint"] == "Max Bird" for c in reprocess_env._summary_calls)

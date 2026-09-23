@@ -119,6 +119,7 @@ function ArticleCard({ article, isSelected = false, onToggleSelect, onDeleted, i
           {!article.is_read && <span className="unread-dot" title="Okunmadı" />}
           {article.title}
         </h2>
+        {article.source && <p className="article-author">Kaynak: {article.source}</p>}
         {article.author && <p className="article-author">Yazar: {article.author}</p>}
         <div className="article-meta">
           {timeAgo && <span className="article-time">{timeAgo}</span>}

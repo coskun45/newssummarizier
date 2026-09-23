@@ -19,6 +19,7 @@ test('adding a feed tests the connection, then sends POST and clears the form', 
   await modal.getByRole('button', { name: 'Yeni besleme ekle' }).click();
   const form = modal.locator('.add-topic-form');
   await form.getByPlaceholder(/RSS URL/).fill('https://example.com/new.xml');
+  await form.getByLabel('Besleme adı').fill('New Feed');
 
   const testReq = page.waitForRequest((r) => r.url().endsWith('/api/feeds/test') && r.method() === 'POST');
   await form.getByRole('button', { name: 'Bağlantıyı Test Et' }).click();
@@ -27,7 +28,7 @@ test('adding a feed tests the connection, then sends POST and clears the form', 
 
   const req = page.waitForRequest((r) => r.url().endsWith('/api/feeds/') && r.method() === 'POST');
   await form.getByRole('button', { name: 'Ekle' }).click();
-  await req;
+  expect((await req).postDataJSON()).toMatchObject({ url: 'https://example.com/new.xml', title: 'New Feed' });
 
   await expect(modal.getByRole('button', { name: 'Yeni besleme ekle' })).toBeVisible();
 });
@@ -47,6 +48,7 @@ test('add button stays disabled until the URL is tested successfully', async ({ 
   await expect(addButton).toBeDisabled();
 
   await form.getByPlaceholder(/RSS URL/).fill('https://example.com/new.xml');
+  await form.getByLabel('Besleme adı').fill('New Feed');
   await expect(testButton).toBeEnabled();
   await expect(addButton).toBeDisabled();
 
@@ -67,7 +69,7 @@ test("editing only a feed's title (URL unchanged) sends PUT without requiring a 
   const modal = await openFeedsSection(page);
   await modal.getByTitle('Beslemeyi düzenle').click();
   const form = modal.locator('.add-topic-form');
-  await form.getByPlaceholder('Ad (isteğe bağlı)').fill('Renamed Feed');
+  await form.getByLabel('Besleme adı').fill('Renamed Feed');
 
   await expect(form.getByRole('button', { name: 'Kaydet' })).toBeEnabled();
 
@@ -183,4 +185,29 @@ test('confirming the delete dialog sends DELETE and removes it from the list', a
   await req;
 
   await expect(modal.getByText('Existing Feed')).not.toBeVisible();
+});
+
+test('the feed name is required: add and save stay disabled while it is blank', async ({ page }) => {
+  await loginAs(page);
+  await mockApi(page, { feeds: [FEED], articles: [] });
+  await page.goto('/');
+
+  const modal = await openFeedsSection(page);
+  await modal.getByRole('button', { name: 'Yeni besleme ekle' }).click();
+  const addForm = modal.locator('.add-topic-form');
+  await addForm.getByPlaceholder(/RSS URL/).fill('https://example.com/new.xml');
+  await addForm.getByRole('button', { name: 'Bağlantıyı Test Et' }).click();
+  await expect(addForm.getByText('Bağlantı başarılı')).toBeVisible();
+  const addButton = addForm.getByRole('button', { name: 'Ekle' });
+  await expect(addButton).toBeDisabled();
+  await addForm.getByLabel('Besleme adı').fill('   ');
+  await expect(addButton).toBeDisabled();
+  await addForm.getByLabel('Besleme adı').fill('Sputnik Türkiye');
+  await expect(addButton).toBeEnabled();
+  await addForm.getByRole('button', { name: 'İptal' }).click();
+
+  await modal.getByTitle('Beslemeyi düzenle').click();
+  const editForm = modal.locator('.add-topic-form');
+  await editForm.getByLabel('Besleme adı').fill('');
+  await expect(editForm.getByRole('button', { name: 'Kaydet' })).toBeDisabled();
 });

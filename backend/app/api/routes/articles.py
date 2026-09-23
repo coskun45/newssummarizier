@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from datetime import datetime
 from app.db.database import get_db
 from app.db import crud, models
+from app.services.summary_service import article_source_name
 
 
 router = APIRouter()
@@ -24,6 +25,11 @@ def _parse_comma_ids(raw: Optional[str], field_name: str) -> Optional[List[int]]
 
 
 VALID_PRIORITIES = {"high", "med", "low"}
+
+
+def _article_source(article: models.Article) -> Optional[str]:
+    """The card's "Kaynak": the article's feed name (the same value the summary header uses)."""
+    return article_source_name(article.feed.title if article.feed else None, article.url)
 
 
 @router.delete("/{article_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -51,6 +57,7 @@ class ArticleResponse(BaseModel):
     url: str
     title: str
     author: Optional[str] = None
+    source: Optional[str] = None
     published_at: Optional[datetime] = None
     fetched_at: datetime
     status: str
@@ -151,6 +158,7 @@ async def list_articles(
             "url": article.url,
             "title": article.title,
             "author": article.author,
+            "source": _article_source(article),
             "published_at": article.published_at,
             "fetched_at": article.fetched_at,
             "status": article.status,
@@ -443,6 +451,7 @@ async def get_article(article_id: int, db: Session = Depends(get_db)):
         "url": article.url,
         "title": article.title,
         "author": article.author,
+        "source": _article_source(article),
         "published_at": article.published_at,
         "fetched_at": article.fetched_at,
         "raw_content": article.raw_content,
@@ -500,6 +509,7 @@ async def get_articles_by_topic(
             "url": article.url,
             "title": article.title,
             "author": article.author,
+            "source": _article_source(article),
             "published_at": article.published_at,
             "fetched_at": article.fetched_at,
             "status": article.status,

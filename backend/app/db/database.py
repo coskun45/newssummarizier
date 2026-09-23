@@ -89,6 +89,7 @@ def init_db():
         ("is_read", "BOOLEAN NOT NULL DEFAULT false"),
         ("is_starred", "BOOLEAN NOT NULL DEFAULT false"),
         ("image_url", "VARCHAR"),
+        ("feed_author", "VARCHAR"),
     ]
 
     inspector = inspect(engine)

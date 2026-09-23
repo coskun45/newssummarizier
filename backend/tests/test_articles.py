@@ -869,3 +869,25 @@ def test_reprocess_accepts_labelled_failed_article(client, auth_headers, db_sess
 
     assert resp.json()["article_ids"] == [failed.id]
     assert captured_reprocess == [[failed.id]]
+
+
+# ==================== source ("Kaynak") = the article's feed name ====================
+
+def test_article_list_and_detail_return_feed_name_as_source(client, auth_headers, db_session):
+    feed = _make_feed(db_session, title="Anadolu Ajansı")
+    article = _make_article(db_session, feed.id, author="Burak Bir")
+
+    listed = client.get("/api/articles/", headers=auth_headers).json()["articles"]
+    detail = client.get(f"/api/articles/{article.id}", headers=auth_headers).json()
+
+    assert [(a["source"], a["author"]) for a in listed] == [("Anadolu Ajansı", "Burak Bir")]
+    assert (detail["source"], detail["author"]) == ("Anadolu Ajansı", "Burak Bir")
+
+
+def test_article_source_falls_back_to_domain_for_a_feed_without_name(client, auth_headers, db_session):
+    feed = _make_feed(db_session, title=None)
+    _make_article(db_session, feed.id, url="https://www.dw.com/tr/x")
+
+    listed = client.get("/api/articles/", headers=auth_headers).json()["articles"]
+
+    assert listed[0]["source"] == "dw.com"

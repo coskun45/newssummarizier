@@ -23,6 +23,11 @@ IMPORTANT = json.dumps({
 UNIMPORTANT = json.dumps({"importance": "unimportant", "priority": None, "topics": []})
 
 
+def _is_summary_call(kwargs) -> bool:
+    # Both calls use JSON mode now; only the summary call sends the article content.
+    return "<article_content>" in kwargs["messages"][-1]["content"]
+
+
 class FakeOpenAI:
     """Records every chat.completions.create call; `responder(kwargs)` returns the message content."""
 
@@ -41,11 +46,11 @@ class FakeOpenAI:
 
     @property
     def classification_calls(self):
-        return [c for c in self.calls if "response_format" in c]
+        return [c for c in self.calls if not _is_summary_call(c)]
 
     @property
     def summary_calls(self):
-        return [c for c in self.calls if "response_format" not in c]
+        return [c for c in self.calls if _is_summary_call(c)]
 
 
 def _install(monkeypatch, db_session, classification=IMPORTANT, summary=lambda kw: "Özet metni"):
@@ -53,7 +58,7 @@ def _install(monkeypatch, db_session, classification=IMPORTANT, summary=lambda k
     from sqlalchemy.orm import sessionmaker
 
     def responder(kwargs):
-        if "response_format" in kwargs:
+        if not _is_summary_call(kwargs):
             return classification(kwargs) if callable(classification) else classification
         return summary(kwargs)
 
@@ -386,3 +391,36 @@ def test_run_api_error_on_retry_keeps_the_first_attempt(client, auth_headers, mo
     assert cls["error"] and "upstream timeout" in cls["error"]
     assert cls["pipeline_outcome"] == "failed"
     assert cls["cost"] > 0 and body["total_cost"] == pytest.approx(cls["cost"])
+
+
+def test_run_sends_feed_name_as_source_and_returns_the_model_author(client, auth_headers, monkeypatch, db_session):
+    feed = _make_feed(db_session, url="https://example.com/aa", title="Anadolu Ajansı")
+    art = _make_article(db_session, feed.id, cleaned_content="ANKARA (AA) - ...", author="Anadolu Ajansı")
+    fake = _install(monkeypatch, db_session,
+                    summary=lambda kw: '{"summary": "📌 Anadolu Ajansı / Burak Bir - X", "author": "Burak Bir"}')
+    before = _row_counts(db_session)
+
+    body = client.post("/api/playground/run", json={
+        "article_id": art.id, "stages": ["summarization"], "summary_types": ["brief"],
+    }, headers=auth_headers).json()
+
+    user = fake.summary_calls[0]["messages"][1]["content"]
+    assert "<article_source>\nAnadolu Ajansı\n</article_source>" in user
+    assert "<author_hint>\n-\n</author_hint>" in user  # the org name is not passed as an author
+    assert body["summaries"][0]["summary_text"] == "📌 Anadolu Ajansı / Burak Bir - X"
+    assert body["summaries"][0]["author"] == "Burak Bir"
+    db_session.expire_all()
+    assert _row_counts(db_session) == before and art.author == "Anadolu Ajansı"  # dry run
+
+
+def test_run_uses_the_feed_author_as_hint_even_after_the_pipeline_cleared_it(client, auth_headers, monkeypatch, db_session):
+    feed = _make_feed(db_session, url="https://example.com/dw", title="DW Türkçe")
+    art = _make_article(db_session, feed.id, cleaned_content="text", author="Max Bird")
+    crud.set_article_author(db_session, art.id, None)  # what a pipeline run with "no author" leaves
+    fake = _install(monkeypatch, db_session)
+
+    client.post("/api/playground/run", json={
+        "article_id": art.id, "stages": ["summarization"], "summary_types": ["brief"],
+    }, headers=auth_headers)
+
+    assert "<author_hint>\nMax Bird\n</author_hint>" in fake.summary_calls[0]["messages"][1]["content"]

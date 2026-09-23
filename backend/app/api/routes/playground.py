@@ -106,6 +106,7 @@ class SummaryResult(StageCall):
     summary_type: str
     instructions: str
     summary_text: Optional[str] = None
+    author: Optional[str] = None  # the person the model named in the header (None: no author)
     tokens_used: int
 
 

@@ -4,7 +4,7 @@ RSS Feed endpoints.
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, HttpUrl, field_validator
 from app.db.database import get_db
 from app.db import crud, models
 from app.api.deps import require_admin
@@ -16,19 +16,34 @@ from datetime import datetime
 router = APIRouter()
 
 
+def _require_title(value: Optional[str]) -> Optional[str]:
+    """The feed's name is the "Kaynak" of its articles (card + summary header), so it can't be blank."""
+    if value is None:
+        return None
+    value = value.strip()
+    if not value:
+        raise ValueError("Feed adı boş olamaz")
+    return value
+
+
 class FeedCreate(BaseModel):
-    """Feed creation request."""
+    """Feed creation request. `title` is required: it is shown as the source of the feed's articles."""
     url: HttpUrl
-    title: Optional[str] = None
+    title: str
     description: Optional[str] = None
+
+    _check_title = field_validator("title")(_require_title)
 
 
 class FeedUpdate(BaseModel):
-    """Feed update request. All fields optional — only provided ones are changed."""
+    """Feed update request. All fields optional — only provided ones are changed (a title, when
+    given, can't be blank)."""
     url: Optional[HttpUrl] = None
     title: Optional[str] = None
     description: Optional[str] = None
     is_active: Optional[bool] = None
+
+    _check_title = field_validator("title")(_require_title)
 
 
 class FeedTestRequest(BaseModel):

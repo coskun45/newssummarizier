@@ -6,6 +6,7 @@ refresh task are mocked so these tests never touch the network.
 """
 import asyncio
 from datetime import datetime, timezone
+import pytest
 from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException
@@ -124,7 +125,7 @@ def test_get_feed_by_id_404_when_missing(client, auth_headers):
 
 def test_create_feed_requires_admin(client, auth_headers):
     response = client.post(
-        "/api/feeds/", json={"url": "https://example.com/new-feed"}, headers=auth_headers
+        "/api/feeds/", json={"url": "https://example.com/new-feed", "title": "Feed"}, headers=auth_headers
     )
     assert response.status_code == 403
 
@@ -152,7 +153,7 @@ def test_create_feed_rejects_unreachable_feed(client, admin_headers, db_session)
         "app.agents.tools.feedparser.parse", side_effect=Exception("connection refused")
     ):
         response = client.post(
-            "/api/feeds/", json={"url": "https://example.com/unreachable"}, headers=admin_headers
+            "/api/feeds/", json={"url": "https://example.com/unreachable", "title": "Feed"}, headers=admin_headers
         )
 
     assert response.status_code == 400
@@ -166,7 +167,7 @@ def test_create_feed_rejects_non_rss_content(client, admin_headers, db_session):
 
     with _no_op_safe_url(), patch("app.agents.tools.feedparser.parse", return_value=bad_feed):
         response = client.post(
-            "/api/feeds/", json={"url": "https://example.com/not-a-feed"}, headers=admin_headers
+            "/api/feeds/", json={"url": "https://example.com/not-a-feed", "title": "Feed"}, headers=admin_headers
         )
 
     assert response.status_code == 400
@@ -176,7 +177,7 @@ def test_create_feed_rejects_non_rss_content(client, admin_headers, db_session):
 def test_create_feed_rejects_unsafe_url(client, admin_headers, db_session):
     with _reject_unsafe_url():
         response = client.post(
-            "/api/feeds/", json={"url": "https://169.254.169.254/feed"}, headers=admin_headers
+            "/api/feeds/", json={"url": "https://169.254.169.254/feed", "title": "Feed"}, headers=admin_headers
         )
 
     assert response.status_code == 400
@@ -188,7 +189,7 @@ def test_create_feed_rejects_duplicate_url(client, admin_headers, db_session):
 
     with _no_op_safe_url():
         response = client.post(
-            "/api/feeds/", json={"url": "https://example.com/dup"}, headers=admin_headers
+            "/api/feeds/", json={"url": "https://example.com/dup", "title": "Feed"}, headers=admin_headers
         )
 
     assert response.status_code == 400
@@ -377,3 +378,29 @@ def test_fetch_rss_feed_assumes_utc_for_naive_published_date():
     published_at = articles[0]["published_at"]
     assert published_at.tzinfo == timezone.utc
     assert published_at.hour == 12 and published_at.minute == 47
+
+
+# ==================== Feed name is required (it is the articles' "Kaynak") ====================
+
+@pytest.mark.parametrize("payload", [
+    {"url": "https://example.com/no-title"},
+    {"url": "https://example.com/no-title", "title": ""},
+    {"url": "https://example.com/no-title", "title": "   "},
+])
+def test_create_feed_requires_a_title(client, admin_headers, db_session, payload):
+    with _no_op_safe_url():
+        response = client.post("/api/feeds/", json=payload, headers=admin_headers)
+
+    assert response.status_code == 422
+    assert db_session.query(models.Feed).count() == 0
+
+
+def test_update_feed_rejects_blank_title_and_trims(client, admin_headers, db_session):
+    feed = _make_feed(db_session, title="Sputnik Türkiye")
+
+    with _no_op_safe_url():
+        blank = client.put(f"/api/feeds/{feed.id}", json={"title": "  "}, headers=admin_headers)
+        trimmed = client.put(f"/api/feeds/{feed.id}", json={"title": "  AA  "}, headers=admin_headers)
+
+    assert blank.status_code == 422
+    assert trimmed.status_code == 200 and trimmed.json()["title"] == "AA"

@@ -82,7 +82,7 @@
         {
           "id": "settings-feeds",
           "title": "RSS Beslemeleri",
-          "description": "RSS beslemesi ekleme, düzenleme, silme ve bağlantı testi."
+          "description": "RSS beslemesi ekleme, düzenleme, silme ve bağlantı testi. Besleme adı zorunludur; haberlerde \"Kaynak\" olarak görünür."
         },
         {
           "id": "settings-topics",
@@ -139,6 +139,11 @@
           "id": "dev-auto-login",
           "title": "Lokal geliştirmede otomatik giriş",
           "description": "DEV_AUTO_LOGIN=true ve DEBUG=true iken giriş sayfası atlanır, uygulama doğrudan admin kullanıcısıyla açılır. Sunucuda (DEBUG=false) her zaman kapalıdır."
+        },
+        {
+          "id": "article-source-author",
+          "title": "Kaynak ve yazar",
+          "description": "Haber kartında RSS beslemesinin adı \"Kaynak\" olarak, yazarın üstünde gösterilir; besleme adı bu yüzden zorunludur. Özetin başlığında da aynı kaynak kullanılır, yazarı ise özetle birlikte yapay zekâ belirler: yalnızca gerçek bir kişi adıysa yazılır, yoksa boş kalır."
         }
       ]
     }

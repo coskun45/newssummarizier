@@ -36,6 +36,8 @@ function formatDate(iso: string | null): string {
 }
 
 function sourceOf(article: Article): string {
+  // The feed name, as on the card; the domain only for data without one
+  if (article.source) return article.source;
   try {
     return new URL(article.url).hostname.replace('www.', '');
   } catch {

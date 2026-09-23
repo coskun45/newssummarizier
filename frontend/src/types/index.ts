@@ -27,6 +27,8 @@ export interface Article {
     url: string;
     title: string;
     author: string | null;
+    /** The article's feed name ("Kaynak"), also forced into the summary header. */
+    source: string | null;
     published_at: string | null;
     fetched_at: string;
     status: string;
@@ -288,6 +290,8 @@ export interface PlaygroundSummaryResult extends PlaygroundStageCall {
     summary_type: PlaygroundSummaryType;
     instructions: string;
     summary_text: string | null;
+    /** The person the model named as author in the header; null when there is none. */
+    author: string | null;
     tokens_used: number;
 }
 

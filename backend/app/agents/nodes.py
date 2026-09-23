@@ -6,8 +6,11 @@ from typing import Any, Dict
 from app.agents.state import NewsProcessingState
 from app.agents.tools import fetch_rss_feed, extract_article_content, truncate_content
 from app.services.summary_service import (
+    article_source_name,
     categorize_and_prioritize_article,
-    generate_summary
+    clean_author,
+    generate_summary,
+    resolve_summary_author,
 )
 from app.db.database import SessionLocal
 from app.db import crud
@@ -276,15 +279,24 @@ async def article_processor_node(state: NewsProcessingState) -> Dict[str, Any]:
             
             # Only generate enabled summary types
             summary_types = [summary_types_map[st] for st in enabled_types if st in summary_types_map]
-            
+
+            # Source = the feed's name; the feed's author is only a hint the summarizer checks
+            feed = crud.get_feed(db, state["feed_id"])
+            source = article_source_name(feed.title if feed else None, article["url"])
+            author_hint = clean_author(article.get("author"), source)
+            summary_results = []
+
             for summary_type, article_key in summary_types:
                 try:
                     summary_result = await generate_summary(
                         title=article["title"],
                         content=truncate_content(content_for_summary),
-                        summary_type=summary_type
+                        summary_type=summary_type,
+                        source=source,
+                        author_hint=author_hint
                     )
-                    
+                    summary_results.append(summary_result)
+
                     article[f"summary_{article_key}"] = summary_result["summary_text"]
                     total_cost += summary_result["cost"]
                     
@@ -311,7 +323,11 @@ async def article_processor_node(state: NewsProcessingState) -> Dict[str, Any]:
                         message=f"Failed to generate {summary_type} summary",
                         error_details=str(e)
                     )
-        
+
+            if summary_results:
+                article["author"] = resolve_summary_author(summary_results, author_hint)
+                crud.set_article_author(db, db_article.id, article["author"])
+
         # "summarized" is reserved for articles that actually got at least one summary
         final_status = "summarized" if summaries_created > 0 else "failed"
         crud.update_article_status(db=db, article_id=db_article.id, status=final_status)

@@ -181,9 +181,9 @@ function Settings({ category, currentUser }: SettingsProps) {
   };
 
   const handleAddFeed = () => {
-    if (!newFeedUrl.trim() || !addFeedTested) return;
+    if (!newFeedUrl.trim() || !newFeedTitle.trim() || !addFeedTested) return;
     setFeedError('');
-    createFeed({ url: newFeedUrl.trim(), title: newFeedTitle.trim() || undefined }, {
+    createFeed({ url: newFeedUrl.trim(), title: newFeedTitle.trim() }, {
       onSuccess: () => {
         setNewFeedUrl('');
         setNewFeedTitle('');
@@ -235,12 +235,12 @@ function Settings({ category, currentUser }: SettingsProps) {
   const handleSaveFeedEdit = () => {
     const editingFeed = feeds?.find(f => f.id === editingFeedId);
     const urlChanged = !editingFeed || editFeedUrl.trim() !== editingFeed.url;
-    if (editingFeedId && editFeedUrl.trim() && (!urlChanged || editFeedTested)) {
+    if (editingFeedId && editFeedUrl.trim() && editFeedTitle.trim() && (!urlChanged || editFeedTested)) {
       setFeedError('');
       updateFeed({
         feedId: editingFeedId,
         url: editFeedUrl.trim(),
-        title: editFeedTitle.trim() || undefined
+        title: editFeedTitle.trim()
       }, {
         onSuccess: handleCancelFeedEdit,
         onError: (err: unknown) => {
@@ -292,7 +292,9 @@ function Settings({ category, currentUser }: SettingsProps) {
                             <input
                               type="text"
                               className="topic-input"
-                              placeholder="Ad (isteğe bağlı)"
+                              placeholder="Ad (zorunlu, haberlerde Kaynak olarak görünür)"
+                              aria-label="Besleme adı"
+                              required
                               value={editFeedTitle}
                               onChange={(e) => setEditFeedTitle(e.target.value)}
                               disabled={isUpdatingFeed}
@@ -325,6 +327,7 @@ function Settings({ category, currentUser }: SettingsProps) {
                                 disabled={
                                   isUpdatingFeed ||
                                   !editFeedUrl.trim() ||
+                                  !editFeedTitle.trim() ||
                                   (editFeedUrl.trim() !== feed.url && !editFeedTested)
                                 }
                               >
@@ -376,7 +379,9 @@ function Settings({ category, currentUser }: SettingsProps) {
                         <input
                           type="text"
                           className="topic-input"
-                          placeholder="Ad (isteğe bağlı)"
+                          placeholder="Ad (zorunlu, haberlerde Kaynak olarak görünür)"
+                          aria-label="Besleme adı"
+                          required
                           value={newFeedTitle}
                           onChange={(e) => setNewFeedTitle(e.target.value)}
                           disabled={isCreatingFeed}
@@ -406,8 +411,8 @@ function Settings({ category, currentUser }: SettingsProps) {
                           <button
                             className="confirm-add-button"
                             onClick={handleAddFeed}
-                            disabled={isCreatingFeed || !newFeedUrl.trim() || !addFeedTested}
-                            title={!addFeedTested ? 'Önce bağlantıyı test edin' : undefined}
+                            disabled={isCreatingFeed || !newFeedUrl.trim() || !newFeedTitle.trim() || !addFeedTested}
+                            title={!newFeedTitle.trim() ? 'Besleme adı zorunlu' : !addFeedTested ? 'Önce bağlantıyı test edin' : undefined}
                           >
                             {isCreatingFeed ? 'Ekleniyor...' : 'Ekle'}
                           </button>

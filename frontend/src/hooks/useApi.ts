@@ -327,7 +327,7 @@ export const useFeeds = () => {
 export const useCreateFeed = () => {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: ({ url, title }: { url: string; title?: string }) =>
+        mutationFn: ({ url, title }: { url: string; title: string }) =>
             feedsApi.create(url, title),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['feeds'] });

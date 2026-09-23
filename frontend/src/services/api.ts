@@ -121,7 +121,7 @@ export const feedsApi = {
         return response.data;
     },
 
-    create: async (url: string, title?: string, description?: string): Promise<Feed> => {
+    create: async (url: string, title: string, description?: string): Promise<Feed> => {
         const response = await api.post('/feeds/', { url, title, description });
         return response.data;
     },

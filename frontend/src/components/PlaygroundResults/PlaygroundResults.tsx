@@ -100,6 +100,9 @@ function SummaryCard({ result }: { result: PlaygroundSummaryResult }) {
     <div className="playground-summary" role="tabpanel">
       {result.error && <p className="playground-error" role="alert">{result.error}</p>}
       {result.summary_text && <div className="playground-summary-text">{result.summary_text}</div>}
+      {result.summary_text && (
+        <p className="playground-detail-label">Model'in döndürdüğü yazar: {result.author ?? '— (yok)'}</p>
+      )}
       <p className="playground-detail-label">Kullanılan talimat</p>
       <pre className="playground-pre">{result.instructions}</pre>
       <Metrics call={result} />
