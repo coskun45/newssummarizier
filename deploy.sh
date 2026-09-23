@@ -35,9 +35,6 @@ if [ -d "$APP_DIR/.git" ]; then
         mv backend/news_summary.db data/news_summary.db
         info "news_summary.db → data/ dizinine taşındı"
     fi
-    if [ -f backend/checkpoints.db ] && [ ! -f data/checkpoints.db ]; then
-        mv backend/checkpoints.db data/checkpoints.db
-    fi
 
     # Eski deploy.sh sürümleri docker-compose.yml'i sunucuda sed ile değiştiriyordu
     # (JWT secret, IP); artık tüm ayarlar .env'de — yerel değişikliği at ki pull çakışmasın.

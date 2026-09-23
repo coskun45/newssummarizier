@@ -232,7 +232,7 @@ Tüm değişkenler repo kökündeki **tek `.env`** dosyasından gelir (şablon: 
 `env_file`'ı olarak yükler. Sunucuda dosya `scripts/ensure_env.py` ile ilk deploy'da otomatik üretilir
 (rastgele `POSTGRES_PASSWORD` ve `JWT_SECRET_KEY` dahil), sonraki deploy'larda mevcut değerlere dokunulmaz.
 Aşağıdaki tablo öne çıkanlardır; tam liste `.env.example`'dadır. Container içinde yalnızca `DATABASE_URL`
-(`db` host'una çevrilir), `CHECKPOINTS_DB`, `BULLETIN_STORAGE_DIR` ve `DEBUG=false` compose tarafından ezilir; ayrıca `APP_VERSION` (aşağıya bakın) deploy'da CI'dan gelirse `.env`'yi ezer.
+(`db` host'una çevrilir), `BULLETIN_STORAGE_DIR` ve `DEBUG=false` compose tarafından ezilir; ayrıca `APP_VERSION` (aşağıya bakın) deploy'da CI'dan gelirse `.env`'yi ezer.
 
 | Değişken | Varsayılan | Açıklama |
 |---|---|---|
@@ -271,7 +271,7 @@ volumes:
   - postgres_data:/var/lib/postgresql/data
 ```
 
-LangGraph checkpoint'leri ve üretilen Word bültenleri ise ayrıca host'taki `./data/` dizinine
+Üretilen Word bültenleri ise ayrıca host'taki `./data/` dizinine
 mount edilir (repo'nun git ağacının dışında, asla commit'lenmez):
 
 ```yaml
@@ -476,9 +476,8 @@ Limitler `.env` dosyasında yapılandırılabilir.
 ### Veritabanını Sıfırlama
 
 ```bash
-cd backend
-rm news_summary.db checkpoints.db
-# Bir sonraki başlatmada DB yeniden oluşturulur
+docker compose down -v    # Postgres volume'ünü siler — TÜM veri gider
+docker compose up -d db   # boş DB; backend bir sonraki başlatmada tabloları yeniden oluşturur
 ```
 
 ### Manuel Feed İşleme

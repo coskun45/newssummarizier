@@ -29,7 +29,6 @@ services:
     # Aşağıdakiler .env'yi ezer — yalnızca container içinde farklı olması gerekenler:
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-bulten}:${POSTGRES_PASSWORD:-changeme}@db:5432/${POSTGRES_DB:-bulten}
-      CHECKPOINTS_DB: /app/data/checkpoints.db
       BULLETIN_STORAGE_DIR: /app/data/bulletins
       DEBUG: "false"
       # Deploy'da CI shell'e APP_VERSION verir (shell > .env > varsayılan); yoksa container hep .env'dekini görürdü.

@@ -123,7 +123,6 @@ jobs:
             # tree before reset --hard runs, so it can never delete/overwrite live data again.
             mkdir -p data
             [ -f backend/news_summary.db ] && [ ! -f data/news_summary.db ] && mv backend/news_summary.db data/news_summary.db
-            [ -f backend/checkpoints.db ] && [ ! -f data/checkpoints.db ] && mv backend/checkpoints.db data/checkpoints.db
             git fetch origin
             git reset --hard origin/master
             # APP_VERSION runner'daki "Compute version" adımından gelir (docker-compose.yml container'a iletir).

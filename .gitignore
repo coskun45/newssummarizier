@@ -10,14 +10,13 @@ frontend/node_modules
 !.env.example
 backend/app/__pycache__
 
-# Host data dir (deploys bind-mount ./data into the container: bulletins, checkpoints).
+# Host data dir (deploys bind-mount ./data into the container: generated bulletins).
 # Legacy SQLite files: the app uses PostgreSQL now, but migrate_sqlite_to_postgres.py / deploy.sh
 # still read an old news_summary.db if one exists — never commit it.
 /data/
 backend/news_summary.db
 backend/news_summary.db-shm
 backend/news_summary.db-wal
-backend/checkpoints.db
 backend/bulletin_reports/
 
 

@@ -29,7 +29,6 @@ class Settings(BaseSettings):
     
     # Database
     database_url: str = "postgresql+psycopg2://bulten:changeme@localhost:5432/bulten"
-    checkpoints_db: str = "checkpoints.db"
     
     # Application Settings
     app_name: str = "News Summarizer"
