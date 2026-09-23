@@ -3,7 +3,7 @@ paths:
   - "app/db/**"
 ---
 
-# Database (SQLAlchemy + SQLite)
+# Database (SQLAlchemy + PostgreSQL)
 
 ## Models
 - **ALL models subclass `Base` from `app.db.database`** and live in `app/db/models.py`. Use `Column(...)` declarative style (not 2.0 `Mapped[]`) to match existing models.
@@ -16,6 +16,5 @@ paths:
 - **CRUD functions commit their own writes.** Callers don't manage transactions beyond passing the session.
 
 ## Migrations
-- **Column adds are handled in code, not scripts.** `create_all()` only creates missing tables (never alters existing ones), so `init_db()` in `db/database.py` runs an idempotent auto-migration: it ALTER-adds any missing column listed in `article_columns`. When you add a column to a model, also append `(name, DDL)` there — existing SQLite DBs get patched on next startup, no manual step.
+- **Column adds are handled in code, not scripts.** `create_all()` only creates missing tables (never alters existing ones), so `init_db()` in `db/database.py` runs an idempotent auto-migration: it ALTER-adds any missing column listed in `article_columns`. When you add a column to a model, also append `(name, DDL)` there — the PostgreSQL DB gets patched on next startup, no manual step. Keep the DDL portable (Postgres in prod, in-memory SQLite in pytest).
 - **More complex changes** (renames, type changes, drops, data backfills) aren't covered by the column loop — write a one-off `backend/migrate_*.py` for those (e.g. `migrate_remove_german_topics.py`) and run it manually.
-- **NEVER commit a populated `news_summary.db`** (or any `*.db`) — local artifact, gitignored.

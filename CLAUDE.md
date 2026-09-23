@@ -4,10 +4,10 @@ Bülten — an AI news aggregator: it pulls Deutsche Welle (DW) RSS feeds, scrap
 content, classifies + prioritizes articles, and generates brief/standard/detailed summaries with
 OpenAI. Two services talking over `/api`:
 
-- **Backend** (`backend/`) — Python **FastAPI** + **LangGraph** agent pipeline + **SQLAlchemy/SQLite** + OpenAI.
+- **Backend** (`backend/`) — Python **FastAPI** + **LangGraph** agent pipeline + **SQLAlchemy/PostgreSQL** + OpenAI.
 - **Frontend** (`frontend/`) — **React 18 + TypeScript + Vite**, data via **TanStack Query** over **axios**.
 
-User-facing language is **Turkish/German** — keep UI text and `README.md` in their existing language.
+User-facing language is **Turkish** — keep UI text, `features.json` and `README.md` in Turkish.
 
 ## Layout
 
@@ -42,7 +42,7 @@ docker compose up --build                         # http://localhost  (API at /a
 `OPENAI_API_KEY` is required. **All config lives in ONE file: the repo-root `.env`** (`cp .env.example .env`) —
 read by `docker compose`, by local `uvicorn` (via `core/config.py`), and generated on the server by
 `scripts/ensure_env.py`. The DB is PostgreSQL (`docker compose up -d db`, exposed on `127.0.0.1:5432`);
-SQLite is only used by the pytest fixtures.
+SQLite is no longer used anywhere except the in-memory DB in the pytest fixtures.
 
 ## Architecture rules
 
@@ -53,7 +53,7 @@ files). The essentials:
   `app.db.crud`; never raw `db.query` in handlers. Agent nodes are the only code that opens its own
   `SessionLocal()`. All OpenAI calls go through `services/summary_service.py`.
 - **All routers except `auth` require JWT** (`dependencies=auth_dep` in `main.py`).
-- **Adding a column?** Add it to the model AND append `(column, DDL)` to the `article_columns` list in `init_db()` (`db/database.py`) — it auto-ALTERs existing SQLite DBs on startup (idempotent). No separate migration scripts.
+- **Adding a column?** Add it to the model AND append `(column, DDL)` to the `article_columns` list in `init_db()` (`db/database.py`) — it auto-ALTERs the existing PostgreSQL DB on startup (idempotent). No separate migration scripts.
 - **Frontend never calls `axios`/endpoints directly** — go types → `services/api.ts` → `hooks/useApi.ts`
   → component. Mutations must invalidate the affected React Query keys.
 - **Config lives in three places that must agree:** `core/config.py`, the root `.env.example` (the
@@ -75,4 +75,9 @@ files). The essentials:
 - **Learned a new recurring convention/gotcha** → record it with the `/add-rule` skill into
   `.claude/rules/` (do not bloat this file).
 - **Before a PR** → run the `/update-docs` skill to sync `README.md` + `.env.example`.
-- **Don't commit** `backend/news_summary.db` or a real `.env`.
+- **Don't commit** a real `.env` or `.claude/settings.local.json`.
+
+Hooks in `.claude/settings.json` (scripts in `.claude/hooks/`) enforce part of this automatically: ruff/eslint
+run on every edit under `backend/app/` / `frontend/src/` (fix what they report, same checks as CI); writing
+`.env*` (except `.env.example`) or `git add`-ing it is denied; `git push` is denied while feature code changed
+without a `features.json` update (see `.claude/rules/features.md`).

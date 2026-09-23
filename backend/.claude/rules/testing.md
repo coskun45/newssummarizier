@@ -19,7 +19,7 @@ paths:
   isolated in-memory SQLite (`db_session`, via `StaticPool` so the same connection persists for the
   test) and is built **without** entering the app's lifespan context (no `with TestClient(app)`) —
   so `init_db()`/`seed_database()`/the APScheduler never run and never touch the real
-  `news_summary.db`.
+  PostgreSQL DB.
 - **Use `test_user`/`auth_headers` for protected routes** — build a real user row via `crud.create_user`
   and a real JWT via `create_access_token`, don't mock `get_current_user`.
 - **A new cross-cutting fixture goes in `conftest.py`**, not duplicated per test file.

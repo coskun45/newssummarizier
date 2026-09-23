@@ -56,7 +56,7 @@ bottom-up on the frontend**, so each layer compiles against the one below it.
 
 1. **Model** (`app/db/models.py`) — declarative `Column`, `server_default=func.now()`, free-form status
    strings with inline comments (`db` rule). Adding a column? Also append `(name, DDL)` to the
-   `article_columns` list in `init_db()` (`db/database.py`) so existing SQLite DBs auto-migrate on
+   `article_columns` list in `init_db()` (`db/database.py`) so the existing PostgreSQL DB auto-migrates on
    startup — no separate script.
 2. **CRUD** (`app/db/crud.py`) — add a `db: Session`-first function; the single DB-access layer both
    routes and agent nodes call.
@@ -77,12 +77,12 @@ bottom-up on the frontend**, so each layer compiles against the one below it.
 3. **Hooks** (`src/hooks/useApi.ts`) — `useQuery` for reads, `useMutation` for writes; array query keys;
    invalidate every affected key in `onSuccess` (`data-fetching` rule).
 4. **Component** (`src/components/<Name>/`) — one folder + co-located CSS, typed `interface Props`,
-   consume data via hooks (never the api layer directly), German UI text, `date-fns` with `tr` locale
+   consume data via hooks (never the api layer directly), Turkish UI text, `date-fns` with `tr` locale
    (`components` rule).
 
 Then **verify it runs**: backend via `uvicorn app.main:app --reload` + `http://localhost:8000/docs` or
 `curl` (test 404/400 paths too); frontend via `npm run dev`, driving the real UI and watching the
-`/api` call + React Query cache. Prefer the `/run` and `/verify` skills over assuming.
+`/api` call + React Query cache. Prefer the `/run` skill over assuming.
 
 ### Tests (required, not optional)
 
@@ -138,7 +138,7 @@ for an independent pass on the diff.
 - Run `/update-docs` to sync `README.md` + `.env.example` if behavior, an endpoint, config,
   dependencies, or project structure changed.
 - Capture any new recurring convention/gotcha with `/add-rule`.
-- Don't commit `backend/news_summary.db` or a real `.env`.
+- Don't commit a real `.env` or `.claude/settings.local.json`.
 
 ## Common mistakes
 

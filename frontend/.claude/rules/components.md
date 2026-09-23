@@ -17,5 +17,5 @@ paths:
 - **Gate expensive fetches behind UI state** by passing `null`/conditional ids into hooks (`useSummary(expanded ? article.id : null, ...)`), relying on the hook's `enabled` guard.
 
 ## i18n / formatting
-- **UI text is German** — match the existing language of labels and buttons.
+- **UI text is Turkish** — match the existing language of labels and buttons.
 - **Format dates with `date-fns` using the `tr` locale** (`formatDistanceToNow(date, { addSuffix: true, locale: tr })`) as established in `ArticleCard`.

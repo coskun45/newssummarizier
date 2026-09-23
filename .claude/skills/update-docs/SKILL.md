@@ -67,7 +67,7 @@ There is no automated validator, so check by hand against the source of truth:
 - **API endpoints:** documented paths match `backend/app/api/routes/*.py` + the prefixes in
   `app/main.py` (e.g. summaries mount at bare `/api`). See the backend `api-routes` rule.
 - **Project-structure trees:** the folders shown actually exist; both trees match.
-- **Commands & ports:** run/Docker commands and ports (8000 backend, 5173 dev, 80 Docker) are current.
+- **Commands & ports:** run/Docker commands and ports (8000 backend, 5174 dev, 80 Docker) are current.
 - **Markdown sanity:** links resolve, tables render, fenced code blocks are closed.
 
 Fix every mismatch you find before handing back.

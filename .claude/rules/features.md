@@ -21,8 +21,11 @@ stays correct if it is updated in the same change that alters a feature.
 - **Feature removed → delete its entry**; **renamed/behavior changed → edit its `title`/`description`**.
   A stale entry misleads users more than a missing one.
 - Pure refactors, bug fixes and styling changes don't touch the file.
+- **A `PreToolUse` hook enforces this on `git push`** (`.claude/hooks/check_features_json.py`): if files under
+  the `paths:` above changed since the upstream but `features.json` didn't, the push is denied. Update the
+  file, or — for a fix/refactor only — re-run the push with ` # features-ok` appended.
 - When following `/implement-requirement`, do this in the implement phase; before a PR, `/update-docs` should
-  find `features.json` consistent with `README.md` (Özellikler) — see [[components]].
+  find `features.json` consistent with `README.md` (Özellikler) — see the frontend `components` rule (`frontend/.claude/rules/components.md`).
 
 ## Versions
 - **`v1` = Temel haber özetleme** (RSS → scrape → classify → brief/standard/detailed summaries, news UI, feeds,
