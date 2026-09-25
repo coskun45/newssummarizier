@@ -424,9 +424,9 @@ def test_generate_bulletin_case_variant_categories_get_separate_headings(
     # from the GÜNDEM ÖZETİ digest blurb (which ends in "özeti." instead and
     # always precedes the category sections) — search on the former so this
     # doesn't accidentally match the digest mention of the same title.
-    first_article_idx = next(i for i, t in enumerate(paragraph_texts) if "Avrupa Haberi (example.com)" in t)
+    first_article_idx = next(i for i, t in enumerate(paragraph_texts) if "Avrupa Haberi (Test Feed)" in t)
     second_article_idx = next(
-        i for i, t in enumerate(paragraph_texts) if "Ikinci Avrupa Haberi (example.com)" in t
+        i for i, t in enumerate(paragraph_texts) if "Ikinci Avrupa Haberi (Test Feed)" in t
     )
 
     # Each category's article must sit under its OWN heading, not stranded
@@ -570,7 +570,7 @@ def test_generate_bulletin_dedup_when_article_matches_both(client, auth_headers,
     # so the real assertion is "not selected twice into the category listing",
     # which is where a broken union (fetching the article via two separate
     # queries instead of one OR'd query) would show up as a duplicate entry.
-    category_entries = [t for t in paragraph_texts if "Hem Yuksek Hem Favori" in t and "(example.com)" in t]
+    category_entries = [t for t in paragraph_texts if "Hem Yuksek Hem Favori" in t and "(Test Feed)" in t]
     assert len(category_entries) == 1
 
 
@@ -875,12 +875,12 @@ def test_delete_generated_bulletin_requires_auth(client):
     assert response.status_code == 401
 
 
-def test_delete_generated_bulletin_404_when_missing(client, auth_headers):
-    response = client.delete("/api/bulletin/generated/999999", headers=auth_headers)
+def test_delete_generated_bulletin_404_when_missing(client, admin_headers):
+    response = client.delete("/api/bulletin/generated/999999", headers=admin_headers)
     assert response.status_code == 404
 
 
-def test_delete_generated_bulletin_removes_row_and_file(client, auth_headers, db_session, monkeypatch):
+def test_delete_generated_bulletin_removes_row_and_file(client, admin_headers, db_session, monkeypatch):
     monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", _fake_classify)
     monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
 
@@ -888,13 +888,60 @@ def test_delete_generated_bulletin_removes_row_and_file(client, auth_headers, db
     feed = _make_feed(db_session)
     now = datetime.now(timezone.utc)
     _make_article(db_session, feed.id, title="Test Haberi", published_at=now - timedelta(hours=1))
-    client.post("/api/bulletin/generate", json={}, headers=auth_headers)
+    client.post("/api/bulletin/generate", json={}, headers=admin_headers)
     row = crud.get_generated_bulletins(db_session)[0]
     stored_path = Path(row.stored_path)
     assert stored_path.exists()
 
-    response = client.delete(f"/api/bulletin/generated/{row.id}", headers=auth_headers)
+    response = client.delete(f"/api/bulletin/generated/{row.id}", headers=admin_headers)
 
     assert response.status_code == 200
     assert crud.get_generated_bulletin(db_session, row.id) is None
     assert not stored_path.exists()
+
+
+def test_generate_bulletin_survives_duplicate_and_string_article_ids(client, auth_headers, db_session, monkeypatch):
+    """Regression (#29): the same article_id twice in the LLM answer hit the
+    (article_id, category_set_hash) unique constraint and /generate returned 500; an id sent as a
+    string ("123") silently dropped the article from the report."""
+    _make_bulletin_category(db_session, name="AVRUPA")
+    feed = _make_feed(db_session)
+    now = datetime.now(timezone.utc)
+    article = _make_article(db_session, feed.id, title="Tekrarlanan Haber", priority="high",
+                            published_at=now - timedelta(hours=1))
+
+    async def duplicate_classify(db, articles, category_names):
+        return [
+            {"article_id": str(article.id), "top_category": "AVRUPA", "subcategory": "İlk", "type": "haber"},
+            {"article_id": article.id, "top_category": "AVRUPA", "subcategory": "İkinci", "type": "haber"},
+            {"article_id": article.id, "top_category": "AVRUPA", "subcategory": "Üçüncü", "type": "haber"},
+        ]
+
+    monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", duplicate_classify)
+    monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
+
+    response = client.post("/api/bulletin/generate", json={}, headers=auth_headers)
+
+    assert response.status_code == 200
+    rows = db_session.query(models.ArticleBulletinClassification).all()
+    assert [(r.article_id, r.subcategory) for r in rows] == [(article.id, "İlk")]
+    texts = [p.text for p in DocxDocument(io.BytesIO(response.content)).paragraphs]
+    assert "İlk" in texts
+
+
+def test_generate_bulletin_names_the_feed_as_source(client, auth_headers, db_session, monkeypatch):
+    """Regression (#31): cards and summaries show the feed name as the source, the Word bulletin
+    still showed the article URL's hostname."""
+    monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", _fake_classify)
+    monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
+    _make_bulletin_category(db_session, name="AVRUPA")
+    feed = _make_feed(db_session, title="Sputnik Türkiye")
+    now = datetime.now(timezone.utc)
+    _make_article(db_session, feed.id, url="https://tr.sputniknews.example/haber-1", priority="high",
+                  published_at=now - timedelta(hours=1))
+
+    response = client.post("/api/bulletin/generate", json={}, headers=auth_headers)
+
+    body_text = "\n".join(p.text for p in DocxDocument(io.BytesIO(response.content)).paragraphs)
+    assert "Sputnik Türkiye" in body_text
+    assert "tr.sputniknews.example" not in body_text

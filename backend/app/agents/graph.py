@@ -3,11 +3,7 @@ LangGraph workflow for news processing.
 """
 from langgraph.graph import StateGraph, END
 from app.agents.state import NewsProcessingState
-from app.agents.nodes import (
-    rss_fetcher_node,
-    article_processor_node,
-    should_continue_processing
-)
+from app.agents.nodes import rss_fetcher_node, article_processor_node
 import logging
 
 logger = logging.getLogger(__name__)
@@ -19,11 +15,11 @@ def create_news_processing_workflow():
     
     Workflow:
     1. RSS Fetcher: Fetch articles from RSS feed
-    2. Article Processor: For each article:
+    2. Article Processor: for every new article, in one step (no per-article graph loop,
+       so a large refresh can't hit the recursion limit):
        - Extract content from web page
        - Categorize by topics
        - Generate summaries (brief, standard, detailed)
-    3. Loop until all articles processed
     """
     # Create the state graph
     workflow = StateGraph(NewsProcessingState)
@@ -37,16 +33,7 @@ def create_news_processing_workflow():
     
     # Add edges
     workflow.add_edge("rss_fetcher", "article_processor")
-    
-    # Add conditional edge for looping
-    workflow.add_conditional_edges(
-        "article_processor",
-        should_continue_processing,
-        {
-            "continue": "article_processor",
-            "end": END
-        }
-    )
+    workflow.add_edge("article_processor", END)
     
     return workflow
 

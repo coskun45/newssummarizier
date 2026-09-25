@@ -306,9 +306,10 @@ def download_generated_bulletin(
 def delete_generated_bulletin(
     bulletin_id: int,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+    current_user: models.User = Depends(require_admin),
 ):
-    """Delete a previously generated bulletin report (DB record and file)."""
+    """Delete a previously generated bulletin report (DB record and file). Admin only: reports are
+    shared by all users."""
     row = crud.get_generated_bulletin(db, bulletin_id)
     if not row:
         raise HTTPException(status_code=404, detail="Bülten bulunamadı")

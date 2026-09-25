@@ -14,7 +14,8 @@ paths:
 
 ## Handlers
 - **ALWAYS inject the session with `db: Session = Depends(get_db)`** — never construct a `SessionLocal()` inside a request handler (that pattern is reserved for background/agent code, see [[langgraph-agent]]).
-- **ALWAYS go through `crud.*` for DB access** — handlers call functions in `app.db.crud`, not raw `db.query(...)`. The ad-hoc `db.query` in `/articles/counts` is a deliberate aggregation exception; don't spread it.
+- **ALWAYS go through `crud.*` for DB access** — handlers call functions in `app.db.crud`, not raw `db.query(...)` (aggregations too: `/articles/counts` uses `crud.get_article_counts`).
+- **Global, destructive or OpenAI-cost-incurring writes are admin-only** — add `current_user: models.User = Depends(require_admin)`: `PUT /settings`, bulk deletes, `/articles/reprocess`, `/playground/run`, deleting generated bulletins, feed/category management. `tests/test_permissions.py` lists them; add a new one there, and hide its button for non-admins in the frontend (`currentUser.role`).
 - **Raise `HTTPException` for client errors** — 404 when a `crud.get_*` returns `None`, 400 for malformed input (e.g. unparseable comma-separated `topic_ids`). Don't return error dicts.
 - **Define Pydantic request/response models in the route module** next to the handler, set `response_model=` on the decorator, and use `class Config: from_attributes = True` for ORM-backed responses.
 - **Comma-separated list query params** (`topic_ids`, `feed_ids`) are passed as `Optional[str]` and parsed with a `try/int` that raises 400 on failure — follow this for any new multi-value filter.

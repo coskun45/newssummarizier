@@ -51,10 +51,11 @@ export interface Summary {
     article_id: number;
     summary_text: string;
     summary_type: "brief" | "standard" | "detailed";
-    model_used: string;
-    tokens_used: number;
-    cost: number;
-    created_at: string;
+    // Nullable in the DB (older rows), so the API may send null
+    model_used: string | null;
+    tokens_used: number | null;
+    cost: number | null;
+    created_at: string | null;
 }
 
 export interface ArticleListResponse {

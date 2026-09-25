@@ -37,12 +37,11 @@ class Settings(BaseSettings):
     
     # RSS Feed Configuration
     default_feed_url: str = "https://rss.dw.com/atom/rss-de-all"
-    feed_refresh_interval: int = 1800  # seconds (30 minutes)
+    feed_refresh_interval: int = 3600  # seconds between scheduled refreshes; default until changed in Ayarlar
 
-    # LangGraph workflow recursion limit.
-    # The news-processing graph loops once per article, so this must be large
-    # enough to cover the number of new articles in a single feed refresh
-    # (default LangGraph limit is 25, which is too small for DW feeds).
+    # LangGraph workflow recursion limit. The graph takes a fixed number of steps
+    # (rss_fetcher -> article_processor, which loops over all new articles itself),
+    # so the number of new articles in a refresh no longer counts against it.
     graph_recursion_limit: int = 100
     
     # Scraping Configuration
@@ -54,13 +53,14 @@ class Settings(BaseSettings):
     default_model: str = "gpt-4o-mini"
     detailed_model: str = "gpt-4o"
     openai_timeout_seconds: float = 60.0  # per-request cap; SDK default (~10min) is otherwise unbounded
-    max_tokens_input: int = 4000
-    max_tokens_output_brief: int = 150
-    max_tokens_output_standard: int = 300
-    max_tokens_output_detailed: int = 1000
+    # Output caps per summary type (article input is truncated by truncate_content).
+    # Keep in sync with .env.example and the README env table (tests/test_config.py checks).
+    max_tokens_output_brief: int = 1500
+    max_tokens_output_standard: int = 3000
+    max_tokens_output_detailed: int = 10000
     
     # Cost Management
-    daily_cost_limit: float = 5.0  # USD
+    daily_cost_limit: float = 10.0  # USD
     monthly_cost_limit: float = 100.0  # USD
 
     # Bulletin report generation

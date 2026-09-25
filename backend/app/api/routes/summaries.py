@@ -3,7 +3,7 @@ Summary and topic endpoints.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
 from app.db.database import get_db
@@ -18,10 +18,10 @@ class SummaryResponse(BaseModel):
     article_id: int
     summary_text: str
     summary_type: str
-    model_used: str
-    tokens_used: int
-    cost: float
-    created_at: datetime
+    model_used: Optional[str] = None
+    tokens_used: Optional[int] = None
+    cost: Optional[float] = None
+    created_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True

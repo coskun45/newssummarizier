@@ -20,6 +20,12 @@ paths:
   test) and is built **without** entering the app's lifespan context (no `with TestClient(app)`) —
   so `init_db()`/`seed_database()`/the APScheduler never run and never touch the real
   PostgreSQL DB.
+- **The test SQLite enforces foreign keys** (`PRAGMA foreign_keys=ON`, like PostgreSQL). A delete that
+  leaves child rows behind fails here too — give the parent a `cascade="all, delete-orphan"`
+  relationship instead of weakening the pragma.
+- **DNS is faked** by the autouse `fake_dns` fixture (`url_safety._resolve_host`): IP literals resolve
+  to themselves, `localhost`/`*.internal` to private addresses, anything else to a public one. Tests
+  never do real lookups; use a `.internal` host to exercise the SSRF guard.
 - **Use `test_user`/`auth_headers` for protected routes** — build a real user row via `crud.create_user`
   and a real JWT via `create_access_token`, don't mock `get_current_user`.
 - **A new cross-cutting fixture goes in `conftest.py`**, not duplicated per test file.

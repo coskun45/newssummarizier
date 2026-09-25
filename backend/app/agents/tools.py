@@ -7,13 +7,16 @@ import trafilatura
 from trafilatura.metadata import extract_metadata
 import aiohttp
 import logging
+import urllib.error
+import urllib.request
 from datetime import timezone
 from typing import List, Dict, Any, Optional, Tuple
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 from urllib.robotparser import RobotFileParser
 from dateutil import parser as date_parser
 from app.core.config import settings
 from app.core.exceptions import RSSFetchError, ScrapingError
+from app.core.url_safety import assert_public_url, is_public_url
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +24,19 @@ logger = logging.getLogger(__name__)
 # Run them in a worker thread so a stalled remote server can't freeze the FastAPI event loop,
 # and bound them with an explicit timeout so a hang doesn't stall the caller indefinitely.
 NETWORK_CALL_TIMEOUT_SECONDS = 30
+MAX_REDIRECTS = 5
+_REDIRECT_STATUSES = (301, 302, 303, 307, 308)
+
+
+class _PublicOnlyRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """urllib redirect handler (feedparser, robots.txt) that refuses to follow a redirect to a
+    non-public host — a public feed URL must not be able to bounce the backend into the internal
+    network."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not is_public_url(newurl):
+            raise urllib.error.URLError(f"Refusing redirect to a non-public address: {newurl}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 def _extract_author(entry) -> Optional[str]:
@@ -104,10 +120,14 @@ async def _fetch_and_parse(feed_url: str):
     try:
         logger.info(f"Fetching RSS feed: {feed_url}")
 
+        # Re-check at fetch time: the host was public when the feed was saved, but DNS may
+        # point elsewhere now. Redirects are checked hop by hop by the handler.
+        await asyncio.to_thread(assert_public_url, feed_url)
+
         # feedparser.parse() is a blocking, timeout-less network call — run it off the event
         # loop and bound it so a stalled feed server can't hang the whole app.
         return await asyncio.wait_for(
-            asyncio.to_thread(feedparser.parse, feed_url),
+            asyncio.to_thread(feedparser.parse, feed_url, handlers=[_PublicOnlyRedirectHandler()]),
             timeout=NETWORK_CALL_TIMEOUT_SECONDS,
         )
     except Exception as e:
@@ -193,7 +213,16 @@ def _read_robots_txt(robots_url: str, url: str) -> bool:
     """Blocking robots.txt fetch + check — always run via asyncio.to_thread, never directly."""
     rp = RobotFileParser()
     rp.set_url(robots_url)
-    rp.read()
+    opener = urllib.request.build_opener(_PublicOnlyRedirectHandler())
+    try:
+        with opener.open(robots_url, timeout=NETWORK_CALL_TIMEOUT_SECONDS) as response:
+            rp.parse(response.read().decode("utf-8", errors="replace").splitlines())
+    except urllib.error.HTTPError as e:
+        # Same semantics as RobotFileParser.read(): 401/403 = disallow all, other 4xx = allow all
+        if e.code in (401, 403):
+            rp.disallow_all = True
+        elif 400 <= e.code < 500:
+            rp.allow_all = True
 
     user_agent = "NewsSummarizer/1.0"
     return rp.can_fetch(user_agent, url)
@@ -243,6 +272,32 @@ def _extract_page_metadata(html: str) -> Tuple[Optional[str], Optional[str]]:
     return author, image
 
 
+async def _get_public_page(session, url: str, headers: Dict[str, str]) -> Optional[str]:
+    """GET `url`, following redirects one hop at a time and only to public hosts. Returns the page
+    text, or None on a non-200 answer, a refused redirect, or too many redirects."""
+    current = url
+    for _ in range(MAX_REDIRECTS + 1):
+        async with session.get(current, headers=headers, allow_redirects=False,
+                               timeout=aiohttp.ClientTimeout(total=30)) as response:
+            if response.status in _REDIRECT_STATUSES:
+                location = response.headers.get("Location")
+                if not location:
+                    logger.warning(f"HTTP {response.status} without Location for URL: {current}")
+                    return None
+                target = urljoin(current, location)
+                if not await asyncio.to_thread(is_public_url, target):
+                    logger.warning(f"Refusing redirect from {current} to a non-public address: {target}")
+                    return None
+                current = target
+                continue
+            if response.status != 200:
+                logger.warning(f"HTTP {response.status} for URL: {current}")
+                return None
+            return await response.text()
+    logger.warning(f"Too many redirects for URL: {url}")
+    return None
+
+
 async def extract_article_content(url: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     """
     Extract main content, author, and hero image from an article URL using trafilatura.
@@ -258,6 +313,10 @@ async def extract_article_content(url: str) -> Tuple[Optional[str], Optional[str
     """
     if not settings.scraping_enabled:
         logger.info("Scraping is disabled in settings")
+        return None, None, None
+
+    if not await asyncio.to_thread(is_public_url, url):
+        logger.warning(f"Refusing to fetch article on a non-public address: {url}")
         return None, None, None
 
     try:
@@ -282,11 +341,9 @@ async def extract_article_content(url: str) -> Tuple[Optional[str], Optional[str
         for attempt in range(1, attempts + 1):
             try:
                 async with aiohttp.ClientSession() as session:
-                    async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as response:
-                        if response.status != 200:
-                            logger.warning(f"HTTP {response.status} for URL: {url}")
-                            return None, None, None
-                        html = await response.text()
+                    html = await _get_public_page(session, url, headers)
+                if html is None:
+                    return None, None, None
                 break
             except (aiohttp.ClientError, asyncio.TimeoutError) as e:
                 if attempt >= attempts:

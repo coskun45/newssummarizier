@@ -39,8 +39,8 @@ class LockedPromptResponse(BaseModel):
 class SystemPromptResponse(SystemPromptBase):
     """Schema for system prompt response."""
     id: int
-    created_at: str
-    updated_at: str
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
     
     class Config:
         from_attributes = True
@@ -77,7 +77,7 @@ def get_locked_prompt(prompt_type: str, db: Session = Depends(get_db)):
     Other prompt types have no locked part and return an empty string.
     """
     if prompt_type == "classification":
-        locked_text = summary_service.build_classification_locked_text(crud.get_topics(db))
+        locked_text = summary_service.build_classification_locked_text(crud.get_enabled_topics(db))
     elif prompt_type == "summarization":
         # Only the summary types enabled in Settings are generated, so only those are listed.
         locked_text = summary_service.build_summarization_locked_text(summary_service.get_enabled_summary_types(db))

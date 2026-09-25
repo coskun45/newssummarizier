@@ -1,14 +1,15 @@
 """
 APScheduler-based periodic feed processing.
-Runs all active RSS feeds once every hour.
+Runs all active RSS feeds every `feed_refresh_interval` seconds (Ayarlar setting, hourly by default).
 """
 import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 logger = logging.getLogger(__name__)
 
 _scheduler: AsyncIOScheduler | None = None
+JOB_ID = "process_all_feeds"
 
 
 async def _process_all_feeds() -> None:
@@ -39,6 +40,17 @@ async def _process_all_feeds() -> None:
     logger.info("Scheduler: all feeds processed.")
 
 
+def _stored_refresh_interval() -> int:
+    from app.db import database
+    from app.db import crud
+
+    db = database.SessionLocal()
+    try:
+        return crud.get_feed_refresh_interval(db)
+    finally:
+        db.close()
+
+
 def start_scheduler() -> None:
     """Create and start the background scheduler."""
     global _scheduler
@@ -47,20 +59,28 @@ def start_scheduler() -> None:
         logger.warning("Scheduler is already running.")
         return
 
+    interval = _stored_refresh_interval()
     _scheduler = AsyncIOScheduler()
-
-    # Run at the top of every hour  (minute=0)
     _scheduler.add_job(
         _process_all_feeds,
-        trigger=CronTrigger(minute=0),
-        id="process_all_feeds",
-        name="Hourly RSS feed processing",
+        trigger=IntervalTrigger(seconds=interval),
+        id=JOB_ID,
+        name="Periodic RSS feed processing",
         replace_existing=True,
         misfire_grace_time=300,  # tolerate up to 5-min delay
+        max_instances=1,  # a slow run is skipped over, never stacked
     )
 
     _scheduler.start()
-    logger.info("Scheduler started — feeds will be processed at the top of every hour.")
+    logger.info(f"Scheduler started — feeds will be processed every {interval} seconds.")
+
+
+def reschedule_feed_processing(interval_seconds: int) -> None:
+    """Apply a new refresh interval (saved in Ayarlar) to the running scheduler."""
+    if _scheduler is None or not _scheduler.running:
+        return
+    _scheduler.reschedule_job(JOB_ID, trigger=IntervalTrigger(seconds=interval_seconds))
+    logger.info(f"Scheduler: feed refresh interval set to {interval_seconds} seconds.")
 
 
 def stop_scheduler() -> None:

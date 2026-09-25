@@ -12,6 +12,8 @@ interface CategoryBulkActionsProps {
   onArchiveAllUnimportant: () => void;
   deletePending?: boolean;
   archivePending?: boolean;
+  /** Bulk delete is permanent and global — admins only. */
+  canDelete?: boolean;
 }
 
 function CategoryBulkActions({
@@ -23,6 +25,7 @@ function CategoryBulkActions({
   onArchiveAllUnimportant,
   deletePending = false,
   archivePending = false,
+  canDelete = false,
 }: CategoryBulkActionsProps) {
   const [confirmPriority, setConfirmPriority] = useState<PriorityOption | null>(null);
   const [confirmUnimportant, setConfirmUnimportant] = useState(false);
@@ -49,14 +52,16 @@ function CategoryBulkActions({
                 >
                   <ArchiveBoxArrowDownIcon /> Tümünü Arşive Gönder
                 </button>
-                <button
-                  className="btn btn-outline btn-sm category-bulk-delete"
-                  onClick={() => setConfirmPriority(p)}
-                  disabled={empty || deletePending}
-                  title={`${p.label} önceliğindeki tüm haberleri sil`}
-                >
-                  <TrashIcon /> Tümünü Sil
-                </button>
+                {canDelete && (
+                  <button
+                    className="btn btn-outline btn-sm category-bulk-delete"
+                    onClick={() => setConfirmPriority(p)}
+                    disabled={empty || deletePending}
+                    title={`${p.label} önceliğindeki tüm haberleri sil`}
+                  >
+                    <TrashIcon /> Tümünü Sil
+                  </button>
+                )}
               </div>
             </div>
           );
@@ -76,14 +81,16 @@ function CategoryBulkActions({
             >
               <ArchiveBoxArrowDownIcon /> Tümünü Arşive Gönder
             </button>
-            <button
-              className="btn btn-outline btn-sm category-bulk-delete"
-              onClick={() => setConfirmUnimportant(true)}
-              disabled={unimportantCount === 0 || deletePending}
-              title="Tüm önemsiz haberleri sil"
-            >
-              <TrashIcon /> Tümünü Sil
-            </button>
+            {canDelete && (
+              <button
+                className="btn btn-outline btn-sm category-bulk-delete"
+                onClick={() => setConfirmUnimportant(true)}
+                disabled={unimportantCount === 0 || deletePending}
+                title="Tüm önemsiz haberleri sil"
+              >
+                <TrashIcon /> Tümünü Sil
+              </button>
+            )}
           </div>
         </div>
       </div>

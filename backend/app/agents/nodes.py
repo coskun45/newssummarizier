@@ -4,15 +4,9 @@ Agent node functions for the news processing workflow.
 import logging
 from typing import Any, Dict
 from app.agents.state import NewsProcessingState
-from app.agents.tools import fetch_rss_feed, extract_article_content, truncate_content
-from app.services.summary_service import (
-    article_source_name,
-    categorize_and_prioritize_article,
-    clean_author,
-    generate_summary,
-    resolve_summary_author,
-)
-from app.db.database import SessionLocal, release_connection
+from app.agents.tools import fetch_rss_feed
+from app.services.summary_service import process_article
+from app.db.database import SessionLocal
 from app.db import crud
 from datetime import datetime
 
@@ -87,319 +81,101 @@ async def rss_fetcher_node(state: NewsProcessingState) -> Dict[str, Any]:
         }
 
 
-async def article_processor_node(state: NewsProcessingState) -> Dict[str, Any]:
+async def _process_new_article(feed_id: int, article: Dict[str, Any]) -> Dict[str, Any]:
+    """Store one new RSS entry and run it through the shared processing path
+    (`summary_service.process_article`: scrape → classify → summarize).
+
+    Never raises: returns {"url", "title", "status", "created", "cost", "error"} so one bad
+    article can't stop the run.
     """
-    Process individual article: scrape, categorize, and summarize.
-    """
-    articles = state.get("rss_articles", [])
-    index = state.get("current_article_index", 0)
-    
-    if index >= len(articles):
-        logger.info("All articles processed")
-        return {
-            "should_continue": False
-        }
-    
-    article = articles[index]
-    logger.info(f"Processing article {index + 1}/{len(articles)}: {article['title']}")
-    
+    outcome = {"url": article.get("url"), "title": article.get("title"), "status": "failed",
+               "created": False, "cost": 0.0, "error": None}
     db = SessionLocal()
-    db_article = None
-    
+    article_id = None
     try:
-        # Step 1: Create article in database
-        db_article = crud.create_article(
-            db=db,
-            feed_id=state["feed_id"],
-            url=article["url"],
-            title=article["title"],
-            author=article.get("author"),
-            published_at=article.get("published_at"),
-            raw_content=article.get("raw_content"),
-            image_url=article.get("image_url")
-        )
-        
+        try:
+            db_article = crud.create_article(
+                db=db,
+                feed_id=feed_id,
+                url=article["url"],
+                title=article["title"],
+                author=article.get("author"),
+                published_at=article.get("published_at"),
+                raw_content=article.get("raw_content"),
+                image_url=article.get("image_url")
+            )
+        except Exception as e:
+            # e.g. the same URL was inserted meanwhile by another run — nothing new to process
+            db.rollback()
+            outcome["error"] = f"Could not store article: {e}"
+            return outcome
+
+        article_id = db_article.id
+        outcome["created"] = True
         crud.create_log(
             db=db,
-            article_id=db_article.id,
+            article_id=article_id,
             agent_name="article_processor",
             status="started",
             message="Article processing started"
         )
-        
-        # Step 2: Extract content from web page
-        try:
-            release_connection(db)  # don't hold a pooled connection while scraping
-            cleaned_content, page_author, page_image_url = await extract_article_content(article["url"])
 
-            # Backfill author/image from the page when the RSS feed didn't provide them
-            if page_author and not article.get("author"):
-                crud.update_article_author(db=db, article_id=db_article.id, author=page_author)
-                article["author"] = page_author
+        result = await process_article(db, article_id)
+        outcome["status"] = result["status"]
+        outcome["cost"] = result.get("cost", 0.0)
+        if not result.get("success"):
+            outcome["error"] = f"Article processing ended as {result['status']}"
+        return outcome
 
-            if page_image_url and not article.get("image_url"):
-                crud.update_article_image(db=db, article_id=db_article.id, image_url=page_image_url)
-                article["image_url"] = page_image_url
-
-            if cleaned_content:
-                article["cleaned_content"] = cleaned_content
-                crud.update_article_content(
-                    db=db,
-                    article_id=db_article.id,
-                    cleaned_content=cleaned_content
-                )
-                crud.update_article_status(db=db, article_id=db_article.id, status="scraped")
-                crud.create_log(
-                    db=db,
-                    article_id=db_article.id,
-                    agent_name="web_scraper",
-                    status="success",
-                    message=f"Extracted {len(cleaned_content)} characters"
-                )
-            else:
-                # Fallback to RSS content
-                article["cleaned_content"] = article.get("raw_content", "")
-                crud.create_log(
-                    db=db,
-                    article_id=db_article.id,
-                    agent_name="web_scraper",
-                    status="skipped",
-                    message="Using RSS content as fallback"
-                )
-        except Exception as e:
-            logger.warning(f"Content extraction failed, using RSS content: {e}")
-            article["cleaned_content"] = article.get("raw_content", "")
-            crud.create_log(
-                db=db,
-                article_id=db_article.id,
-                agent_name="web_scraper",
-                status="error",
-                message="Failed to extract content, using RSS fallback",
-                error_details=str(e)
-            )
-        
-        # Step 3: Evaluate importance, priority, and classify topics
-        try:
-            release_connection(db)
-            categorization = await categorize_and_prioritize_article(
-                title=article["title"]
-            )
-
-            importance = categorization.get("importance", "unimportant")
-            priority = categorization.get("priority")
-            topics = categorization.get("topics", [])
-
-            if importance != "unimportant" and priority not in ("high", "med", "low"):
-                raise ValueError(f"Important article came back without a valid priority: {priority!r}")
-
-            crud.update_article_importance(db=db, article_id=db_article.id, importance=importance, priority=priority)
-            article["topics"] = topics
-
-            if importance == "unimportant":
-                crud.update_article_status(db=db, article_id=db_article.id, status="filtered")
-                crud.create_log(
-                    db=db,
-                    article_id=db_article.id,
-                    agent_name="topic_categorizer",
-                    status="success",
-                    message="Article filtered as unimportant — skipping summarization"
-                )
-                article["status"] = "filtered"
-                processed = state.get("processed_articles", [])
-                processed.append(article)
-                return {
-                    "current_article_index": index + 1,
-                    "processed_articles": processed,
-                    "total_cost": state.get("total_cost", 0.0),
-                    "should_continue": index + 1 < len(articles)
-                }
-
-            # Article is important — save topics to DB
-            for topic in topics:
-                topic_db = crud.get_topic_by_name(db, topic["name"])
-                if topic_db:
-                    crud.add_article_topic(
-                        db=db,
-                        article_id=db_article.id,
-                        topic_id=topic_db.id,
-                        confidence=topic.get("confidence", 1.0)
-                    )
-
-            crud.create_log(
-                db=db,
-                article_id=db_article.id,
-                agent_name="topic_categorizer",
-                status="success",
-                message=f"Important ({priority}): classified into {len(topics)} topics"
-            )
-        except Exception as e:
-            logger.error(f"Topic categorization failed: {e}")
-            article["topics"] = []
-            db.rollback()  # a failed DB write above would otherwise poison the session
-            crud.create_log(
-                db=db,
-                article_id=db_article.id,
-                agent_name="topic_categorizer",
-                status="error",
-                message="Failed to categorize topics",
-                error_details=str(e)
-            )
-            # No severity label => the article is an "Error" article. Don't spend money on
-            # summaries or mark it "summarized"; leave it "failed" so the user can retry it.
-            crud.remove_article_topics(db, db_article.id)
-            crud.update_article_importance(db=db, article_id=db_article.id, importance=None, priority=None)
-            crud.update_article_status(db=db, article_id=db_article.id, status="failed")
-            article["status"] = "failed"
-            errors = state.get("errors", [])
-            errors.append({
-                "node": "topic_categorizer",
-                "article_url": article.get("url"),
-                "error": str(e),
-                "timestamp": datetime.utcnow().isoformat()
-            })
-            return {
-                "current_article_index": index + 1,
-                "errors": errors,
-                "should_continue": index + 1 < len(articles)
-            }
-
-        # Step 4: Generate summaries based on user settings
-        total_cost = 0.0
-        summaries_created = 0
-        content_for_summary = article.get("cleaned_content") or article.get("raw_content", "")
-        
-        if content_for_summary:
-            # Get enabled summary types from settings
-            enabled_summary_types = crud.get_setting(db, "enabled_summary_types") or "brief,standard,detailed"
-            enabled_types = [x.strip() for x in enabled_summary_types.split(",") if x.strip()]
-            
-            summary_types_map = {
-                "brief": ("brief", "brief"),
-                "standard": ("standard", "standard"),
-                "detailed": ("detailed", "detailed")
-            }
-            
-            # Only generate enabled summary types
-            summary_types = [summary_types_map[st] for st in enabled_types if st in summary_types_map]
-
-            # Source = the feed's name; the feed's author is only a hint the summarizer checks
-            feed = crud.get_feed(db, state["feed_id"])
-            source = article_source_name(feed.title if feed else None, article["url"])
-            author_hint = clean_author(article.get("author"), source)
-            summary_results = []
-
-            for summary_type, article_key in summary_types:
-                try:
-                    release_connection(db)
-                    summary_result = await generate_summary(
-                        title=article["title"],
-                        content=truncate_content(content_for_summary),
-                        summary_type=summary_type,
-                        source=source,
-                        author_hint=author_hint
-                    )
-                    summary_results.append(summary_result)
-
-                    article[f"summary_{article_key}"] = summary_result["summary_text"]
-                    total_cost += summary_result["cost"]
-                    
-                    # Save summary to database
-                    crud.create_summary(
-                        db=db,
-                        article_id=db_article.id,
-                        summary_text=summary_result["summary_text"],
-                        summary_type=summary_type,
-                        model_used=summary_result["model_used"],
-                        tokens_used=summary_result["tokens_used"],
-                        cost=summary_result["cost"]
-                    )
-                    summaries_created += 1
-                    
-                except Exception as e:
-                    logger.error(f"Summary generation failed for {summary_type}: {e}")
-                    article[f"summary_{article_key}"] = None
-                    crud.create_log(
-                        db=db,
-                        article_id=db_article.id,
-                        agent_name="summarizer",
-                        status="error",
-                        message=f"Failed to generate {summary_type} summary",
-                        error_details=str(e)
-                    )
-
-            if summary_results:
-                article["author"] = resolve_summary_author(summary_results, author_hint)
-                crud.set_article_author(db, db_article.id, article["author"])
-
-        # "summarized" is reserved for articles that actually got at least one summary
-        final_status = "summarized" if summaries_created > 0 else "failed"
-        crud.update_article_status(db=db, article_id=db_article.id, status=final_status)
-        if summaries_created > 0:
-            crud.create_log(
-                db=db,
-                article_id=db_article.id,
-                agent_name="article_processor",
-                status="success",
-                message=f"Article processing completed. Cost: ${total_cost:.4f}"
-            )
-        else:
-            crud.create_log(
-                db=db,
-                article_id=db_article.id,
-                agent_name="article_processor",
-                status="error",
-                message="No summary could be generated — article left as failed"
-            )
-        
-        article["status"] = final_status
-        
-        # Update state
-        processed = state.get("processed_articles", [])
-        processed.append(article)
-        
-        return {
-            "current_article_index": index + 1,
-            "processed_articles": processed,
-            "total_cost": state.get("total_cost", 0.0) + total_cost,
-            "should_continue": index + 1 < len(articles)
-        }
-        
     except Exception as e:
         logger.error(f"Article processing failed: {e}")
-        
-        if db_article:
-            crud.update_article_status(db=db, article_id=db_article.id, status="failed")
+        outcome["error"] = str(e)
+        if article_id is not None:
+            db.rollback()
+            crud.update_article_status(db=db, article_id=article_id, status="failed")
             crud.create_log(
                 db=db,
-                article_id=db_article.id,
+                article_id=article_id,
                 agent_name="article_processor",
                 status="error",
                 message="Article processing failed",
                 error_details=str(e)
             )
-        
-        errors = state.get("errors", [])
-        errors.append({
-            "node": "article_processor",
-            "article_url": article.get("url"),
-            "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
-        })
-        
-        # Continue to next article despite error
-        return {
-            "current_article_index": index + 1,
-            "errors": errors,
-            "should_continue": index + 1 < len(articles)
-        }
+        return outcome
     finally:
         db.close()
 
 
-def should_continue_processing(state: NewsProcessingState) -> str:
+async def article_processor_node(state: NewsProcessingState) -> Dict[str, Any]:
     """
-    Decide whether to continue processing articles.
+    Process every new article of the feed, one after another, in a single graph step.
+
+    Looping inside the node (instead of one graph step per article) keeps a large refresh from
+    hitting LangGraph's recursion limit. Only a small outcome per article is kept in state, not
+    its full text.
     """
-    if state.get("should_continue", False):
-        return "continue"
-    return "end"
+    articles = state.get("rss_articles", [])
+    errors = list(state.get("errors", []))
+    processed = list(state.get("processed_articles", []))
+    total_cost = state.get("total_cost", 0.0)
+
+    for index, article in enumerate(articles[state.get("current_article_index", 0):]):
+        logger.info(f"Processing article {index + 1}/{len(articles)}: {article.get('title')}")
+        outcome = await _process_new_article(state["feed_id"], article)
+        total_cost += outcome["cost"]
+        processed.append(outcome)
+        if outcome["error"]:
+            errors.append({
+                "node": "article_processor",
+                "article_url": outcome["url"],
+                "error": outcome["error"],
+                "timestamp": datetime.utcnow().isoformat()
+            })
+
+    return {
+        "current_article_index": len(articles),
+        "processed_articles": processed,
+        "errors": errors,
+        "total_cost": total_cost,
+        "should_continue": False
+    }

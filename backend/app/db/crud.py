@@ -6,6 +6,7 @@ from sqlalchemy import desc, func, or_, case
 from typing import List, Optional, Dict, Any, Set
 from datetime import datetime, timezone, timedelta
 import re
+from app.core.config import settings
 from app.db import models
 
 
@@ -193,32 +194,26 @@ def error_clause():
     )
 
 
-def get_articles(
+def _apply_article_filters(
     db: Session,
-    skip: int = 0,
-    limit: int = 100,
+    query,
     topic_ids: List[int] = None,
     search_query: str = None,
     status: str = None,
-    start_date: datetime = None,
-    end_date: datetime = None,
-    fetched_from: datetime = None,
-    fetched_to: datetime = None,
     feed_id: int = None,
     feed_ids: List[int] = None,
     priority: str = None,
     priorities: List[str] = None,
+    start_date: datetime = None,
+    end_date: datetime = None,
+    fetched_from: datetime = None,
+    fetched_to: datetime = None,
     is_read: bool = None,
     is_starred: bool = None,
     is_error: bool = None,
-) -> List[models.Article]:
-    """Get articles with optional filtering."""
-    query = db.query(models.Article).options(
-        selectinload(models.Article.summaries),
-        selectinload(models.Article.feed),
-        selectinload(models.Article.topics).selectinload(models.ArticleTopic.topic)
-    )
-
+):
+    """The article browser's filters, shared by list, count and mark-all-read so the three can
+    never disagree about which articles a filter selects."""
     # Filter by feed(s)
     if feed_ids:
         query = query.filter(models.Article.feed_id.in_(feed_ids))
@@ -234,7 +229,6 @@ def get_articles(
         )
         query = query.filter(models.Article.id.in_(article_ids_with_topics))
 
-    # Filter by status
     if status:
         query = query.filter(models.Article.status == status)
 
@@ -244,7 +238,6 @@ def get_articles(
     elif priority:
         query = query.filter(models.Article.priority == priority)
 
-    # Filter by is_read
     if is_read is not None:
         query = query.filter(models.Article.is_read == is_read)
 
@@ -272,74 +265,50 @@ def get_articles(
     if search_query and search_query.strip():
         query = query.filter(_article_search_filter(search_query))
 
-    # Order by published date descending
-    query = query.order_by(desc(models.Article.published_at))
+    return query
 
+
+def get_articles(db: Session, skip: int = 0, limit: int = 100, **filters) -> List[models.Article]:
+    """Get articles matching `filters` (see `_apply_article_filters`), newest first."""
+    query = db.query(models.Article).options(
+        selectinload(models.Article.summaries),
+        selectinload(models.Article.feed),
+        selectinload(models.Article.topics).selectinload(models.ArticleTopic.topic)
+    )
+    query = _apply_article_filters(db, query, **filters)
+    query = query.order_by(desc(models.Article.published_at))
     return query.offset(skip).limit(limit).all()
 
 
-def count_articles(
-    db: Session,
-    topic_ids: List[int] = None,
-    search_query: str = None,
-    status: str = None,
-    feed_id: int = None,
-    feed_ids: List[int] = None,
-    priority: str = None,
-    priorities: List[str] = None,
-    start_date: datetime = None,
-    end_date: datetime = None,
-    fetched_from: datetime = None,
-    fetched_to: datetime = None,
-    is_read: bool = None,
-    is_starred: bool = None,
-    is_error: bool = None,
-) -> int:
-    """Count articles with optional filtering."""
-    query = db.query(func.count(models.Article.id))
+def count_articles(db: Session, **filters) -> int:
+    """Count articles matching `filters` (see `_apply_article_filters`)."""
+    return _apply_article_filters(db, db.query(func.count(models.Article.id)), **filters).scalar()
 
-    if feed_ids:
-        query = query.filter(models.Article.feed_id.in_(feed_ids))
-    elif feed_id:
-        query = query.filter(models.Article.feed_id == feed_id)
 
-    if topic_ids:
-        article_ids_with_topics = db.query(models.ArticleTopic.article_id).filter(
-            models.ArticleTopic.topic_id.in_(topic_ids)
-        )
-        query = query.filter(models.Article.id.in_(article_ids_with_topics))
+def get_article_counts(db: Session) -> Dict[str, Any]:
+    """Sidebar badge counts. by_priority/by_feed/unimportant/unread are scoped to unread,
+    non-Error articles ("how many are left to triage"); Error articles are only in error_count."""
+    unread_work = (models.Article.is_read.is_(False), ~error_clause())
 
-    if status:
-        query = query.filter(models.Article.status == status)
+    priority_rows = db.query(models.Article.priority, func.count(models.Article.id)).filter(
+        models.Article.priority.isnot(None), *unread_work
+    ).group_by(models.Article.priority).all()
+    feed_rows = db.query(models.Article.feed_id, func.count(models.Article.id)).filter(
+        *unread_work
+    ).group_by(models.Article.feed_id).all()
 
-    if priorities:
-        query = query.filter(models.Article.priority.in_(priorities))
-    elif priority:
-        query = query.filter(models.Article.priority == priority)
+    def count(*criteria) -> int:
+        return db.query(func.count(models.Article.id)).filter(*criteria).scalar() or 0
 
-    if is_read is not None:
-        query = query.filter(models.Article.is_read == is_read)
-
-    if is_starred is not None:
-        query = query.filter(models.Article.is_starred == is_starred)
-
-    if is_error is not None:
-        query = query.filter(error_clause() if is_error else ~error_clause())
-
-    if start_date:
-        query = query.filter(models.Article.published_at >= start_date)
-    if end_date:
-        query = query.filter(models.Article.published_at <= end_date)
-
-    if fetched_from:
-        query = query.filter(models.Article.fetched_at >= fetched_from)
-    if fetched_to:
-        query = query.filter(models.Article.fetched_at <= fetched_to)
-
-    if search_query and search_query.strip():
-        query = query.filter(_article_search_filter(search_query))
-
-    return query.scalar()
+    return {
+        "by_priority": {p: c for p, c in priority_rows},
+        "by_feed": {str(f): c for f, c in feed_rows},
+        "unimportant_count": count(models.Article.importance == "unimportant", *unread_work),
+        "unread_count": count(*unread_work),
+        "read_count": count(models.Article.is_read.is_(True)),
+        "starred_count": count(models.Article.is_starred.is_(True)),
+        "error_count": count_error_articles(db),
+    }
 
 
 def _bulletin_candidate_filter(query, priorities: List[str] = None, include_favorites: bool = False):
@@ -422,63 +391,16 @@ def mark_article_read(db: Session, article_id: int) -> Optional[models.Article]:
     return article
 
 
-def mark_articles_read_bulk(
-    db: Session,
-    article_ids: Optional[List[int]] = None,
-    topic_ids: List[int] = None,
-    search_query: str = None,
-    status: str = None,
-    feed_id: int = None,
-    feed_ids: List[int] = None,
-    priority: str = None,
-    start_date: datetime = None,
-    end_date: datetime = None,
-    fetched_from: datetime = None,
-    fetched_to: datetime = None,
-    is_starred: bool = None,
-    is_error: bool = None,
-) -> int:
-    """Mark multiple articles as read. If article_ids is given, marks just those.
-    Otherwise marks every unread article matching the given filters (no filters = all unread)."""
+def mark_articles_read_bulk(db: Session, article_ids: Optional[List[int]] = None, **filters) -> int:
+    """Mark multiple articles as read. If article_ids is given, marks just those. Otherwise marks
+    every unread article matching `filters` — the same filters as `get_articles` (no filters =
+    all unread)."""
     query = db.query(models.Article).filter(models.Article.is_read.is_(False))
     if article_ids is not None:
         query = query.filter(models.Article.id.in_(article_ids))
     else:
-        if feed_ids:
-            query = query.filter(models.Article.feed_id.in_(feed_ids))
-        elif feed_id:
-            query = query.filter(models.Article.feed_id == feed_id)
-
-        if topic_ids:
-            article_ids_with_topics = db.query(models.ArticleTopic.article_id).filter(
-                models.ArticleTopic.topic_id.in_(topic_ids)
-            )
-            query = query.filter(models.Article.id.in_(article_ids_with_topics))
-
-        if status:
-            query = query.filter(models.Article.status == status)
-
-        if priority:
-            query = query.filter(models.Article.priority == priority)
-
-        if is_starred is not None:
-            query = query.filter(models.Article.is_starred == is_starred)
-
-        if is_error is not None:
-            query = query.filter(error_clause() if is_error else ~error_clause())
-
-        if start_date:
-            query = query.filter(models.Article.published_at >= start_date)
-        if end_date:
-            query = query.filter(models.Article.published_at <= end_date)
-
-        if fetched_from:
-            query = query.filter(models.Article.fetched_at >= fetched_from)
-        if fetched_to:
-            query = query.filter(models.Article.fetched_at <= fetched_to)
-
-        if search_query and search_query.strip():
-            query = query.filter(_article_search_filter(search_query))
+        filters.pop("is_read", None)
+        query = _apply_article_filters(db, query, **filters)
 
     count = query.update({models.Article.is_read: True}, synchronize_session=False)
     db.commit()
@@ -526,11 +448,12 @@ def mark_articles_pending(db: Session, article_ids: List[int]) -> int:
     return count
 
 
-def reset_stale_pending_articles(db: Session) -> int:
-    """Move articles stuck in "pending" to "failed". Only safe at startup, when no pipeline or
-    re-process job can be running: a crash/restart mid-run otherwise strands them as
-    "pending", which the Error group excludes, so they could never be retried."""
-    count = db.query(models.Article).filter(models.Article.status == "pending").update(
+def reset_interrupted_articles(db: Session) -> int:
+    """Move articles stuck mid-pipeline ("pending", or "scraped" = page fetched but never
+    classified/summarized) to "failed". Only safe at startup, when no pipeline or re-process job
+    can be running: a crash/restart mid-run otherwise strands them in a state the Error group
+    excludes (`ERROR_EXCLUDED_STATUSES`), so they could never be retried."""
+    count = db.query(models.Article).filter(models.Article.status.in_(ERROR_EXCLUDED_STATUSES)).update(
         {models.Article.status: "failed"}, synchronize_session=False
     )
     db.commit()
@@ -766,15 +689,49 @@ def get_summaries_by_article(
     return query.all()
 
 
+def record_llm_usage(
+    db: Session,
+    kind: str,
+    model: Optional[str],
+    input_tokens: int,
+    output_tokens: int,
+    cost: float,
+    article_id: Optional[int] = None,
+) -> models.LlmUsage:
+    """Book one OpenAI call's spend (see `models.LlmUsage`)."""
+    row = models.LlmUsage(kind=kind, model=model, input_tokens=input_tokens or 0,
+                          output_tokens=output_tokens or 0, cost=cost or 0.0, article_id=article_id)
+    db.add(row)
+    db.commit()
+    return row
+
+
+def backfill_llm_usage_from_summaries(db: Session) -> int:
+    """One-time carry-over: before `llm_usage` existed only `Summary.cost` was recorded. When the
+    table is still empty, copy those costs in (keeping their dates) so this month's limit still
+    sees them. Returns the number of rows copied; 0 once `llm_usage` has any row."""
+    if db.query(models.LlmUsage.id).first() is not None:
+        return 0
+    summaries = db.query(models.Summary).filter(models.Summary.cost.isnot(None)).all()
+    for summary in summaries:
+        db.add(models.LlmUsage(
+            kind="summary", model=summary.model_used, input_tokens=0,
+            output_tokens=summary.tokens_used or 0, cost=summary.cost,
+            article_id=summary.article_id, created_at=summary.created_at,
+        ))
+    db.commit()
+    return len(summaries)
+
+
 def get_total_cost(db: Session, start_date: datetime = None, end_date: datetime = None) -> float:
-    """Calculate total API costs."""
-    query = db.query(func.sum(models.Summary.cost))
-    
+    """Total OpenAI spend (every recorded call) in the given window."""
+    query = db.query(func.sum(models.LlmUsage.cost))
+
     if start_date:
-        query = query.filter(models.Summary.created_at >= start_date)
+        query = query.filter(models.LlmUsage.created_at >= start_date)
     if end_date:
-        query = query.filter(models.Summary.created_at <= end_date)
-    
+        query = query.filter(models.LlmUsage.created_at <= end_date)
+
     result = query.scalar()
     return result if result else 0.0
 
@@ -849,6 +806,16 @@ def get_topic_by_name(db: Session, name: str) -> Optional[models.Topic]:
 def get_topics(db: Session) -> List[models.Topic]:
     """Get all topics."""
     return db.query(models.Topic).all()
+
+
+def get_enabled_topics(db: Session) -> List[models.Topic]:
+    """Topics the classifier may assign, from the `enabled_topics` setting (comma-separated ids,
+    Ayarlar › Kategoriler). No selection — or one that matches no existing topic — means all."""
+    raw = get_setting(db, "enabled_topics") or ""
+    ids = {int(part) for part in raw.split(",") if part.strip().isdigit()}
+    topics = get_topics(db)
+    enabled = [t for t in topics if t.id in ids]
+    return enabled or topics
 
 
 def get_topics_with_counts(db: Session, feed_id: int = None) -> List[Dict[str, Any]]:
@@ -998,6 +965,15 @@ def get_setting(db: Session, key: str) -> Optional[str]:
     return setting.value if setting else None
 
 
+def get_feed_refresh_interval(db: Session) -> int:
+    """Seconds between scheduled refreshes of all feeds (`feed_refresh_interval` setting)."""
+    raw = get_setting(db, "feed_refresh_interval")
+    try:
+        return int(raw) if raw else settings.feed_refresh_interval
+    except ValueError:
+        return settings.feed_refresh_interval
+
+
 def set_setting(db: Session, key: str, value: str) -> models.Settings:
     """Set a setting value."""
     setting = db.query(models.Settings).filter(models.Settings.key == key).first()
@@ -1094,16 +1070,21 @@ def get_user(db: Session, user_id: int) -> Optional[models.User]:
     return db.query(models.User).filter(models.User.id == user_id).first()
 
 
+def normalize_email(email: str) -> str:
+    """E-mail addresses are case-insensitive: stored and compared trimmed + lowercase."""
+    return (email or "").strip().lower()
+
+
 def get_user_by_email(db: Session, email: str) -> Optional[models.User]:
-    """Get a user by email address."""
-    return db.query(models.User).filter(models.User.email == email).first()
+    """Get a user by email address, ignoring case (also finds rows stored before normalization)."""
+    return db.query(models.User).filter(func.lower(models.User.email) == normalize_email(email)).first()
 
 
 def get_first_active_admin(db: Session, preferred_email: Optional[str] = None) -> Optional[models.User]:
     """Get the active admin with `preferred_email` if given, else the oldest active admin."""
     query = db.query(models.User).filter(models.User.role == "admin", models.User.is_active.is_(True))
     if preferred_email:
-        preferred = query.filter(models.User.email == preferred_email).first()
+        preferred = query.filter(func.lower(models.User.email) == normalize_email(preferred_email)).first()
         if preferred:
             return preferred
     return query.order_by(models.User.created_at, models.User.id).first()
@@ -1120,8 +1101,8 @@ def create_user(
     hashed_password: str,
     role: str = "user"
 ) -> models.User:
-    """Create a new user with a hashed password."""
-    user = models.User(email=email, hashed_password=hashed_password, role=role)
+    """Create a new user with a hashed password (e-mail stored normalized)."""
+    user = models.User(email=normalize_email(email), hashed_password=hashed_password, role=role)
     db.add(user)
     db.commit()
     db.refresh(user)

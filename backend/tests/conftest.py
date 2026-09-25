@@ -10,7 +10,7 @@ PostgreSQL DB or start background jobs during tests.
 import itertools
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from fastapi.testclient import TestClient
@@ -21,6 +21,28 @@ from app.core.security import hash_password, create_access_token
 from app.main import app
 
 
+@pytest.fixture(autouse=True)
+def fake_dns(monkeypatch):
+    """Tests never do real DNS lookups: the SSRF guard resolves hosts through this fake.
+    IP literals resolve to themselves, `localhost` and `*.internal` to private addresses,
+    everything else to a public one."""
+    import ipaddress
+    from app.core import url_safety
+
+    def resolve(hostname):
+        try:
+            return {str(ipaddress.ip_address(hostname))}
+        except ValueError:
+            pass
+        if hostname == "localhost":
+            return {"127.0.0.1"}
+        if hostname.endswith(".internal"):
+            return {"10.0.0.5"}
+        return {"93.184.216.34"}
+
+    monkeypatch.setattr(url_safety, "_resolve_host", resolve, raising=False)
+
+
 @pytest.fixture()
 def db_session():
     engine = create_engine(
@@ -28,6 +50,15 @@ def db_session():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+
+    # SQLite ignores foreign keys unless asked; PostgreSQL (prod) always enforces them.
+    # Without this, a delete that violates an FK passes here and 500s in production.
+    @event.listens_for(engine, "connect")
+    def _enable_sqlite_foreign_keys(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     Base.metadata.create_all(bind=engine)
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     session = TestingSessionLocal()
@@ -163,3 +194,19 @@ def _make_summary(db_session, article_id, *, summary_type="standard",
     db_session.commit()
     db_session.refresh(summary)
     return summary
+
+
+def _make_bulletin_classification(db_session, article_id, *, category_set_hash="hash",
+                                   top_category="AVRUPA", subcategory="Genel",
+                                   article_type="haber"):
+    row = models.ArticleBulletinClassification(
+        article_id=article_id,
+        category_set_hash=category_set_hash,
+        top_category=top_category,
+        subcategory=subcategory,
+        article_type=article_type,
+    )
+    db_session.add(row)
+    db_session.commit()
+    db_session.refresh(row)
+    return row

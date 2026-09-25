@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { loginAs } from './helpers/auth';
+import { ADMIN_USER, loginAs } from './helpers/auth';
 import { mockApi, makePrompt, makeTopic } from './helpers/mockApi';
 
 async function openClassificationEditor(page: import('@playwright/test').Page) {
@@ -226,7 +226,7 @@ test('a topic added in Kategoriler shows up in the classification prompt locked 
 });
 
 test('the summarization locked part follows the summary types enabled in Ayarlar › Özet Türleri', async ({ page }) => {
-  await loginAs(page);
+  await loginAs(page, ADMIN_USER);
   const prompts = new Map([['summarization', makePrompt('summarization', { prompt_text: 'Özet promptu', is_active: true })]]);
   await mockApi(page, { articles: [], prompts, settings: { enabled_summary_types: 'brief,standard,detailed' } });
   await page.goto('/');

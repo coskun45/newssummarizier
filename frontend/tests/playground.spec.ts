@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { loginAs } from './helpers/auth';
+import { ADMIN_USER, loginAs } from './helpers/auth';
 import { mockApi, makeArticle, makeFeed, makePlaygroundSettings } from './helpers/mockApi';
 
 const NATO = makeArticle({ id: 1, title: 'NATO erweitert Präsenz', feedId: 1, cleaned_content: 'Langer NATO Text' });
@@ -7,7 +7,8 @@ const OTHER = makeArticle({ id: 2, title: 'Wetter in Berlin', feedId: 2, cleaned
 const FEEDS = [makeFeed({ id: 1, title: 'DW Deutsch' }), makeFeed({ id: 2, title: 'Tagesschau' })];
 
 async function openPlayground(page: Page) {
-  await loginAs(page);
+  // Playground runs cost OpenAI budget — admin-only (#32)
+  await loginAs(page, ADMIN_USER);
   const state = await mockApi(page, { articles: [NATO, OTHER], feeds: FEEDS });
   await page.goto('/');
   await page.getByRole('button', { name: 'Playground', exact: true }).click();

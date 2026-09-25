@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { loginAs } from './helpers/auth';
+import { ADMIN_USER, loginAs } from './helpers/auth';
 import { mockApi, makeArticle } from './helpers/mockApi';
 
 // "Error" = an article that never received a severity label (Yüksek/Orta/Düşük/Önemsiz).
@@ -100,7 +100,7 @@ test('a read error article shows the Hata badge in the archive', async ({ page }
 });
 
 test('a successfully re-processed error article moves to the unread list and counts update', async ({ page }) => {
-  await loginAs(page);
+  await loginAs(page, ADMIN_USER);
   await mockApi(page, {
     articles: [
       makeArticle({ title: 'Retry Me', importance: null, priority: null, is_read: true }),
@@ -119,7 +119,7 @@ test('a successfully re-processed error article moves to the unread list and cou
 });
 
 test('single "Tekrar dene" re-runs just that article and it leaves the Error tab', async ({ page }) => {
-  await loginAs(page);
+  await loginAs(page, ADMIN_USER);
   const target = errorArticle('Retry Me');
   await mockApi(page, { articles: [target, errorArticle('Stay Broken')] });
   await openNews(page);
@@ -137,7 +137,7 @@ test('single "Tekrar dene" re-runs just that article and it leaves the Error tab
 });
 
 test('bulk: selected articles are re-run together', async ({ page }) => {
-  await loginAs(page);
+  await loginAs(page, ADMIN_USER);
   const a = errorArticle('Bulk A');
   const b = errorArticle('Bulk B');
   const c = errorArticle('Bulk C');
@@ -161,7 +161,7 @@ test('bulk: selected articles are re-run together', async ({ page }) => {
 });
 
 test('bulk: "Tümünü Tekrar Dene" asks for confirmation then re-runs every error', async ({ page }) => {
-  await loginAs(page);
+  await loginAs(page, ADMIN_USER);
   await mockApi(page, { articles: [errorArticle('All A'), errorArticle('All B')] });
   await openNews(page);
   await page.getByRole('button', { name: 'Error' }).click();
@@ -177,7 +177,7 @@ test('bulk: "Tümünü Tekrar Dene" asks for confirmation then re-runs every err
 });
 
 test('a labelled article whose processing failed (no summary) is an error and can be retried', async ({ page }) => {
-  await loginAs(page);
+  await loginAs(page, ADMIN_USER);
   const failed = makeArticle({ title: 'High No Summary', importance: 'important', priority: 'high', status: 'failed' });
   await mockApi(page, {
     articles: [failed, makeArticle({ title: 'Fine', importance: 'important', priority: 'high' })],
@@ -213,7 +213,7 @@ test('empty Error tab says there are no errors instead of "not found / loading"'
 });
 
 test('"Tümünü Tekrar Dene" does nothing when the confirmation is dismissed', async ({ page }) => {
-  await loginAs(page);
+  await loginAs(page, ADMIN_USER);
   await mockApi(page, { articles: [errorArticle('Keep Me')] });
   await openNews(page);
   await page.getByRole('button', { name: 'Error' }).click();

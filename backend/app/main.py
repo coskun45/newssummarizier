@@ -30,14 +30,17 @@ async def lifespan(app: FastAPI):
     init_db()
     logger.info("Database initialized")
 
-    # Articles left "pending" by an interrupted run would be invisible to the Error tab
+    # Articles left "pending"/"scraped" by an interrupted run would be invisible to the Error tab
     from app.db.database import SessionLocal
     from app.db import crud
     with SessionLocal() as db:
-        stale = crud.reset_stale_pending_articles(db)
+        stale = crud.reset_interrupted_articles(db)
         fixed = crud.fix_summarized_status(db)
+        backfilled = crud.backfill_llm_usage_from_summaries(db)
+    if backfilled:
+        logger.info(f"Carried {backfilled} summary cost(s) over into llm_usage")
     if stale:
-        logger.warning(f"Reset {stale} article(s) stuck in 'pending' to 'failed'")
+        logger.warning(f"Reset {stale} article(s) stuck in 'pending'/'scraped' to 'failed'")
     if fixed:
         logger.warning(f"Reset {fixed} article(s) wrongly marked 'summarized' to 'failed'")
 
@@ -50,7 +53,7 @@ async def lifespan(app: FastAPI):
     if feed_id:
         logger.info(f"Feed ID {feed_id} ready. Use manual refresh button to fetch news.")
 
-    # Start periodic scheduler (runs feeds at the top of every hour)
+    # Start periodic scheduler (runs feeds every feed_refresh_interval seconds, set in Ayarlar)
     start_scheduler()
 
     yield

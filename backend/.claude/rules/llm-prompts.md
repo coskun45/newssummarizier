@@ -39,8 +39,8 @@ it). This rule covers the prompts it sends, the Playground dry-run, and cost tra
   is English but demands Turkish output. Summaries must stay Turkish.
 
 ## Playground (`run_playground`, `/api/playground`)
-- **The Playground is a dry run — it NEVER writes to the DB** (no summaries, no article updates, no
-  logs). It must mirror the real pipeline's decisions (skip summarization on `unimportant`/failed
+- **The Playground is a dry run — it NEVER writes article data** (no summaries, no article updates,
+  no logs). The one row it does write is its `llm_usage` spend (see below). It must mirror the real pipeline's decisions (skip summarization on `unimportant`/failed
   classification unless `force_summarize`), so a pipeline behavior change updates both paths and
   `tests/test_playground.py`.
 - **Per-stage failures are reported in the stage's `error`, not raised** — one failing summary type
@@ -54,8 +54,11 @@ it). This rule covers the prompts it sends, the Playground dry-run, and cost tra
   `max_tokens_*`), via `_summary_type_config`. Temperatures are the module constants.
 - **A new model needs a `PRICING` entry** — unknown models silently fall back to `gpt-3.5-turbo`
   prices, so cost limits and stats go wrong without any error.
-- **Call `check_cost_limits()` before model calls** and return `cost`/`tokens_used`/`model_used`
-  from every call so they reach the `Summary` row and the stats.
+- **Call `check_cost_limits()` before model calls, and book every call with `record_llm_usage(kind,
+  ...)`** — classification, summary, bulletin and playground alike, failed/retried attempts
+  included. The limits and `/stats/costs` sum the `llm_usage` table only (`crud.get_total_cost`), so
+  a call that isn't booked is invisible to the limits. Take input tokens from
+  `response.usage.prompt_tokens` (`_input_tokens`), tiktoken is only the fallback.
 - **A new summary type** = `DEFAULT_SUMMARY_INSTRUCTIONS` entry (`SUMMARY_TYPES` derives from it) +
   `_summary_type_config` + a `max_tokens_output_*` setting (config → `.env.example` → README) +
   frontend types and Ayarlar › Özet Türleri.

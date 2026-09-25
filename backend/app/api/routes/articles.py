@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from datetime import datetime
 from app.db.database import get_db
 from app.db import crud, models
+from app.api.deps import require_admin
 from app.services.summary_service import article_source_name
 
 
@@ -88,6 +89,33 @@ class ArticleListResponse(BaseModel):
     limit: int
 
 
+def _to_article_response(article: models.Article, detail: bool = False):
+    """Build the API shape of an article (list rows and the detail view share it)."""
+    data = {
+        "id": article.id,
+        "url": article.url,
+        "title": article.title,
+        "author": article.author,
+        "source": _article_source(article),
+        "published_at": article.published_at,
+        "fetched_at": article.fetched_at,
+        "status": article.status,
+        "importance": article.importance,
+        "priority": article.priority,
+        "image_url": article.image_url,
+        "topics": [
+            {"id": at.topic.id, "name": at.topic.name, "color": at.topic.color, "confidence": at.confidence}
+            for at in article.topics
+        ],
+        "has_summaries": len(article.summaries) > 0,
+        "is_read": article.is_read,
+        "is_starred": article.is_starred,
+    }
+    if detail:
+        return ArticleDetailResponse(**data, raw_content=article.raw_content, cleaned_content=article.cleaned_content)
+    return ArticleResponse(**data)
+
+
 @router.get("/", response_model=ArticleListResponse)
 def list_articles(
     skip: int = Query(0, ge=0),
@@ -151,36 +179,8 @@ def list_articles(
         is_error=is_error,
     )
 
-    # Transform to response model
-    articles_response = []
-    for article in articles:
-        article_data = {
-            "id": article.id,
-            "url": article.url,
-            "title": article.title,
-            "author": article.author,
-            "source": _article_source(article),
-            "published_at": article.published_at,
-            "fetched_at": article.fetched_at,
-            "status": article.status,
-            "importance": article.importance,
-            "priority": article.priority,
-            "image_url": article.image_url,
-            "topics": [
-                {
-                    "id": at.topic.id,
-                    "name": at.topic.name,
-                    "color": at.topic.color,
-                    "confidence": at.confidence
-                }
-                for at in article.topics
-            ],
-            "has_summaries": len(article.summaries) > 0,
-            "is_read": article.is_read,
-            "is_starred": article.is_starred,
-        }
-        articles_response.append(ArticleResponse(**article_data))
-    
+    articles_response = [_to_article_response(article) for article in articles]
+
     return ArticleListResponse(
         articles=articles_response,
         total=total,
@@ -291,9 +291,10 @@ def get_article_ids_by_topic(topic_id: int, db: Session = Depends(get_db)):
 def delete_articles_by_priority(
     priority: str,
     feed_ids: Optional[str] = Query(None, description="Comma-separated feed IDs to scope the delete to"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_admin),
 ):
-    """Delete every unread article with this priority, optionally scoped to feed_ids."""
+    """Delete every unread article with this priority, optionally scoped to feed_ids (admin only)."""
     if priority not in VALID_PRIORITIES:
         raise HTTPException(status_code=400, detail="Invalid priority; expected one of: high, med, low")
     count = crud.delete_articles_by_priority(db, priority, feed_ids=_parse_comma_ids(feed_ids, "feed IDs"))
@@ -316,9 +317,10 @@ def archive_articles_by_priority(
 @router.post("/unimportant/delete-all")
 def delete_articles_unimportant(
     feed_ids: Optional[str] = Query(None, description="Comma-separated feed IDs to scope the delete to"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_admin),
 ):
-    """Delete every unread unimportant article, optionally scoped to feed_ids."""
+    """Delete every unread unimportant article, optionally scoped to feed_ids (admin only)."""
     count = crud.delete_articles_unimportant(db, feed_ids=_parse_comma_ids(feed_ids, "feed IDs"))
     return {"deleted_count": count}
 
@@ -345,10 +347,12 @@ class ReprocessRequest(BaseModel):
 def reprocess_articles(
     body: ReprocessRequest,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_admin),
 ):
     """
-    Re-run classification + summarization for "Error" articles (no severity label).
+    Re-run classification + summarization for "Error" articles (no severity label). Admin only —
+    it spends OpenAI budget.
     Provide article_ids for specific articles, or all_errors=true for every Error article
     (optionally scoped to feed_ids). Ids that aren't in the Error group are ignored.
     Runs in the background — poll GET /reprocess-status for progress.
@@ -386,58 +390,7 @@ def get_article_counts(db: Session = Depends(get_db)):
     sidebar filter badges, which are meant to read as "how many are left to
     triage", so they should drop as articles are archived, not just deleted.
     """
-    from sqlalchemy import func
-    # Error articles (unlabelled or failed) are not "unread work" — they are counted in
-    # error_count and listed in the Error tab instead.
-    not_error = ~crud.error_clause()
-
-    priority_rows = db.query(
-        models.Article.priority,
-        func.count(models.Article.id)
-    ).filter(
-        models.Article.priority.isnot(None),
-        models.Article.is_read.is_(False),
-        not_error,
-    ).group_by(models.Article.priority).all()
-
-    feed_rows = db.query(
-        models.Article.feed_id,
-        func.count(models.Article.id)
-    ).filter(
-        models.Article.is_read.is_(False),
-        not_error,
-    ).group_by(models.Article.feed_id).all()
-
-    unimportant_count = db.query(func.count(models.Article.id)).filter(
-        models.Article.importance == "unimportant",
-        models.Article.is_read.is_(False),
-        not_error,
-    ).scalar() or 0
-
-    unread_count = db.query(func.count(models.Article.id)).filter(
-        models.Article.is_read.is_(False),
-        not_error,
-    ).scalar() or 0
-
-    read_count = db.query(func.count(models.Article.id)).filter(
-        models.Article.is_read.is_(True)
-    ).scalar() or 0
-
-    starred_count = db.query(func.count(models.Article.id)).filter(
-        models.Article.is_starred.is_(True)
-    ).scalar() or 0
-
-    error_count = crud.count_error_articles(db)
-
-    return {
-        "by_priority": {p: c for p, c in priority_rows},
-        "by_feed": {str(f): c for f, c in feed_rows},
-        "unimportant_count": unimportant_count,
-        "unread_count": unread_count,
-        "read_count": read_count,
-        "starred_count": starred_count,
-        "error_count": error_count,
-    }
+    return crud.get_article_counts(db)
 
 
 @router.get("/{article_id}", response_model=ArticleDetailResponse)
@@ -449,35 +402,7 @@ def get_article(article_id: int, db: Session = Depends(get_db)):
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
     
-    article_data = {
-        "id": article.id,
-        "url": article.url,
-        "title": article.title,
-        "author": article.author,
-        "source": _article_source(article),
-        "published_at": article.published_at,
-        "fetched_at": article.fetched_at,
-        "raw_content": article.raw_content,
-        "cleaned_content": article.cleaned_content,
-        "status": article.status,
-        "importance": article.importance,
-        "priority": article.priority,
-        "image_url": article.image_url,
-        "topics": [
-            {
-                "id": at.topic.id,
-                "name": at.topic.name,
-                "color": at.topic.color,
-                "confidence": at.confidence
-            }
-            for at in article.topics
-        ],
-        "has_summaries": len(article.summaries) > 0,
-        "is_read": article.is_read,
-        "is_starred": article.is_starred,
-    }
-
-    return ArticleDetailResponse(**article_data)
+    return _to_article_response(article, detail=True)
 
 
 @router.get("/topic/{topic_name}")
@@ -505,35 +430,8 @@ def get_articles_by_topic(
     
     total = crud.count_articles(db=db, topic_ids=[topic.id])
     
-    articles_response = []
-    for article in articles:
-        article_data = {
-            "id": article.id,
-            "url": article.url,
-            "title": article.title,
-            "author": article.author,
-            "source": _article_source(article),
-            "published_at": article.published_at,
-            "fetched_at": article.fetched_at,
-            "status": article.status,
-            "importance": article.importance,
-            "priority": article.priority,
-            "image_url": article.image_url,
-            "topics": [
-                {
-                    "id": at.topic.id,
-                    "name": at.topic.name,
-                    "color": at.topic.color,
-                    "confidence": at.confidence
-                }
-                for at in article.topics
-            ],
-            "has_summaries": len(article.summaries) > 0,
-            "is_read": article.is_read,
-            "is_starred": article.is_starred,
-        }
-        articles_response.append(ArticleResponse(**article_data))
-    
+    articles_response = [_to_article_response(article) for article in articles]
+
     return ArticleListResponse(
         articles=articles_response,
         total=total,

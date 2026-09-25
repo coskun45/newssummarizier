@@ -252,7 +252,8 @@ Aşağıdaki tablo öne çıkanlardır; tam liste `.env.example`'dadır. Contain
 | `CORS_ORIGINS` | `http://localhost:5173,...` | İzin verilen CORS origin'leri (deploy sunucu IP'sine ayarlar) |
 | `DEFAULT_MODEL` / `DETAILED_MODEL` | `gpt-4o-mini` / `gpt-4o` | Kategorizasyon/kısa özet ve detaylı özet modelleri |
 | `MAX_TOKENS_OUTPUT_BRIEF` / `_STANDARD` / `_DETAILED` | `1500` / `3000` / `10000` | Özet tipine göre çıktı token limiti |
-| `DAILY_COST_LIMIT` / `MONTHLY_COST_LIMIT` | `10.0` / `100.0` | Maliyet limitleri (USD) |
+| `DAILY_COST_LIMIT` / `MONTHLY_COST_LIMIT` | `10.0` / `100.0` | Maliyet limitleri (USD) — sınıflandırma, özet, bülten ve Playground dahil tüm OpenAI çağrılarının toplamı |
+| `FEED_REFRESH_INTERVAL` | `3600` | Otomatik feed yenileme aralığının varsayılanı (saniye); admin Ayarlar › RSS Beslemeleri'nden değiştirir |
 
 ### Sürümleme
 
@@ -444,14 +445,14 @@ DATABASE_URL=postgresql+psycopg2://bulten:changeme@localhost:5432/bulten
 
 # RSS Feed
 DEFAULT_FEED_URL=https://rss.dw.com/atom/rss-de-all
-FEED_REFRESH_INTERVAL=1800  # 30 dakika
+FEED_REFRESH_INTERVAL=3600  # 1 saat (Ayarlar'dan değiştirilebilir)
 
 # Scraping
 SCRAPING_ENABLED=True
 SCRAPING_DELAY=1.0  # İstekler arası saniye
 
 # Maliyet Limitleri
-DAILY_COST_LIMIT=5.0  # USD
+DAILY_COST_LIMIT=10.0  # USD
 MONTHLY_COST_LIMIT=100.0  # USD
 
 # Bülten Raporu
@@ -618,7 +619,7 @@ npm install
 
 1. `.env` dosyasında `DAILY_COST_LIMIT` değerini düşürün
 2. GPT-4 yerine sadece `gpt-3.5-turbo` kullanın
-3. `FEED_REFRESH_INTERVAL` değerini artırın
+3. Ayarlar › RSS Beslemeleri'nde otomatik yenileme aralığını artırın
 
 ### Docker sorunları
 

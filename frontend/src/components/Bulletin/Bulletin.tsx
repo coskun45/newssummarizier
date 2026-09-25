@@ -86,7 +86,12 @@ async function extractErrorMessage(
   return fallback;
 }
 
-function BulletinPanel() {
+interface BulletinPanelProps {
+  /** Generated reports are shared by all users, so only admins may delete them. */
+  isAdmin?: boolean;
+}
+
+function BulletinPanel({ isAdmin = false }: BulletinPanelProps) {
   const [dateFilter, setDateFilter] = useState<DateFilterState>(EMPTY_DATE_FILTER);
   const [selectedPriorities, setSelectedPriorities] = useState<string[]>([]);
   const [includeFavorites, setIncludeFavorites] = useState(false);
@@ -388,13 +393,15 @@ function BulletinPanel() {
                   >
                     <DocumentArrowDownIcon />
                   </button>
-                  <button
-                    className="btn btn-icon btn-secondary"
-                    onClick={() => handleDeleteGenerated(bulletin)}
-                    aria-label="Sil"
-                  >
-                    <TrashIcon />
-                  </button>
+                  {isAdmin && (
+                    <button
+                      className="btn btn-icon btn-secondary"
+                      onClick={() => handleDeleteGenerated(bulletin)}
+                      aria-label="Sil"
+                    >
+                      <TrashIcon />
+                    </button>
+                  )}
                 </div>
               </li>
             ))}

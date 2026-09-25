@@ -29,7 +29,14 @@ from app.core.config import settings
 from app.core.exceptions import BulletinGenerationError
 from app.db import crud, models
 from app.services import docx_service
-from app.services.summary_service import check_cost_limits, get_openai_client
+from app.services.summary_service import (
+    article_source_name,
+    calculate_cost,
+    check_cost_limits,
+    count_tokens,
+    get_openai_client,
+    record_llm_usage,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -71,10 +78,19 @@ def compute_category_set_hash(category_names: List[str]) -> str:
 
 
 def _article_source(article: models.Article) -> str:
-    try:
-        return urlparse(article.url).hostname or ""
-    except Exception:
-        return ""
+    """Same "Kaynak" as the article cards and summary header: the feed's name, else the domain."""
+    return article_source_name(article.feed.title if article.feed else None, article.url) or ""
+
+
+def _article_id(value: Any) -> Optional[int]:
+    """The model sometimes sends ids as strings ("123"); anything non-numeric is no id."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return None
 
 
 def _format_feed_lines(feeds: List[models.Feed]) -> List[str]:
@@ -152,6 +168,13 @@ async def _call_json_completion(system_prompt: str, user_prompt: str, max_comple
             max_completion_tokens=max_completion_tokens,
             response_format={"type": "json_object"},
         )
+        usage = getattr(response, "usage", None)
+        input_tokens = getattr(usage, "prompt_tokens", None)
+        if not isinstance(input_tokens, int):
+            input_tokens = count_tokens(system_prompt + prompt, model)
+        output_tokens = getattr(usage, "completion_tokens", 0) or 0
+        record_llm_usage("bulletin", model, input_tokens, output_tokens,
+                         calculate_cost(model, input_tokens, output_tokens))
         content = response.choices[0].message.content
         if content is None:
             last_error = ValueError("OpenAI response content was empty (possibly content-filtered)")
@@ -205,7 +228,7 @@ async def classify_articles_for_bulletin(
 
         payload = await _call_json_completion(system_prompt, user_prompt, max_completion_tokens=1500)
         for entry in payload.get("classifications", []):
-            article_id = entry.get("article_id")
+            article_id = _article_id(entry.get("article_id"))
             subcategory = entry.get("subcategory")
             article_type = entry.get("type")
             top_category = entry.get("top_category")
@@ -252,7 +275,7 @@ async def pick_bulletin_digest(articles: List[models.Article], limit: int = 8) -
 
     digest: List[Dict[str, Any]] = []
     for entry in payload.get("digest", [])[:limit]:
-        article_id = entry.get("article_id")
+        article_id = _article_id(entry.get("article_id"))
         blurb = entry.get("blurb")
         if article_id not in candidate_ids or not blurb:
             continue
@@ -293,8 +316,10 @@ async def generate_bulletin_report(
 
     new_classifications = await classify_articles_for_bulletin(db, uncached_articles, category_names)
     for entry in new_classifications:
-        article = articles_by_id.get(entry["article_id"])
-        if article is None:
+        article = articles_by_id.get(_article_id(entry["article_id"]))
+        # Unknown id, or one the model listed twice: the first answer wins — a second insert
+        # would hit the (article_id, category_set_hash) unique constraint.
+        if article is None or article.id in cached:
             continue
         row = crud.create_bulletin_classification(
             db,

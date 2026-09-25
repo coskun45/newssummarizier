@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { loginAs } from './helpers/auth';
+import { ADMIN_USER, loginAs } from './helpers/auth';
 import { mockApi, makeArticle } from './helpers/mockApi';
 
 function fixtures() {
@@ -28,7 +28,7 @@ test('archive all by priority fires immediately without confirmation', async ({ 
 });
 
 test('delete all by priority opens a confirm modal with the correct count', async ({ page }) => {
-  await loginAs(page);
+  await loginAs(page, ADMIN_USER);
   await mockApi(page, { articles: fixtures() });
   await page.goto('/');
   await page.getByRole('button', { name: 'Haberler', exact: true }).click();
@@ -41,7 +41,7 @@ test('delete all by priority opens a confirm modal with the correct count', asyn
 });
 
 test('"Vazgeç" cancels without sending a request', async ({ page }) => {
-  await loginAs(page);
+  await loginAs(page, ADMIN_USER);
   await mockApi(page, { articles: fixtures() });
   let deleteAllCalled = false;
   await page.route(
@@ -62,7 +62,7 @@ test('"Vazgeç" cancels without sending a request', async ({ page }) => {
 });
 
 test('confirming "Sil" sends the delete-all request and closes the modal', async ({ page }) => {
-  await loginAs(page);
+  await loginAs(page, ADMIN_USER);
   await mockApi(page, { articles: fixtures() });
   await page.goto('/');
   await page.getByRole('button', { name: 'Haberler', exact: true }).click();

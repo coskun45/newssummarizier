@@ -216,7 +216,8 @@ def test_locked_summarization_follows_setting_changes(client, auth_headers, db_s
     assert "brief: " not in locked and "detailed: " not in locked
 
 
-def test_locked_summarization_without_valid_types_says_so(client, auth_headers, db_session):
+def test_locked_summarization_without_valid_types_shows_the_default_types(client, auth_headers, db_session):
+    """A stored value with no known type falls back to all types — what the pipeline generates."""
     from app.db import crud
     from app.services import summary_service
 
@@ -224,6 +225,23 @@ def test_locked_summarization_without_valid_types_says_so(client, auth_headers, 
 
     locked = _summary_locked(client, auth_headers)
 
-    assert "(etkin özet türü yok)" in locked
+    assert all(f"{t}:" in locked for t in summary_service.SUMMARY_TYPES)
     # The language line is fixed and still shown.
     assert summary_service.SUMMARY_LANGUAGE_INSTRUCTION in locked
+
+
+def test_prompt_without_timestamps_does_not_500(client, auth_headers, db_session):
+    """Regression (#33): created_at/updated_at are nullable but the response required a string."""
+    from app.db import models
+
+    prompt = models.SystemPrompt(prompt_type="classification", prompt_text="metin", is_active=True)
+    db_session.add(prompt)
+    db_session.commit()
+    prompt.created_at = None
+    prompt.updated_at = None
+    db_session.commit()
+
+    response = client.get("/api/prompts/classification", headers=auth_headers)
+
+    assert response.status_code == 200
+    assert response.json()["created_at"] is None

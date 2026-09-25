@@ -124,3 +124,39 @@ def test_dev_login_refused_outside_debug(client, monkeypatch, admin_user):
 def test_dev_login_without_admin_user_is_404(client, monkeypatch, test_user):
     _dev_mode(monkeypatch)
     assert client.post("/api/auth/dev-login").status_code == 404
+
+
+# ==================== #33: password policy, e-mail case ====================
+
+def test_create_user_rejects_a_short_password(client, admin_headers):
+    response = client.post("/api/auth/users", json={"email": "new@example.com", "password": "kisa"},
+                           headers=admin_headers)
+    assert response.status_code == 422
+
+
+def test_create_user_email_is_case_insensitive_and_stored_lowercase(client, admin_headers, test_user):
+    """Regression: `Tester@Example.com` could be registered next to `tester@example.com`."""
+    duplicate = client.post("/api/auth/users", json={"email": "Tester@Example.COM", "password": "yeterince-uzun"},
+                            headers=admin_headers)
+    assert duplicate.status_code == 400
+
+    created = client.post("/api/auth/users", json={"email": "  New.User@Example.com ", "password": "yeterince-uzun"},
+                          headers=admin_headers)
+    assert created.status_code == 201
+    assert created.json()["email"] == "new.user@example.com"
+
+
+def test_login_ignores_email_case(client, test_user):
+    response = client.post("/api/auth/login", json={"email": "TESTER@example.com", "password": "testpass123"})
+    assert response.status_code == 200
+
+
+def test_login_finds_a_legacy_mixed_case_account(client, db_session):
+    from app.core.security import hash_password
+    from app.db import models
+
+    db_session.add(models.User(email="Legacy@Example.com", hashed_password=hash_password("testpass123"), role="user"))
+    db_session.commit()
+
+    response = client.post("/api/auth/login", json={"email": "legacy@example.com", "password": "testpass123"})
+    assert response.status_code == 200

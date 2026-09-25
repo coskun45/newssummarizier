@@ -99,7 +99,9 @@ def test_db_routes_without_await_are_sync_so_they_run_in_the_threadpool():
 
 def test_article_processor_node_releases_connection_during_awaits(monkeypatch, db_session, session_spy):
     from app.agents import nodes
+    from app.services import summary_service
 
+    # The node stores the article; the shared summary_service.process_article does the rest.
     monkeypatch.setattr(nodes, "SessionLocal", session_spy)
     feed = _make_feed(db_session)
 
@@ -115,9 +117,9 @@ def test_article_processor_node_releases_connection_during_awaits(monkeypatch, d
         session_spy.check("summarization")
         return {"summary_text": "s", "model_used": "m", "tokens_used": 1, "cost": 0.0}
 
-    monkeypatch.setattr(nodes, "extract_article_content", fake_extract)
-    monkeypatch.setattr(nodes, "categorize_and_prioritize_article", fake_categorize)
-    monkeypatch.setattr(nodes, "generate_summary", fake_summary)
+    monkeypatch.setattr(summary_service, "extract_article_content", fake_extract)
+    monkeypatch.setattr(summary_service, "categorize_and_prioritize_article", fake_categorize)
+    monkeypatch.setattr(summary_service, "generate_summary", fake_summary)
 
     state = {
         "feed_id": feed.id, "feed_url": feed.url, "current_article_index": 0,
@@ -128,7 +130,7 @@ def test_article_processor_node_releases_connection_during_awaits(monkeypatch, d
     out = asyncio.run(nodes.article_processor_node(state))
 
     assert session_spy.violations == []
-    assert "errors" not in out
+    assert out["errors"] == []
     db_session.expire_all()
     assert crud.get_article_by_url(db_session, "https://example.com/x").status == "summarized"
 

@@ -10,9 +10,10 @@ interface ArticleListProps {
   onDeleted?: (id: number) => void;
   isArchiveView?: boolean;
   selectable?: boolean;
+  canReprocess?: boolean;
 }
 
-function ArticleList({ articles, selectedIds = new Set(), onToggleSelect, onSelectAll: _onSelectAll, onDeleted, isArchiveView = false, selectable = false }: ArticleListProps) {
+function ArticleList({ articles, selectedIds = new Set(), onToggleSelect, onSelectAll: _onSelectAll, onDeleted, isArchiveView = false, selectable = false, canReprocess = false }: ArticleListProps) {
 
   return (
     <div className="article-list">
@@ -25,6 +26,7 @@ function ArticleList({ articles, selectedIds = new Set(), onToggleSelect, onSele
           onDeleted={onDeleted}
           isArchiveView={isArchiveView}
           selectable={selectable}
+          canReprocess={canReprocess}
         />
       ))}
     </div>

@@ -46,6 +46,9 @@ interface DashboardProps {
 }
 
 function Dashboard({ currentUser, onLogout }: DashboardProps) {
+  // Admin-only actions (bulk delete, re-process, Playground, settings changes) are hidden for
+  // regular users; the backend rejects them with 403 anyway.
+  const isAdmin = currentUser.role === 'admin';
   const [page, setPage] = useState(1);
   const [selectedTopics, setSelectedTopics] = useState<number[]>([]);
   const [importanceMode, setImportanceMode] = useState<'important' | 'unimportant' | null>(null);
@@ -396,12 +399,14 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
               >
                 Bülten
               </button>
-              <button
-                className={`header-nav-item${activeView === 'playground' ? ' header-nav-item--active' : ''}`}
-                onClick={() => setActiveView('playground')}
-              >
-                Playground
-              </button>
+              {isAdmin && (
+                <button
+                  className={`header-nav-item${activeView === 'playground' ? ' header-nav-item--active' : ''}`}
+                  onClick={() => setActiveView('playground')}
+                >
+                  Playground
+                </button>
+              )}
               <button
                 className={`header-nav-item${activeView === 'analysis' ? ' header-nav-item--active' : ''}`}
                 onClick={() => setActiveView('analysis')}
@@ -496,7 +501,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
               <SettingsNav
                 activeCategory={settingsCategory}
                 onCategoryChange={setSettingsCategory}
-                isAdmin={currentUser.role === 'admin'}
+                isAdmin={isAdmin}
               />
             </aside>
             )}
@@ -510,9 +515,9 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                 </>
               )}
 
-              {activeView === 'bulletin' && <BulletinPanel />}
+              {activeView === 'bulletin' && <BulletinPanel isAdmin={isAdmin} />}
 
-              {activeView === 'playground' && <Playground />}
+              {activeView === 'playground' && isAdmin && <Playground />}
 
               {activeView === 'analysis' && <Analysis />}
 
@@ -603,7 +608,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
 
                   {(activeSection === 'error' || reprocessStatus?.status === 'running') && (
                     <div className="bulk-action-bar">
-                      {activeSection === 'error' && articlesData && articlesData.articles.length > 0 && (
+                      {activeSection === 'error' && isAdmin && articlesData && articlesData.articles.length > 0 && (
                         <>
                           <button
                             className="btn btn-outline btn-sm"
@@ -667,6 +672,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                       onDeleteAllUnimportant={handleDeleteAllUnimportant}
                       onArchiveAllUnimportant={handleArchiveAllUnimportant}
                       deletePending={deleteAllByPriorityMutation.isPending || deleteAllUnimportantMutation.isPending}
+                      canDelete={isAdmin}
                       archivePending={archiveAllByPriorityMutation.isPending || archiveAllUnimportantMutation.isPending}
                     />
                   )}
@@ -759,7 +765,9 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                           onSelectAll={handleSelectAll}
                           onDeleted={handleArticleDeleted}
                           isArchiveView={activeSection === 'archive'}
-                          selectable={activeSection !== 'archive'}
+                          // Error-tab selection only feeds "Seçilenleri Tekrar Dene" (admin-only)
+                          selectable={activeSection !== 'archive' && (activeSection !== 'error' || isAdmin)}
+                          canReprocess={isAdmin}
                         />
                         <Pagination
                           currentPage={page}
