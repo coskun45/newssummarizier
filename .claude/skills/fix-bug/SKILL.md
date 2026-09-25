@@ -67,9 +67,8 @@ Report the failing-then-passing test output — don't just claim it.
 
 ## 5. Wrap up
 
-- **`features.json`**: a pure fix doesn't touch it. If the push hook blocks because feature files
-  changed, and nothing user-facing changed, re-run it as `FEATURES_OK=1 git push ...`. If the fix
-  *did* change what a feature does, update its description instead.
+- **`features.json`**: a pure fix doesn't touch it. If the fix *did* change what a feature does,
+  update its description in the same change.
 - **Docs**: a fix that removes a failure mode users/operators hit may deserve a `## 🐛 Sorun Giderme`
   entry in `README.md` — `/update-docs` handles that before the PR.
 - **Recurring gotcha?** If this class of bug can happen again (a trap in a convention), record it with

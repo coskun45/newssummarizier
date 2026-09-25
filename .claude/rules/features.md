@@ -21,10 +21,8 @@ stays correct if it is updated in the same change that alters a feature.
 - **Feature removed → delete its entry**; **renamed/behavior changed → edit its `title`/`description`**.
   A stale entry misleads users more than a missing one.
 - Pure refactors, bug fixes and styling changes don't touch the file.
-- **Enforced on push** by `.claude/hooks/check_features_json.py` — as a Claude `PreToolUse` hook and in the
-  local `.git/hooks/pre-push` (manual pushes): if files under the `paths:` above changed but `features.json`
-  didn't, the push is stopped. Update the file, or — for a fix/refactor only — push with `FEATURES_OK=1 git push`
-  (PowerShell: `$env:FEATURES_OK=1; git push`).
+- **Not enforced by any hook — keeping it current is Claude's job.** Whenever Claude adds, removes or changes a
+  user-facing feature, it updates `features.json` in the same change, unprompted, and says so in its summary.
 - When following `/implement-requirement`, do this in the implement phase; before a PR, `/update-docs` should
   find `features.json` consistent with `README.md` (Özellikler) — see the frontend `components` rule (`frontend/.claude/rules/components.md`).
 
