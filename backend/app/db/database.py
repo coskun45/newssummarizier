@@ -4,17 +4,35 @@ Database connection and session management.
 from datetime import timezone
 from sqlalchemy import create_engine, event
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.types import TypeDecorator, DateTime as _DateTime
 from app.core.config import settings
 
 _is_sqlite = "sqlite" in settings.database_url
 
+
+def _engine_kwargs(database_url: str) -> dict:
+    """Engine options. For PostgreSQL this is the safety net against pool exhaustion:
+    pre-ping drops dead connections, a short pool_timeout fails a request fast instead of
+    stalling a worker, and server-side timeouts make PostgreSQL itself end a statement or an
+    abandoned "idle in transaction" session that would otherwise pin a pooled connection forever.
+    """
+    if "sqlite" in database_url:
+        return {"connect_args": {"check_same_thread": False}}
+    return {
+        "pool_size": 10,
+        "max_overflow": 10,
+        "pool_timeout": 10,
+        "pool_recycle": 1800,
+        "pool_pre_ping": True,
+        "connect_args": {
+            "options": "-c statement_timeout=120000 -c idle_in_transaction_session_timeout=600000",
+        },
+    }
+
+
 # Create database engine
-engine = create_engine(
-    settings.database_url,
-    connect_args={"check_same_thread": False} if _is_sqlite else {}
-)
+engine = create_engine(settings.database_url, **_engine_kwargs(settings.database_url))
 
 if _is_sqlite:
     @event.listens_for(engine, "connect")
@@ -55,6 +73,18 @@ class UTCDateTime(TypeDecorator):
         if value is not None and value.tzinfo is None:
             value = value.replace(tzinfo=timezone.utc)
         return value
+
+
+def release_connection(db: Session) -> None:
+    """End the session's current transaction so its pooled connection goes back to the pool.
+
+    Call it right before a long `await` (scraping, OpenAI) in background code: a session keeps
+    its connection checked out ("idle in transaction") from its first query until commit — a
+    read, or the `db.refresh()` in every crud create, is enough to re-open one. crud writes
+    commit themselves, so this only closes that implicit read transaction; loaded objects are
+    expired and reload on next access, so read what the await needs into locals first.
+    """
+    db.commit()
 
 
 def get_db():

@@ -17,23 +17,26 @@ async def _process_all_feeds() -> None:
     from app.db import crud
     from app.tasks.background import process_feed_task
 
+    # Read the ids and let the session go: the run lasts for many minutes and each feed
+    # pipeline opens its own sessions.
     db = SessionLocal()
     try:
-        feeds = crud.get_feeds(db, active_only=True)
-        if not feeds:
-            logger.info("Scheduler: no active feeds found.")
-            return
-
-        logger.info(f"Scheduler: starting processing for {len(feeds)} active feed(s).")
-        for feed in feeds:
-            try:
-                await process_feed_task(feed.id)
-            except Exception as exc:
-                logger.error(f"Scheduler: error processing feed {feed.id}: {exc}", exc_info=True)
-
-        logger.info("Scheduler: all feeds processed.")
+        feed_ids = [feed.id for feed in crud.get_feeds(db, active_only=True)]
     finally:
         db.close()
+
+    if not feed_ids:
+        logger.info("Scheduler: no active feeds found.")
+        return
+
+    logger.info(f"Scheduler: starting processing for {len(feed_ids)} active feed(s).")
+    for feed_id in feed_ids:
+        try:
+            await process_feed_task(feed_id)
+        except Exception as exc:
+            logger.error(f"Scheduler: error processing feed {feed_id}: {exc}", exc_info=True)
+
+    logger.info("Scheduler: all feeds processed.")
 
 
 def start_scheduler() -> None:

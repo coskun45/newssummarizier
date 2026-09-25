@@ -47,7 +47,7 @@ class SystemPromptResponse(SystemPromptBase):
 
 
 @router.get("/", response_model=List[SystemPromptResponse])
-async def get_system_prompts(db: Session = Depends(get_db)):
+def get_system_prompts(db: Session = Depends(get_db)):
     """
     Get all system prompts.
     """
@@ -69,7 +69,7 @@ async def get_system_prompts(db: Session = Depends(get_db)):
 
 
 @router.get("/{prompt_type}/locked", response_model=LockedPromptResponse)
-async def get_locked_prompt(prompt_type: str, db: Session = Depends(get_db)):
+def get_locked_prompt(prompt_type: str, db: Session = Depends(get_db)):
     """
     Get the locked (read-only) part the pipeline appends to a prompt, rendered with the live
     data — for `classification` the current topic list plus the JSON output format, for
@@ -87,7 +87,7 @@ async def get_locked_prompt(prompt_type: str, db: Session = Depends(get_db)):
 
 
 @router.get("/{prompt_type}", response_model=SystemPromptResponse)
-async def get_system_prompt(prompt_type: str, db: Session = Depends(get_db)):
+def get_system_prompt(prompt_type: str, db: Session = Depends(get_db)):
     """
     Get a specific system prompt by type.
     """
@@ -106,7 +106,7 @@ async def get_system_prompt(prompt_type: str, db: Session = Depends(get_db)):
 
 
 @router.post("/", response_model=SystemPromptResponse)
-async def create_system_prompt(
+def create_system_prompt(
     prompt: SystemPromptCreate,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_admin),
@@ -132,7 +132,7 @@ async def create_system_prompt(
 
 
 @router.put("/{prompt_type}", response_model=SystemPromptResponse)
-async def update_system_prompt(
+def update_system_prompt(
     prompt_type: str,
     prompt_update: SystemPromptUpdate,
     db: Session = Depends(get_db),

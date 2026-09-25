@@ -206,7 +206,7 @@ Uygulama `deploy.sh` ile bir sunucuya deploy edildiğinde (bkz. `.github/workflo
 
 ```bash
 # 1. Sunucuya SSH ile bağlan
-ssh <kullanıcı>@<sunucu-ip>
+ ssh root@77.42.89.136  
 
 # 2. Proje dizinine geç
 cd ~/newssummarizier

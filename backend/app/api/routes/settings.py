@@ -25,7 +25,7 @@ class SettingsResponse(BaseModel):
 
 
 @router.get("/", response_model=SettingsResponse)
-async def get_settings(db: Session = Depends(get_db)):
+def get_settings(db: Session = Depends(get_db)):
     """
     Get user settings.
     """
@@ -42,7 +42,7 @@ async def get_settings(db: Session = Depends(get_db)):
 
 
 @router.put("/", response_model=SettingsResponse)
-async def update_settings(settings: UserSettings, db: Session = Depends(get_db)):
+def update_settings(settings: UserSettings, db: Session = Depends(get_db)):
     """
     Update user settings.
     """

@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 from openai import AsyncOpenAI
 from app.core.config import settings
 from app.core.exceptions import SummarizationError, TopicCategorizationError, CostLimitExceededError
-from app.db.database import SessionLocal
+from app.db.database import SessionLocal, release_connection
 from app.db import crud
 from app.agents.tools import extract_article_content, truncate_content
 
@@ -1045,12 +1045,16 @@ async def process_article_by_id(article_id: int) -> dict:
         article = crud.get_article(db, article_id)
         if not article:
             raise SummarizationError(f"Article not found: {article_id}")
+        # Read into locals: release_connection() expires `article`, and touching it right
+        # before an await would re-open the transaction we just ended.
+        title, url = article.title, article.url
 
         # Extract content if missing
         content = article.cleaned_content or article.raw_content or ""
         if not article.cleaned_content:
             try:
-                extracted, page_author, page_image_url = await extract_article_content(article.url)
+                release_connection(db)  # don't hold a pooled connection while scraping
+                extracted, page_author, page_image_url = await extract_article_content(url)
                 if page_author and not article.author:
                     crud.update_article_author(db=db, article_id=article.id, author=page_author)
                 if page_image_url and not article.image_url:
@@ -1070,8 +1074,9 @@ async def process_article_by_id(article_id: int) -> dict:
         # Evaluate importance, priority, and classify topics
         is_important = False
         try:
+            release_connection(db)
             categorization = await categorize_and_prioritize_article(
-                title=article.title
+                title=title
             )
             importance = categorization.get("importance", "unimportant")
             priority = categorization.get("priority")
@@ -1133,7 +1138,8 @@ async def process_article_by_id(article_id: int) -> dict:
 
                 for summary_type, _ in summary_types:
                     try:
-                        result = await generate_summary(title=article.title, content=truncate_content(content), summary_type=summary_type, source=source, author_hint=author_hint)
+                        release_connection(db)
+                        result = await generate_summary(title=title, content=truncate_content(content), summary_type=summary_type, source=source, author_hint=author_hint)
                         results.append(result)
                         total_cost += result.get("cost", 0.0)
                         crud.create_summary(db=db, article_id=article.id, summary_text=result["summary_text"], summary_type=summary_type, model_used=result.get("model_used"), tokens_used=result.get("tokens_used", 0), cost=result.get("cost", 0.0))

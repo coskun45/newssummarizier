@@ -49,7 +49,7 @@ class DailyArticleStatsResponse(BaseModel):
 
 
 @router.get("/articles/{article_id}/summaries", response_model=List[SummaryResponse])
-async def get_article_summaries(
+def get_article_summaries(
     article_id: int,
     summary_type: str = Query(None, description="Filter by summary type: brief, standard, detailed"),
     db: Session = Depends(get_db)
@@ -69,7 +69,7 @@ async def get_article_summaries(
 
 
 @router.get("/articles/{article_id}/summary/{summary_type}", response_model=SummaryResponse)
-async def get_article_summary_by_type(
+def get_article_summary_by_type(
     article_id: int,
     summary_type: str,
     db: Session = Depends(get_db)
@@ -96,7 +96,7 @@ async def get_article_summary_by_type(
 
 
 @router.get("/stats/costs", response_model=CostStatsResponse)
-async def get_cost_stats(db: Session = Depends(get_db)):
+def get_cost_stats(db: Session = Depends(get_db)):
     """
     Get API cost statistics.
     """
@@ -114,7 +114,7 @@ async def get_cost_stats(db: Session = Depends(get_db)):
 
 
 @router.get("/stats/daily-articles", response_model=DailyArticleStatsResponse)
-async def get_daily_article_stats(db: Session = Depends(get_db)):
+def get_daily_article_stats(db: Session = Depends(get_db)):
     """
     Get daily incoming vs. processed article counts for the last 7 days (UTC, incl. today).
     """

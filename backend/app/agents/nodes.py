@@ -12,7 +12,7 @@ from app.services.summary_service import (
     generate_summary,
     resolve_summary_author,
 )
-from app.db.database import SessionLocal
+from app.db.database import SessionLocal, release_connection
 from app.db import crud
 from datetime import datetime
 
@@ -129,6 +129,7 @@ async def article_processor_node(state: NewsProcessingState) -> Dict[str, Any]:
         
         # Step 2: Extract content from web page
         try:
+            release_connection(db)  # don't hold a pooled connection while scraping
             cleaned_content, page_author, page_image_url = await extract_article_content(article["url"])
 
             # Backfill author/image from the page when the RSS feed didn't provide them
@@ -179,6 +180,7 @@ async def article_processor_node(state: NewsProcessingState) -> Dict[str, Any]:
         
         # Step 3: Evaluate importance, priority, and classify topics
         try:
+            release_connection(db)
             categorization = await categorize_and_prioritize_article(
                 title=article["title"]
             )
@@ -288,6 +290,7 @@ async def article_processor_node(state: NewsProcessingState) -> Dict[str, Any]:
 
             for summary_type, article_key in summary_types:
                 try:
+                    release_connection(db)
                     summary_result = await generate_summary(
                         title=article["title"],
                         content=truncate_content(content_for_summary),

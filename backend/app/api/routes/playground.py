@@ -133,7 +133,7 @@ class PlaygroundRunResponse(BaseModel):
 
 
 @router.get("/settings", response_model=PlaygroundSettingsResponse)
-async def get_playground_settings(db: Session = Depends(get_db)):
+def get_playground_settings(db: Session = Depends(get_db)):
     """Model + prompt settings exactly as the pipeline would use them right now."""
     return summary_service.get_pipeline_settings(db)
 

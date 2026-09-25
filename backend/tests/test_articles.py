@@ -735,6 +735,35 @@ def test_reprocess_single_article_queues_it_and_leaves_error_group(
     assert client.get("/api/articles/counts", headers=auth_headers).json()["error_count"] == 2
 
 
+def test_reprocess_registers_run_on_the_event_loop(client, auth_headers, db_session, monkeypatch):
+    """Regression: the route is a sync `def` (threadpool), but `_reprocess_status` is also mutated
+    by `reprocess_articles_task` on the event loop. Registering from the worker thread could
+    interleave with the task's final `status = "done"` and strand the new articles' progress."""
+    import asyncio
+    from app.tasks import background
+    _, arts = _error_fixture(db_session)
+    on_loop = []
+
+    async def fake_task(ids):
+        pass
+
+    def recording_register(count):
+        try:
+            asyncio.get_running_loop()
+            on_loop.append(True)
+        except RuntimeError:
+            on_loop.append(False)
+
+    monkeypatch.setattr(background, "reprocess_articles_task", fake_task)
+    monkeypatch.setattr(background, "register_reprocess", recording_register)
+
+    resp = client.post("/api/articles/reprocess",
+                       json={"article_ids": [arts["error"].id]}, headers=auth_headers)
+
+    assert resp.status_code == 200
+    assert on_loop == [True]
+
+
 def test_reprocess_ignores_articles_that_are_not_errors(
         client, auth_headers, db_session, captured_reprocess):
     _, arts = _error_fixture(db_session)

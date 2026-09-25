@@ -48,13 +48,13 @@ class BulletinCategoryReorderRequest(BaseModel):
 
 
 @router.get("/categories", response_model=List[BulletinCategoryResponse])
-async def list_bulletin_categories(db: Session = Depends(get_db)):
+def list_bulletin_categories(db: Session = Depends(get_db)):
     """List the user-defined top-level bulletin categories, in display order."""
     return crud.get_bulletin_categories(db)
 
 
 @router.post("/categories", response_model=BulletinCategoryResponse)
-async def create_bulletin_category(
+def create_bulletin_category(
     body: BulletinCategoryCreate,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_admin),
@@ -69,7 +69,7 @@ async def create_bulletin_category(
 
 
 @router.put("/categories/reorder", response_model=List[BulletinCategoryResponse])
-async def reorder_bulletin_categories(
+def reorder_bulletin_categories(
     body: BulletinCategoryReorderRequest,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_admin),
@@ -79,7 +79,7 @@ async def reorder_bulletin_categories(
 
 
 @router.put("/categories/{category_id}", response_model=BulletinCategoryResponse)
-async def update_bulletin_category(
+def update_bulletin_category(
     category_id: int,
     body: BulletinCategoryUpdate,
     db: Session = Depends(get_db),
@@ -100,7 +100,7 @@ async def update_bulletin_category(
 
 
 @router.delete("/categories/{category_id}")
-async def delete_bulletin_category(
+def delete_bulletin_category(
     category_id: int,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_admin),
@@ -152,7 +152,7 @@ class BulletinPreviewCountResponse(BaseModel):
 
 
 @router.get("/preview-count", response_model=BulletinPreviewCountResponse)
-async def preview_bulletin_count(
+def preview_bulletin_count(
     published_from: Optional[datetime] = None,
     published_to: Optional[datetime] = None,
     priorities: Optional[str] = None,
@@ -272,7 +272,7 @@ def _to_generated_bulletin_response(row: models.GeneratedBulletin) -> GeneratedB
 
 
 @router.get("/generated", response_model=List[GeneratedBulletinResponse])
-async def list_generated_bulletins(
+def list_generated_bulletins(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
@@ -281,7 +281,7 @@ async def list_generated_bulletins(
 
 
 @router.get("/generated/{bulletin_id}/download")
-async def download_generated_bulletin(
+def download_generated_bulletin(
     bulletin_id: int,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
@@ -303,7 +303,7 @@ async def download_generated_bulletin(
 
 
 @router.delete("/generated/{bulletin_id}")
-async def delete_generated_bulletin(
+def delete_generated_bulletin(
     bulletin_id: int,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),

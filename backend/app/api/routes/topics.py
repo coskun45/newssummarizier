@@ -58,7 +58,7 @@ def generate_random_color() -> str:
 
 
 @router.get("/", response_model=List[TopicResponse])
-async def list_topics(feed_id: Optional[int] = None, db: Session = Depends(get_db)):
+def list_topics(feed_id: Optional[int] = None, db: Session = Depends(get_db)):
     """
     List all topics with article counts, optionally filtered by feed.
     """
@@ -67,7 +67,7 @@ async def list_topics(feed_id: Optional[int] = None, db: Session = Depends(get_d
 
 
 @router.post("/", response_model=TopicResponse)
-async def create_topic(
+def create_topic(
     topic: TopicCreate,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_admin),
@@ -101,7 +101,7 @@ async def create_topic(
 
 
 @router.get("/{topic_id}", response_model=TopicResponse)
-async def get_topic(topic_id: int, db: Session = Depends(get_db)):
+def get_topic(topic_id: int, db: Session = Depends(get_db)):
     """
     Get a specific topic by ID.
     """
@@ -122,7 +122,7 @@ async def get_topic(topic_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/{topic_id}", response_model=TopicResponse)
-async def update_topic(
+def update_topic(
     topic_id: int,
     topic: TopicUpdate,
     db: Session = Depends(get_db),
@@ -167,7 +167,7 @@ async def update_topic(
 
 
 @router.delete("/{topic_id}")
-async def delete_topic(
+def delete_topic(
     topic_id: int,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_admin),

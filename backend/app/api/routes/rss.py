@@ -115,7 +115,7 @@ async def test_feed(payload: FeedTestRequest):
 
 
 @router.get("/", response_model=List[FeedResponse])
-async def list_feeds(active_only: bool = True, db: Session = Depends(get_db)):
+def list_feeds(active_only: bool = True, db: Session = Depends(get_db)):
     """
     List all RSS feeds.
     """
@@ -124,7 +124,7 @@ async def list_feeds(active_only: bool = True, db: Session = Depends(get_db)):
 
 
 @router.get("/{feed_id}", response_model=FeedResponse)
-async def get_feed(feed_id: int, db: Session = Depends(get_db)):
+def get_feed(feed_id: int, db: Session = Depends(get_db)):
     """
     Get a specific feed by ID.
     """
@@ -176,7 +176,7 @@ async def update_feed(
 
 
 @router.post("/{feed_id}/refresh")
-async def refresh_feed(
+def refresh_feed(
     feed_id: int,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
@@ -201,14 +201,14 @@ async def refresh_feed(
 async def get_refresh_status(feed_id: int):
     """
     Get the current processing status for a feed refresh job.
-    Returns: {status: 'idle'|'running'|'done'|'error', new_articles?, processed?, errors?, message?}
+    Returns: {status: 'idle'|'queued'|'running'|'done'|'error', new_articles?, processed?, errors?, message?}
     """
     from app.tasks.background import get_job_status
     return get_job_status(feed_id)
 
 
 @router.delete("/{feed_id}")
-async def delete_feed(
+def delete_feed(
     feed_id: int,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_admin),

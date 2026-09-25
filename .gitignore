@@ -23,3 +23,6 @@ backend/bulletin_reports/
 
 # Claude Code — personal settings, never in git
 .claude/settings.local.json
+
+# Playwright MCP browser logs
+.playwright-mcp/

@@ -5,13 +5,17 @@ import asyncio
 import logging
 from typing import Dict, Any, List
 from app.agents.graph import get_workflow
-from app.db.database import SessionLocal
+from app.db.database import SessionLocal, release_connection
 from app.db import crud
 
 logger = logging.getLogger(__name__)
 
 # In-memory job status tracker: feed_id -> status dict
 _job_status: Dict[int, Dict[str, Any]] = {}
+# One feed pipeline at a time. A dashboard refresh queues every feed (40+) at once and each
+# pipeline holds DB connections while it scrapes/calls OpenAI — running them all in parallel
+# exhausted the connection pool and froze the whole app (login included).
+_feed_lock = asyncio.Lock()
 
 
 def get_job_status(feed_id: int) -> Dict[str, Any]:
@@ -35,6 +39,8 @@ async def process_feed_async(feed_id: int):
             _job_status[feed_id] = {"status": "error", "message": "Feed not found"}
             return
 
+        feed_url = feed.url
+
         # Count articles before processing to detect new ones
         from app.db.models import Article
         from sqlalchemy import func
@@ -42,10 +48,12 @@ async def process_feed_async(feed_id: int):
 
         _job_status[feed_id] = {"status": "running"}
 
-        logger.info(f"Starting feed processing: {feed.url}")
+        logger.info(f"Starting feed processing: {feed_url}")
         
         # Update last fetched time
         crud.update_feed_last_fetched(db, feed_id)
+        # The workflow opens its own sessions; don't pin this connection for the whole run.
+        release_connection(db)
         
         # Get workflow
         workflow = get_workflow()
@@ -53,7 +61,7 @@ async def process_feed_async(feed_id: int):
         # Create initial state
         initial_state = {
             "feed_id": feed_id,
-            "feed_url": feed.url,
+            "feed_url": feed_url,
             "rss_articles": [],
             "current_article_index": 0,
             "processed_articles": [],
@@ -118,10 +126,20 @@ async def process_feed_task(feed_id: int):
     Args:
         feed_id: ID of the feed to process
     """
+    if _job_status.get(feed_id, {}).get("status") in ("queued", "running"):
+        logger.info(f"Feed {feed_id} is already queued/running — skipping duplicate refresh")
+        return
+    _job_status[feed_id] = {"status": "queued"}
     try:
-        await process_feed_async(feed_id)
+        async with _feed_lock:
+            await process_feed_async(feed_id)
     except Exception as e:
         logger.error(f"Background task failed: {e}", exc_info=True)
+        _job_status[feed_id] = {"status": "error", "message": str(e)}
+    finally:
+        # Cancelled (e.g. scheduler timeout) while queued/running: don't leave the UI polling forever.
+        if _job_status.get(feed_id, {}).get("status") in ("queued", "running"):
+            _job_status[feed_id] = {"status": "error", "message": "Feed processing was interrupted"}
 
 
 # ==================== Article re-processing ("Error" group) ====================

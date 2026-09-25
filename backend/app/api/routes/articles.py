@@ -1,6 +1,7 @@
 """
 Article endpoints.
 """
+from anyio import from_thread
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -33,7 +34,7 @@ def _article_source(article: models.Article) -> Optional[str]:
 
 
 @router.delete("/{article_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_article(article_id: int, db: Session = Depends(get_db)):
+def delete_article(article_id: int, db: Session = Depends(get_db)):
     """
     Delete an article by ID. Its URL is tombstoned so the next feed refresh
     doesn't recreate it if the RSS feed still lists the item.
@@ -88,7 +89,7 @@ class ArticleListResponse(BaseModel):
 
 
 @router.get("/", response_model=ArticleListResponse)
-async def list_articles(
+def list_articles(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     topic_ids: Optional[str] = Query(None, description="Comma-separated topic IDs"),
@@ -189,7 +190,7 @@ async def list_articles(
 
 
 @router.patch("/{article_id}/read")
-async def mark_article_read(
+def mark_article_read(
     article_id: int,
     db: Session = Depends(get_db)
 ):
@@ -223,7 +224,7 @@ class BulkReadRequest(BaseModel):
 
 
 @router.post("/mark-read-bulk")
-async def mark_articles_read_bulk(
+def mark_articles_read_bulk(
     body: BulkReadRequest,
     db: Session = Depends(get_db)
 ):
@@ -263,7 +264,7 @@ class StarRequest(BaseModel):
 
 
 @router.patch("/{article_id}/star")
-async def star_article(article_id: int, body: StarRequest, db: Session = Depends(get_db)):
+def star_article(article_id: int, body: StarRequest, db: Session = Depends(get_db)):
     """Add or remove an article from the user-curated 'Önemli' group."""
     article = crud.set_article_starred(db, article_id, body.starred)
     if not article:
@@ -272,14 +273,14 @@ async def star_article(article_id: int, body: StarRequest, db: Session = Depends
 
 
 @router.post("/unstar-all")
-async def unstar_all_articles(db: Session = Depends(get_db)):
+def unstar_all_articles(db: Session = Depends(get_db)):
     """Clear the whole 'Önemli' group."""
     count = crud.unstar_all(db)
     return {"unstarred_count": count}
 
 
 @router.get("/topic/{topic_id}/ids")
-async def get_article_ids_by_topic(topic_id: int, db: Session = Depends(get_db)):
+def get_article_ids_by_topic(topic_id: int, db: Session = Depends(get_db)):
     """All article ids tagged with this topic, regardless of status (used for 'select all' by category)."""
     if not crud.get_topic(db, topic_id):
         raise HTTPException(status_code=404, detail="Topic not found")
@@ -287,7 +288,7 @@ async def get_article_ids_by_topic(topic_id: int, db: Session = Depends(get_db))
 
 
 @router.post("/priority/{priority}/delete-all")
-async def delete_articles_by_priority(
+def delete_articles_by_priority(
     priority: str,
     feed_ids: Optional[str] = Query(None, description="Comma-separated feed IDs to scope the delete to"),
     db: Session = Depends(get_db)
@@ -300,7 +301,7 @@ async def delete_articles_by_priority(
 
 
 @router.post("/priority/{priority}/archive-all")
-async def archive_articles_by_priority(
+def archive_articles_by_priority(
     priority: str,
     feed_ids: Optional[str] = Query(None, description="Comma-separated feed IDs to scope the archive to"),
     db: Session = Depends(get_db)
@@ -313,7 +314,7 @@ async def archive_articles_by_priority(
 
 
 @router.post("/unimportant/delete-all")
-async def delete_articles_unimportant(
+def delete_articles_unimportant(
     feed_ids: Optional[str] = Query(None, description="Comma-separated feed IDs to scope the delete to"),
     db: Session = Depends(get_db)
 ):
@@ -323,7 +324,7 @@ async def delete_articles_unimportant(
 
 
 @router.post("/unimportant/archive-all")
-async def archive_articles_unimportant(
+def archive_articles_unimportant(
     feed_ids: Optional[str] = Query(None, description="Comma-separated feed IDs to scope the archive to"),
     db: Session = Depends(get_db)
 ):
@@ -341,7 +342,7 @@ class ReprocessRequest(BaseModel):
 
 
 @router.post("/reprocess")
-async def reprocess_articles(
+def reprocess_articles(
     body: ReprocessRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
@@ -363,7 +364,9 @@ async def reprocess_articles(
         # Leave the Error group right away so the same article isn't queued twice.
         crud.mark_articles_pending(db, ids)
         from app.tasks.background import register_reprocess, reprocess_articles_task
-        register_reprocess(len(ids))
+        # This route runs in the threadpool; _reprocess_status is also mutated by the task on
+        # the event loop, so do the check-then-update there to keep the two from interleaving.
+        from_thread.run_sync(register_reprocess, len(ids))
         background_tasks.add_task(reprocess_articles_task, ids)
     return {"queued": len(ids), "article_ids": ids}
 
@@ -376,7 +379,7 @@ async def get_reprocess_status():
 
 
 @router.get("/counts")
-async def get_article_counts(db: Session = Depends(get_db)):
+def get_article_counts(db: Session = Depends(get_db)):
     """Get article counts grouped by priority and feed.
 
     by_priority/unimportant_count are scoped to unread articles — they back the
@@ -438,7 +441,7 @@ async def get_article_counts(db: Session = Depends(get_db)):
 
 
 @router.get("/{article_id}", response_model=ArticleDetailResponse)
-async def get_article(article_id: int, db: Session = Depends(get_db)):
+def get_article(article_id: int, db: Session = Depends(get_db)):
     """
     Get detailed article information.
     """
@@ -478,7 +481,7 @@ async def get_article(article_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/topic/{topic_name}")
-async def get_articles_by_topic(
+def get_articles_by_topic(
     topic_name: str,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
