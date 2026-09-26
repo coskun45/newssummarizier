@@ -60,7 +60,7 @@ _YORUM_ICON = "⭕️"
 _BULLET_ICON = "🔹"
 _BRIEF_CONCURRENCY = 5
 _PRIORITY_RANK = {"high": 0, "med": 1, "low": 2, None: 3}
-_HIGHLIGHT_CANDIDATE_CAP = 200
+_HIGHLIGHT_CANDIDATE_CAP = 10
 
 _BULLETIN_CLASSIFICATION_SYSTEM_PROMPT = """Sen bir haber editörüsün. Görevin, verilen haberleri belirtilen üst düzey kategorilere ayırmak ve türlerini belirlemektir.
 Her zaman geçerli JSON döndür, başka hiçbir şey yazma.
@@ -200,10 +200,25 @@ def _article_content(article: models.Article) -> str:
     return _strip_html(article.cleaned_content or article.raw_content or article.title or "")
 
 
-def _existing_brief(article: models.Article) -> Optional[str]:
+def _existing_summary(article: models.Article, summary_type: str) -> Optional[str]:
     return next(
         (s.summary_text for s in article.summaries
-         if s.summary_type == "brief" and (s.summary_text or "").strip()),
+         if s.summary_type == summary_type and (s.summary_text or "").strip()),
+        None,
+    )
+
+
+def _existing_brief(article: models.Article) -> Optional[str]:
+    return _existing_summary(article, "brief")
+
+
+# Stored summaries a failed brief falls back to, shortest first.
+_FALLBACK_SUMMARY_TYPES = ("standard", "detailed")
+
+
+def _existing_fallback_summary(article: models.Article) -> Optional[str]:
+    return next(
+        (text for text in (_existing_summary(article, t) for t in _FALLBACK_SUMMARY_TYPES) if text),
         None,
     )
 
@@ -216,8 +231,9 @@ async def _ensure_brief_summaries(db: Session, articles: List[models.Article]) -
     """{article_id: brief summary text}. Articles without a stored brief summary get one from the
     pipeline's own summarizer (same system prompt, source and author handling as
     `summary_service.process_article`), which is saved so the next report doesn't pay again. A
-    failed summary only drops that article to the plain-content fallback; hitting the cost
-    limit stops the report."""
+    failed summary falls back to the article's stored standard/detailed summary (used for this
+    report only, not saved as a brief), else to plain content; hitting the cost limit stops the
+    report."""
     briefs: Dict[int, str] = {}
     missing: List[models.Article] = []
     for article in articles:
@@ -265,6 +281,9 @@ async def _ensure_brief_summaries(db: Session, articles: List[models.Article]) -
             crud.create_log(db=db, article_id=article.id, agent_name="summarizer", status="error",
                             message="Failed to generate brief summary for the bulletin",
                             error_details=str(result))
+            fallback = _existing_fallback_summary(article)
+            if fallback:
+                briefs[article.id] = fallback
             continue
         crud.create_summary(
             db=db, article_id=article.id, summary_text=result["summary_text"], summary_type="brief",

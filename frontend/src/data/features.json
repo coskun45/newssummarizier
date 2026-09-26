@@ -103,7 +103,7 @@
         {
           "id": "bulletin-report",
           "title": "Word bülten raporu",
-          "description": "Seçilen zaman aralığı ve önem seviyesindeki haberlerden örnek bülten yapısında bir Word (.docx) raporu üretir: en fazla 5 haberlik Öne Çıkan Başlıklar, ardından kullanıcı tanımlı kategoriler altında yapay zekanın konulara göre belirlediği alt başlıklar. Her haber kısa özetiyle (📌 kaynak - başlık, 🔹 maddeler) yazılır; kısa özeti olmayanlara özet üretilir. İçindekiler hazır gelir, kaynak listesine takip edilen RSS beslemeleri eklenir. Geçmiş raporlar indirilebilir, silme yalnızca yöneticilere açıktır."
+          "description": "Seçilen zaman aralığı ve önem seviyesindeki haberlerden örnek bülten yapısında bir Word (.docx) raporu üretir: önceliği en yüksek ve en yeni 10 haber arasından seçilen en fazla 5 haberlik Öne Çıkan Başlıklar, ardından kullanıcı tanımlı kategoriler altında yapay zekanın konulara göre belirlediği alt başlıklar. Her haber kısa özetiyle (📌 kaynak - başlık, 🔹 maddeler) yazılır; kısa özeti olmayanlara özet üretilir, üretilemezse kayıtlı standart ya da detaylı özet kullanılır. Bir raporda en fazla 50 haber olabilir. İçindekiler hazır gelir, kaynak listesine takip edilen RSS beslemeleri eklenir. Geçmiş raporlar indirilebilir, silme yalnızca yöneticilere açıktır."
         },
         {
           "id": "bulletin-categories",

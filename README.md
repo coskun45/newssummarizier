@@ -12,11 +12,12 @@ Deutsche Welle (DW) RSS beslemelerinden haber toplayan, kategorize eden ve yapay
 - **Maliyet Takibi**: Yapılandırılabilir limitlerle OpenAI API maliyetlerini izler
 - **LangGraph Workflow**: Karmaşık işleme hatları için sağlam agent orkestrasyon
 - **Word Bülten Raporu**: Seçilen zaman aralığı ve önem seviyesindeki haberlerden, şablondaki örnek bülten
-  yapısında bir Word (.docx) raporu üretir: en başta yapay zekanın seçtiği en fazla 5 haberlik **Öne Çıkan
+  yapısında bir Word (.docx) raporu üretir (en fazla `BULLETIN_MAX_ARTICLES` = 50 haber): en başta yapay
+  zekanın önceliği en yüksek ve en yeni 10 haber arasından seçtiği en fazla 5 haberlik **Öne Çıkan
   Başlıklar**, ardından kullanıcı tanımlı üst düzey kategoriler (Avrupa, Amerika vb.; Heading1) ve her birinin
   altında haberlerin konularına göre oluşturulan anlamlı alt başlıklar (Heading3). Her haber, uygulamanın kısa
   özetiyle (`📌 Kaynak / Yazar - Başlık` + `🔹` maddeler) yazılır; kısa özeti olmayan habere aynı özetleyiciyle
-  özet üretilip kaydedilir. İçindekiler hazır doldurulur (Word açılışta güncelleme sormaz); "BAZI KAYNAKLAR"
+  özet üretilip kaydedilir; üretilemezse kayıtlı standart, o da yoksa detaylı özet kullanılır. İçindekiler hazır doldurulur (Word açılışta güncelleme sormaz); "BAZI KAYNAKLAR"
   listesine takip edilen RSS beslemeleri eklenir. Şablon: `backend/app/resources/bulletin_template.docx`
 - **Playground**: Header'daki sekmeden mevcut RSS'lerdeki haberlerden biri seçilip pipeline'ın (sınıflandırma +
   öncelik, kısa/standart/detaylı özet) sonucu görülebilir. Geçerli model ve prompt ayarları gösterilir; prompt'lar
@@ -483,7 +484,7 @@ MONTHLY_COST_LIMIT=100.0  # USD
 
 # Bülten Raporu
 BULLETIN_CLASSIFICATION_BATCH_SIZE=15  # LLM sınıflandırma çağrısı başına haber sayısı
-BULLETIN_MAX_ARTICLES=400  # Tek bir raporda izin verilen maksimum haber sayısı
+BULLETIN_MAX_ARTICLES=50  # Tek bir raporda izin verilen maksimum haber sayısı
 
 # CORS
 CORS_ORIGINS=http://localhost:5173,http://localhost:3000

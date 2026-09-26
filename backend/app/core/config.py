@@ -65,7 +65,7 @@ class Settings(BaseSettings):
 
     # Bulletin report generation
     bulletin_classification_batch_size: int = 15  # articles per LLM classification call
-    bulletin_max_articles: int = 400  # hard cap on articles selected for a single report
+    bulletin_max_articles: int = 50  # hard cap on articles selected for a single report
     bulletin_storage_dir: str = "./bulletin_reports"  # persisted .docx reports, for re-download
     
     # CORS

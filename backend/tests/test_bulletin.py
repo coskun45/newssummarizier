@@ -19,6 +19,7 @@ from tests.conftest import _make_article, _make_feed, _make_summary
 # The autouse stub below replaces it on the module; its own test needs the real one.
 _real_group_category_articles = bulletin_service.group_category_articles
 _real_classify_articles_for_bulletin = bulletin_service.classify_articles_for_bulletin
+_real_pick_bulletin_highlights = bulletin_service.pick_bulletin_highlights
 
 
 @pytest.fixture(autouse=True)
@@ -478,6 +479,76 @@ def test_generate_bulletin_strips_html_from_raw_content_fallback(client, auth_he
     assert any("Firari şüpheli 'yakalandı'" in t for t in paragraph_texts)
 
 
+def test_generate_bulletin_falls_back_to_stored_summary_when_brief_fails(
+    client, auth_headers, db_session, monkeypatch
+):
+    """A failed brief uses the stored standard summary (else the detailed one) instead of the
+    plain-content snippet, and that fallback is not saved as a brief."""
+    async def failing_summary(**kwargs):
+        raise RuntimeError("summarizer down")
+
+    monkeypatch.setattr(summary_service, "generate_summary", failing_summary)
+    _make_bulletin_category(db_session, name="AVRUPA")
+    feed = _make_feed(db_session)
+    now = datetime.now(timezone.utc)
+    both = _make_article(db_session, feed.id, title="Standartlı", cleaned_content="Ham metin A",
+                         published_at=now - timedelta(hours=1))
+    _make_summary(db_session, both.id, summary_type="detailed",
+                  summary_text="📌 Test Feed - Standartlı\n\nDetaylı paragraf A.")
+    _make_summary(db_session, both.id, summary_type="standard",
+                  summary_text="📌 Test Feed - Standartlı\n\nStandart paragraf A.")
+    detailed_only = _make_article(db_session, feed.id, title="Detaylı", cleaned_content="Ham metin B",
+                                  published_at=now - timedelta(hours=1))
+    _make_summary(db_session, detailed_only.id, summary_type="detailed",
+                  summary_text="📌 Test Feed - Detaylı\n\nDetaylı paragraf B.")
+    no_summary = _make_article(db_session, feed.id, title="Özetsiz", cleaned_content="Ham metin C",
+                               published_at=now - timedelta(hours=1))
+
+    texts = [p.text for p in _paragraphs(_generate(client, auth_headers))]
+
+    assert "🔹 Standart paragraf A." in texts
+    assert not any("Detaylı paragraf A." in t or "Ham metin A" in t for t in texts)
+    assert "🔹 Detaylı paragraf B." in texts
+    assert not any("Ham metin B" in t for t in texts)
+    assert "🔹 Ham metin C" in texts
+    stored_briefs = db_session.query(models.Summary).filter(
+        models.Summary.article_id.in_([both.id, detailed_only.id, no_summary.id]),
+        models.Summary.summary_type == "brief",
+    ).count()
+    assert stored_briefs == 0
+
+
+def test_pick_bulletin_highlights_sends_only_top_ranked_candidates(monkeypatch):
+    """Only the 10 highest-priority, newest articles are offered to the highlights model."""
+    prompts = []
+
+    async def fake_completion(system_prompt, user_prompt, max_completion_tokens):
+        prompts.append(user_prompt)
+        return {"highlights": []}
+
+    async def no_limits():
+        return None
+
+    monkeypatch.setattr(bulletin_service, "_call_json_completion", fake_completion)
+    monkeypatch.setattr(bulletin_service, "check_cost_limits", no_limits)
+    now = datetime.now(timezone.utc)
+    # ids 1-5 high, 6-15 med (6 newest), 16-20 low: the cap keeps 1-5 and 6-10.
+    articles = [
+        models.Article(
+            id=i, title=f"Haber {i}", url=f"https://x/{i}",
+            priority="high" if i <= 5 else "med" if i <= 15 else "low",
+            published_at=now - timedelta(minutes=i),
+        )
+        for i in range(20, 0, -1)
+    ]
+    blocks = {a.id: {"header": f"📌 X - {a.title}", "bullets": []} for a in articles}
+
+    asyncio.run(_real_pick_bulletin_highlights(articles, blocks))
+
+    sent_ids = [int(line.split(" | ")[0]) for line in prompts[0].splitlines() if " | " in line]
+    assert sent_ids == list(range(1, 11))
+
+
 def test_strip_html_preserves_literal_angle_bracket_text():
     """Regression test: a real HTML parser (not a "<[^>]+>" regex) must not mistake
     literal bracketed text that isn't markup for a tag and delete it."""
@@ -621,6 +692,12 @@ def test_generate_bulletin_too_many_articles_returns_400(client, auth_headers, d
     response = client.post("/api/bulletin/generate", json={}, headers=auth_headers)
 
     assert response.status_code == 400
+
+
+def test_bulletin_max_articles_defaults_to_50():
+    from app.core.config import Settings
+
+    assert Settings.model_fields["bulletin_max_articles"].default == 50
 
 
 def test_generate_bulletin_uses_classification_cache(client, auth_headers, db_session, monkeypatch):
