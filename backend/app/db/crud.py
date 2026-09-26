@@ -1131,11 +1131,10 @@ def get_bulletin_category(db: Session, category_id: int) -> Optional[models.Bull
     return db.query(models.BulletinCategory).filter(models.BulletinCategory.id == category_id).first()
 
 
-# Fold all four Turkish I-variants to the same character before lowercasing,
-# matching app.services.docx_service._normalize() exactly — two category
-# names that only differ by case/Turkish-I form (e.g. "Avrupa" / "AVRUPA")
-# would otherwise both be created and then collide onto the same template
-# heading when rendering a bulletin (docx_service._rebuild_category_sections).
+# Fold all four Turkish I-variants to the same character before lowercasing —
+# two category names that only differ by case/Turkish-I form (e.g. "Avrupa" /
+# "AVRUPA") would otherwise both be created and show up as two identical
+# headings in the bulletin.
 _BULLETIN_CATEGORY_TR_I_FOLD = str.maketrans({"İ": "i", "I": "i", "ı": "i"})
 
 

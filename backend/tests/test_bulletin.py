@@ -1,7 +1,9 @@
 """
 Tests for app/api/routes/bulletin.py.
 """
+import asyncio
 import io
+import re
 import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -11,8 +13,12 @@ from docx import Document as DocxDocument
 
 from app.core.config import settings as app_settings
 from app.db import crud, models
-from app.services import bulletin_service
-from tests.conftest import _make_article, _make_feed
+from app.services import bulletin_service, summary_service
+from tests.conftest import _make_article, _make_feed, _make_summary
+
+# The autouse stub below replaces it on the module; its own test needs the real one.
+_real_group_category_articles = bulletin_service.group_category_articles
+_real_classify_articles_for_bulletin = bulletin_service.classify_articles_for_bulletin
 
 
 @pytest.fixture(autouse=True)
@@ -202,7 +208,7 @@ def test_generate_bulletin_rejects_invalid_priority(client, auth_headers, db_ses
     assert response.status_code == 400
 
 
-async def _fake_classify(db, articles, category_names):
+async def _fake_classify(db, articles, category_names, blocks=None):
     if not articles:
         return []
     return [
@@ -211,14 +217,51 @@ async def _fake_classify(db, articles, category_names):
     ]
 
 
-async def _fake_digest(articles, limit=8):
-    return [{"article_id": a.id, "blurb": f"{a.title} özeti."} for a in articles[:limit]]
+async def _no_highlights(articles, blocks, limit=bulletin_service.HIGHLIGHT_LIMIT):
+    return []
 
 
-def test_generate_bulletin_success(client, auth_headers, db_session, monkeypatch):
+async def _single_group(category_name, articles, blocks):
+    return [{"title": "TEST ALT BAŞLIK", "article_ids": [a.id for a in articles]}] if articles else []
+
+
+@pytest.fixture(autouse=True)
+def _stub_bulletin_llm(monkeypatch):
+    """No test calls OpenAI: classification, highlights, grouping and the brief summarizer are
+    stubbed; tests override the one they exercise. Returns the brief-summary call log."""
+    calls = []
+
+    async def fake_generate_summary(title, content, summary_type="standard", source=None, author_hint=None):
+        calls.append({"title": title, "summary_type": summary_type, "source": source})
+        return {
+            "summary_text": f"📌 **{source} - {title}**\n🔹 {title} özeti.",
+            "model_used": "gpt-test", "tokens_used": 10, "cost": 0.001,
+            "author": None, "structured": True,
+        }
+
     monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", _fake_classify)
-    monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
+    monkeypatch.setattr(bulletin_service, "pick_bulletin_highlights", _no_highlights)
+    monkeypatch.setattr(bulletin_service, "group_category_articles", _single_group)
+    async def no_cost_limits():
+        return None
 
+    monkeypatch.setattr(summary_service, "generate_summary", fake_generate_summary)
+    # check_cost_limits opens its own SessionLocal (the real DB), not the test session.
+    monkeypatch.setattr(bulletin_service, "check_cost_limits", no_cost_limits)
+    return calls
+
+
+def _generate(client, headers, **body):
+    response = client.post("/api/bulletin/generate", json=body, headers=headers)
+    assert response.status_code == 200, response.text
+    return response
+
+
+def _paragraphs(response):
+    return DocxDocument(io.BytesIO(response.content)).paragraphs
+
+
+def test_generate_bulletin_success(client, auth_headers, db_session):
     _make_bulletin_category(db_session, name="AVRUPA")
     feed = _make_feed(db_session)
     now = datetime.now(timezone.utc)
@@ -227,50 +270,191 @@ def test_generate_bulletin_success(client, auth_headers, db_session, monkeypatch
         published_at=now - timedelta(hours=1),
     )
 
-    response = client.post("/api/bulletin/generate", json={}, headers=auth_headers)
+    response = _generate(client, auth_headers)
 
-    assert response.status_code == 200
     assert response.headers["content-type"] == (
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
     assert response.content[:4] == b"PK\x03\x04"
 
-    document = DocxDocument(io.BytesIO(response.content))
-    paragraph_texts = [p.text for p in document.paragraphs if p.text.strip()]
-    assert any("AVRUPA" in t for t in paragraph_texts)
-    assert any("özeti" in t for t in paragraph_texts)
+    paragraphs = _paragraphs(response)
+    by_text = {p.text.strip(): p for p in paragraphs if p.text.strip()}
+    # Like the template edition: category -> Heading1, topic group -> Heading3 (the TOC field
+    # maps "Heading 3" to level 3); no Heading2 anywhere.
+    assert by_text["AVRUPA"].style.style_id == "Heading1"
+    assert by_text["TEST ALT BAŞLIK"].style.style_id == "Heading3"
+    assert not [p for p in paragraphs if p.style.style_id == "Heading2"]
 
-    # "BAZI KAYNAKLAR" reflects the actually-configured feed, not the
-    # template's static example source list.
-    assert any(feed.url in t for t in paragraph_texts)
-    assert not any("Associated Press" in t for t in paragraph_texts)
+    # The article block comes from the brief summary: bold "📌 Kaynak - Başlık" header (the
+    # summarizer's "**" markers stripped) and plain "🔹" bullets.
+    header = by_text["📌 Test Feed - Test Haberi"]
+    assert header.runs[0].bold
+    bullet = by_text["🔹 Test Haberi özeti."]
+    assert not bullet.runs[0].bold
+    assert not any("**" in p.text for p in paragraphs)
 
-    # Top category -> Heading1, subcategory -> Heading2, matching the
-    # template's own TOC field mapping ("Heading 1,1,Heading 2,2,...") —
-    # using Heading3 here (an earlier version of this code did) leaves the
-    # TOC's level-2 slot empty once Word recomputes it.
-    by_text = {p.text.strip(): p.style.style_id for p in document.paragraphs if p.text.strip()}
-    assert by_text["AVRUPA"] == "Heading1"
-    assert by_text["Test Alt Başlık"] == "Heading2"
 
-    # The TOC can't be recomputed by python-docx, so Word is told to refresh
-    # every field (the TOC included) on open instead of showing the
-    # template's stale cached result.
+def test_generate_bulletin_keeps_template_sources_and_adds_rss_feeds(client, auth_headers, db_session):
+    _make_bulletin_category(db_session, name="AVRUPA")
+    feed = _make_feed(db_session, title="DW Türkçe")
+    _make_feed(db_session, url="https://example.com/passive", title="Pasif Feed", is_active=False)
+    _make_article(db_session, feed.id, title="Haber", published_at=datetime.now(timezone.utc) - timedelta(hours=1))
+
+    texts = [p.text for p in _paragraphs(_generate(client, auth_headers))]
+
+    assert any(t.startswith("ABD: Associated Press") for t in texts)
+    rss_line = next(t for t in texts if t.startswith("RSS Beslemeleri:"))
+    assert "DW Türkçe" in rss_line
+    assert "Pasif Feed" not in rss_line
+
+
+def test_generate_bulletin_toc_is_prerendered_with_bookmark_links(client, auth_headers, db_session):
+    """Word used to be told to refresh fields on open (updateFields), which asks the reader for
+    permission every time; the İçindekiler is now written out with one link per heading."""
+    _make_bulletin_category(db_session, name="AVRUPA")
+    feed = _make_feed(db_session)
+    _make_article(db_session, feed.id, title="Haber", published_at=datetime.now(timezone.utc) - timedelta(hours=1))
+
+    response = _generate(client, auth_headers)
+
     with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+        document_xml = zf.read("word/document.xml").decode("utf-8")
         settings_xml = zf.read("word/settings.xml").decode("utf-8")
-    assert '<w:updateFields w:val="true"/>' in settings_xml
+    assert "updateFields" not in settings_xml
+
+    toc = document_xml[document_xml.index("<w:sdt>"):document_xml.index("</w:sdt>")]
+    anchors = re.findall(r'w:anchor="([^"]+)"', toc)
+    entry_texts = re.findall(r"<w:t[^>]*>([^<]*)</w:t>", toc)
+    assert entry_texts == ["AVRUPA", "TEST ALT BAŞLIK"]
+    body = document_xml[document_xml.index("</w:sdt>"):]
+    for anchor in anchors:
+        assert f'w:name="{anchor}"' in body
+    assert toc.count('w:fldCharType="begin"') == 1
+    assert toc.count('w:fldCharType="end"') == 1
+
+
+def test_generate_bulletin_highlights_are_not_repeated_in_categories(
+    client, auth_headers, db_session, monkeypatch
+):
+    _make_bulletin_category(db_session, name="AVRUPA")
+    feed = _make_feed(db_session)
+    now = datetime.now(timezone.utc)
+    articles = [
+        _make_article(db_session, feed.id, title=f"Haber {i}", published_at=now - timedelta(hours=1))
+        for i in range(7)
+    ]
+
+    async def highlights(candidates, blocks, limit=bulletin_service.HIGHLIGHT_LIMIT):
+        return [{"title": "BM GENEL KURULU", "article_ids": [articles[0].id, articles[1].id]}]
+
+    monkeypatch.setattr(bulletin_service, "pick_bulletin_highlights", highlights)
+
+    paragraphs = _paragraphs(_generate(client, auth_headers))
+    texts = [p.text for p in paragraphs]
+    heading1 = [p.text for p in paragraphs if p.style.style_id == "Heading1"]
+
+    assert heading1[0] == "ÖNE ÇIKAN BAŞLIKLAR"
+    assert texts[texts.index("ÖNE ÇIKAN BAŞLIKLAR") + 1] == "BM GENEL KURULU"
+    assert sum("Haber 0" in t for t in texts if t.startswith("📌")) == 1
+    avrupa_idx = texts.index("AVRUPA")
+    assert not any("Haber 0" in t or "Haber 1" in t for t in texts[avrupa_idx:])
+    assert any("Haber 6" in t for t in texts[avrupa_idx:])
+
+
+def test_clean_groups_caps_highlights_at_limit_and_drops_unknown_ids():
+    groups = bulletin_service._clean_groups(
+        [
+            {"title": "bm genel kurulu", "article_ids": [1, 2, 99, 2]},
+            {"title": "Fon krizi", "article_ids": ["3", 4, 5, 6]},
+        ],
+        allowed_ids=[1, 2, 3, 4, 5, 6],
+        limit=5,
+    )
+    assert groups == [
+        {"title": "BM GENEL KURULU", "article_ids": [1, 2]},
+        {"title": "FON KRİZİ", "article_ids": [3, 4, 5]},
+    ]
+
+
+def test_group_category_articles_puts_leftovers_into_other_group(monkeypatch):
+    """Articles the model forgot must still appear, under the catch-all group, which goes last."""
+    async def fake_completion(system_prompt, user_prompt, max_completion_tokens):
+        return {"groups": [{"title": "UKRAYNA SAVAŞI", "article_ids": [1]}]}
+
+    async def no_limits():
+        return None
+
+    monkeypatch.setattr(bulletin_service, "_call_json_completion", fake_completion)
+    monkeypatch.setattr(bulletin_service, "check_cost_limits", no_limits)
+    articles = [models.Article(id=i, title=f"Haber {i}", url=f"https://x/{i}") for i in (1, 2, 3)]
+    blocks = {a.id: {"header": f"📌 X - {a.title}", "bullets": []} for a in articles}
+
+    groups = asyncio.run(_real_group_category_articles("Avrupa", articles, blocks))
+
+    assert groups == [
+        {"title": "UKRAYNA SAVAŞI", "article_ids": [1]},
+        {"title": "AVRUPA: DİĞER GELİŞMELER", "article_ids": [2, 3]},
+    ]
+
+
+def test_generate_bulletin_creates_and_saves_missing_brief_summaries(
+    client, auth_headers, db_session, _stub_bulletin_llm
+):
+    _make_bulletin_category(db_session, name="AVRUPA")
+    feed = _make_feed(db_session, title="BBC Türkçe")
+    now = datetime.now(timezone.utc)
+    with_brief = _make_article(db_session, feed.id, title="Özetli", published_at=now - timedelta(hours=1))
+    _make_summary(db_session, with_brief.id, summary_type="brief",
+                  summary_text="📌 BBC Türkçe - Özetli\n🔹 Kayıtlı kısa özet.")
+    without_brief = _make_article(db_session, feed.id, title="Özetsiz", cleaned_content="Metin",
+                                  published_at=now - timedelta(hours=1))
+
+    texts = [p.text for p in _paragraphs(_generate(client, auth_headers))]
+
+    assert [c["title"] for c in _stub_bulletin_llm] == ["Özetsiz"]
+    assert _stub_bulletin_llm[0]["summary_type"] == "brief"
+    assert _stub_bulletin_llm[0]["source"] == "BBC Türkçe"
+    stored = db_session.query(models.Summary).filter_by(article_id=without_brief.id, summary_type="brief").all()
+    assert len(stored) == 1
+    assert "🔹 Kayıtlı kısa özet." in texts
+    assert "🔹 Özetsiz özeti." in texts
+
+    # Saved: the next report doesn't summarize again.
+    _generate(client, auth_headers)
+    assert len(_stub_bulletin_llm) == 1
+
+
+def test_generate_bulletin_marks_opinion_pieces_with_yorum_icon(client, auth_headers, db_session, monkeypatch):
+    async def classify_as_yorum(db, articles, category_names, blocks=None):
+        return [{"article_id": a.id, "top_category": category_names[0], "type": "yorum"} for a in articles]
+
+    monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", classify_as_yorum)
+    _make_bulletin_category(db_session, name="AVRUPA")
+    feed = _make_feed(db_session)
+    _make_article(db_session, feed.id, title="Köşe Yazısı", published_at=datetime.now(timezone.utc) - timedelta(hours=1))
+
+    texts = [p.text for p in _paragraphs(_generate(client, auth_headers))]
+
+    assert "⭕️ Test Feed - Köşe Yazısı" in texts
+
+
+def test_article_block_parses_single_line_brief():
+    article = models.Article(id=1, title="Başlık", url="https://x/1")
+    block = bulletin_service._article_block(article, "**📌 DW / Ali Veli - Başlık** 🔹 Bir. 🔹 İki.", "haber")
+    assert block["header"] == "📌 DW / Ali Veli - Başlık"
+    assert block["bullets"] == ["🔹 Bir.", "🔹 İki."]
 
 
 def test_generate_bulletin_strips_html_from_raw_content_fallback(client, auth_headers, db_session, monkeypatch):
-    """Regression test: when an article has no "brief" summary yet,
-    bulletin_service._article_snippet falls back to raw_content, which for
-    several feeds (e.g. Aydinlik) is an HTML fragment straight from the RSS
-    <description> rather than plain text. A real generated bulletin showed
-    this markup — <a>/<img>/<h4> tags and &#039;-style entities — rendered
+    """Regression test: when an article has no "brief" summary (and generating one fails), the
+    bulletin falls back to raw_content, which for several feeds (e.g. Aydinlik) is an HTML
+    fragment straight from the RSS <description> rather than plain text. A real generated
+    bulletin showed this markup — <a>/<img>/<h4> tags and &#039;-style entities — rendered
     verbatim as visible text in the Word document."""
-    monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", _fake_classify)
-    monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
+    async def failing_summary(**kwargs):
+        raise RuntimeError("summarizer down")
 
+    monkeypatch.setattr(summary_service, "generate_summary", failing_summary)
     _make_bulletin_category(db_session, name="AVRUPA")
     feed = _make_feed(db_session)
     now = datetime.now(timezone.utc)
@@ -314,14 +498,13 @@ def test_generate_bulletin_uses_only_user_defined_categories(client, auth_header
     headings must fully replace them in the output — regression test for a
     reported issue where the generated report appeared to ignore
     user-created categories."""
-    async def classify_into_custom_categories(db, articles, category_names):
+    async def classify_into_custom_categories(db, articles, category_names, blocks=None):
         return [
             {"article_id": a.id, "top_category": category_names[0], "subcategory": "Alt Başlık", "type": "haber"}
             for a in articles
         ]
 
     monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", classify_into_custom_categories)
-    monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
 
     _make_bulletin_category(db_session, name="Teknoloji")
     feed = _make_feed(db_session)
@@ -348,14 +531,13 @@ def test_generate_bulletin_respects_display_order(client, auth_headers, db_sessi
     order (AMERIKA before AVRUPA). Regression test for a reported issue where
     the generated report's index/table-of-contents always followed that
     fixed template order instead of the user-configured display_order."""
-    async def classify_by_display_order(db, articles, category_names):
+    async def classify_by_display_order(db, articles, category_names, blocks=None):
         return [
             {"article_id": a.id, "top_category": category_names[i], "subcategory": "Alt Başlık", "type": "haber"}
             for i, a in enumerate(articles)
         ]
 
     monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", classify_by_display_order)
-    monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
 
     # AMERIKA precedes AVRUPA in the template's physical layout, but the
     # user has configured the opposite display_order here.
@@ -388,14 +570,13 @@ def test_generate_bulletin_case_variant_categories_get_separate_headings(
     removed the entry) — the second category would relocate the first one's
     already-placed heading out from under its own content, stranding the
     first category's articles above an orphaned heading."""
-    async def classify_by_category_names(db, articles, category_names):
+    async def classify_by_category_names(db, articles, category_names, blocks=None):
         return [
             {"article_id": a.id, "top_category": category_names[i], "subcategory": "Alt Başlık", "type": "haber"}
             for i, a in enumerate(articles)
         ]
 
     monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", classify_by_category_names)
-    monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
 
     _make_bulletin_category(db_session, name="Avrupa", display_order=0)
     _make_bulletin_category(db_session, name="AVRUPA", display_order=1)
@@ -420,14 +601,8 @@ def test_generate_bulletin_case_variant_categories_get_separate_headings(
 
     paragraph_texts = [p.text for p in document.paragraphs]
     first_heading_idx, second_heading_idx = heading1_avrupa_indices
-    # The article body paragraph (with its "(source)" suffix) is distinct
-    # from the GÜNDEM ÖZETİ digest blurb (which ends in "özeti." instead and
-    # always precedes the category sections) — search on the former so this
-    # doesn't accidentally match the digest mention of the same title.
-    first_article_idx = next(i for i, t in enumerate(paragraph_texts) if "Avrupa Haberi (Test Feed)" in t)
-    second_article_idx = next(
-        i for i, t in enumerate(paragraph_texts) if "Ikinci Avrupa Haberi (Test Feed)" in t
-    )
+    first_article_idx = paragraph_texts.index("📌 Test Feed - Avrupa Haberi")
+    second_article_idx = paragraph_texts.index("📌 Test Feed - Ikinci Avrupa Haberi")
 
     # Each category's article must sit under its OWN heading, not stranded
     # above it or under the other category's heading.
@@ -435,8 +610,6 @@ def test_generate_bulletin_case_variant_categories_get_separate_headings(
 
 
 def test_generate_bulletin_too_many_articles_returns_400(client, auth_headers, db_session, monkeypatch):
-    monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", _fake_classify)
-    monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
     monkeypatch.setattr(app_settings, "bulletin_max_articles", 2)
 
     _make_bulletin_category(db_session, name="AVRUPA")
@@ -453,7 +626,7 @@ def test_generate_bulletin_too_many_articles_returns_400(client, auth_headers, d
 def test_generate_bulletin_uses_classification_cache(client, auth_headers, db_session, monkeypatch):
     call_count = {"n": 0}
 
-    async def counting_classify(db, articles, category_names):
+    async def counting_classify(db, articles, category_names, blocks=None):
         if not articles:
             return []
         call_count["n"] += 1
@@ -463,7 +636,6 @@ def test_generate_bulletin_uses_classification_cache(client, auth_headers, db_se
         ]
 
     monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", counting_classify)
-    monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
 
     _make_bulletin_category(db_session, name="AVRUPA")
     feed = _make_feed(db_session)
@@ -482,8 +654,6 @@ def test_generate_bulletin_uses_classification_cache(client, auth_headers, db_se
 # ==================== POST /generate — favorites ====================
 
 def test_generate_bulletin_include_favorites_only(client, auth_headers, db_session, monkeypatch):
-    monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", _fake_classify)
-    monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
 
     _make_bulletin_category(db_session, name="AVRUPA")
     feed = _make_feed(db_session)
@@ -509,8 +679,6 @@ def test_generate_bulletin_include_favorites_only(client, auth_headers, db_sessi
 
 
 def test_generate_bulletin_priorities_and_favorites_union(client, auth_headers, db_session, monkeypatch):
-    monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", _fake_classify)
-    monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
 
     _make_bulletin_category(db_session, name="AVRUPA")
     feed = _make_feed(db_session)
@@ -545,8 +713,6 @@ def test_generate_bulletin_priorities_and_favorites_union(client, auth_headers, 
 def test_generate_bulletin_dedup_when_article_matches_both(client, auth_headers, db_session, monkeypatch):
     """An article that is both a matching priority AND starred must appear
     exactly once in the bulletin, not twice."""
-    monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", _fake_classify)
-    monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
 
     _make_bulletin_category(db_session, name="AVRUPA")
     feed = _make_feed(db_session)
@@ -565,18 +731,13 @@ def test_generate_bulletin_dedup_when_article_matches_both(client, auth_headers,
     assert response.status_code == 200
     document = DocxDocument(io.BytesIO(response.content))
     paragraph_texts = [p.text for p in document.paragraphs if p.text.strip()]
-    # The digest ("GÜNDEM ÖZETİ") and the category listing are two distinct
-    # sections that both legitimately reference every selected article once —
-    # so the real assertion is "not selected twice into the category listing",
-    # which is where a broken union (fetching the article via two separate
-    # queries instead of one OR'd query) would show up as a duplicate entry.
-    category_entries = [t for t in paragraph_texts if "Hem Yuksek Hem Favori" in t and "(Test Feed)" in t]
-    assert len(category_entries) == 1
+    # A broken union (fetching the article via two separate queries instead of one OR'd query)
+    # would show up as a duplicate article header.
+    headers = [t for t in paragraph_texts if t.startswith("📌") and "Hem Yuksek Hem Favori" in t]
+    assert len(headers) == 1
 
 
 def test_generate_bulletin_include_favorites_defaults_false(client, auth_headers, db_session, monkeypatch):
-    monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", _fake_classify)
-    monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
 
     _make_bulletin_category(db_session, name="AVRUPA")
     feed = _make_feed(db_session)
@@ -704,8 +865,6 @@ def test_generate_bulletin_no_blank_heading1_paragraphs(client, auth_headers, db
     but one silently survived un-removed in the output — orphaned blank
     Heading1 paragraphs that broke Word's İçindekiler (Table of Contents)
     generation on open."""
-    monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", _fake_classify)
-    monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
 
     # A category name unrelated to the template's own defaults forces every
     # bundled Heading1 (including its blank spacers) through the stray-removal path.
@@ -724,34 +883,6 @@ def test_generate_bulletin_no_blank_heading1_paragraphs(client, auth_headers, db
     assert blank_heading1s == []
 
 
-def test_generate_bulletin_update_fields_precedes_compat_in_settings(client, auth_headers, db_session, monkeypatch):
-    """word/settings.xml's CT_Settings content model is a strict, ordered
-    sequence. updateFields was previously inserted as the very first child,
-    ahead of elements the schema requires first (embedTrueTypeFonts,
-    defaultTabStop) — an out-of-order settings.xml that Word's settings
-    parser can reject or silently repair. It must be positioned immediately
-    before w:compat."""
-    monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", _fake_classify)
-    monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
-
-    _make_bulletin_category(db_session, name="AVRUPA")
-    feed = _make_feed(db_session)
-    now = datetime.now(timezone.utc)
-    _make_article(db_session, feed.id, title="Test Haberi", published_at=now - timedelta(hours=1))
-
-    response = client.post("/api/bulletin/generate", json={}, headers=auth_headers)
-
-    assert response.status_code == 200
-    with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
-        settings_xml = zf.read("word/settings.xml").decode("utf-8")
-    update_fields_idx = settings_xml.index("<w:updateFields")
-    # Must come after elements the schema requires first (an earlier version
-    # inserted updateFields as the very first child of <w:settings>, ahead of
-    # these) and before w:compat.
-    assert settings_xml.index("<w:defaultTabStop") < update_fields_idx
-    assert update_fields_idx < settings_xml.index("<w:compat")
-
-
 def test_generate_bulletin_toc_field_is_locale_independent(client, auth_headers, db_session, monkeypatch):
     """The bundled template's TOC field originally selected entries purely
     via \\t, a literal English-only style-name list ("Heading 1,1,Heading
@@ -763,8 +894,6 @@ def test_generate_bulletin_toc_field_is_locale_independent(client, auth_headers,
     came back with zero entries) — reproducing exactly the "no heading style
     applied" dialog reported against a real generated bulletin. \\o "1-6"
     additionally matches by outline level, which is locale-independent."""
-    monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", _fake_classify)
-    monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
 
     _make_bulletin_category(db_session, name="AVRUPA")
     feed = _make_feed(db_session)
@@ -789,8 +918,6 @@ def test_generate_bulletin_toc_field_is_locale_independent(client, auth_headers,
 # ==================== Generated Bulletin Persistence ====================
 
 def test_generate_bulletin_persists_a_row(client, auth_headers, db_session, monkeypatch):
-    monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", _fake_classify)
-    monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
 
     _make_bulletin_category(db_session, name="AVRUPA")
     feed = _make_feed(db_session)
@@ -819,8 +946,6 @@ def test_list_generated_bulletins_requires_auth(client):
 
 
 def test_list_generated_bulletins_returns_newest_first(client, auth_headers, db_session, monkeypatch):
-    monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", _fake_classify)
-    monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
 
     _make_bulletin_category(db_session, name="AVRUPA")
     feed = _make_feed(db_session)
@@ -851,8 +976,6 @@ def test_download_generated_bulletin_404_when_missing(client, auth_headers):
 
 
 def test_download_generated_bulletin_returns_the_saved_file(client, auth_headers, db_session, monkeypatch):
-    monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", _fake_classify)
-    monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
 
     _make_bulletin_category(db_session, name="AVRUPA")
     feed = _make_feed(db_session)
@@ -881,8 +1004,6 @@ def test_delete_generated_bulletin_404_when_missing(client, admin_headers):
 
 
 def test_delete_generated_bulletin_removes_row_and_file(client, admin_headers, db_session, monkeypatch):
-    monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", _fake_classify)
-    monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
 
     _make_bulletin_category(db_session, name="AVRUPA")
     feed = _make_feed(db_session)
@@ -910,7 +1031,7 @@ def test_generate_bulletin_survives_duplicate_and_string_article_ids(client, aut
     article = _make_article(db_session, feed.id, title="Tekrarlanan Haber", priority="high",
                             published_at=now - timedelta(hours=1))
 
-    async def duplicate_classify(db, articles, category_names):
+    async def duplicate_classify(db, articles, category_names, blocks=None):
         return [
             {"article_id": str(article.id), "top_category": "AVRUPA", "subcategory": "İlk", "type": "haber"},
             {"article_id": article.id, "top_category": "AVRUPA", "subcategory": "İkinci", "type": "haber"},
@@ -918,7 +1039,6 @@ def test_generate_bulletin_survives_duplicate_and_string_article_ids(client, aut
         ]
 
     monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", duplicate_classify)
-    monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
 
     response = client.post("/api/bulletin/generate", json={}, headers=auth_headers)
 
@@ -926,14 +1046,12 @@ def test_generate_bulletin_survives_duplicate_and_string_article_ids(client, aut
     rows = db_session.query(models.ArticleBulletinClassification).all()
     assert [(r.article_id, r.subcategory) for r in rows] == [(article.id, "İlk")]
     texts = [p.text for p in DocxDocument(io.BytesIO(response.content)).paragraphs]
-    assert "İlk" in texts
+    assert texts.count("📌 Test Feed - Tekrarlanan Haber") == 1
 
 
 def test_generate_bulletin_names_the_feed_as_source(client, auth_headers, db_session, monkeypatch):
     """Regression (#31): cards and summaries show the feed name as the source, the Word bulletin
     still showed the article URL's hostname."""
-    monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", _fake_classify)
-    monkeypatch.setattr(bulletin_service, "pick_bulletin_digest", _fake_digest)
     _make_bulletin_category(db_session, name="AVRUPA")
     feed = _make_feed(db_session, title="Sputnik Türkiye")
     now = datetime.now(timezone.utc)
@@ -945,3 +1063,54 @@ def test_generate_bulletin_names_the_feed_as_source(client, auth_headers, db_ses
     body_text = "\n".join(p.text for p in DocxDocument(io.BytesIO(response.content)).paragraphs)
     assert "Sputnik Türkiye" in body_text
     assert "tr.sputniknews.example" not in body_text
+
+
+def test_classification_matches_category_names_case_and_turkish_i_insensitively(monkeypatch, db_session):
+    """Regression: user categories are stored as typed ("Ukrayna", "Amerika", "Iran") but the model
+    answers in upper case ("UKRAYNA", "AMERİKA", "İRAN"). The exact-match check sent every such
+    article to DİĞER, so the bulletin had Ukraine/America news under DİĞER next to empty-ish
+    Ukrayna/Amerika sections."""
+    async def fake_completion(system_prompt, user_prompt, max_completion_tokens):
+        return {"classifications": [
+            {"article_id": 1, "top_category": "UKRAYNA", "type": "haber"},
+            {"article_id": 2, "top_category": "AMERİKA", "type": "haber"},
+            {"article_id": 3, "top_category": "İRAN", "type": "haber"},
+            {"article_id": 4, "top_category": " nato ", "type": "haber"},
+            {"article_id": 5, "top_category": "ASYA", "type": "haber"},
+        ]}
+
+    async def no_limits():
+        return None
+
+    monkeypatch.setattr(bulletin_service, "_call_json_completion", fake_completion)
+    monkeypatch.setattr(bulletin_service, "check_cost_limits", no_limits)
+    articles = [models.Article(id=i, title=f"Haber {i}", url=f"https://x/{i}") for i in range(1, 6)]
+
+    result = asyncio.run(_real_classify_articles_for_bulletin(
+        db_session, articles, ["Türkiye", "Amerika", "Avrupa", "Ukrayna", "Iran", "Nato"]
+    ))
+
+    assert [r["top_category"] for r in result] == ["Ukrayna", "Amerika", "Iran", "Nato", "DİĞER"]
+
+
+def test_generate_bulletin_places_cached_case_variant_category_under_its_section(
+    client, auth_headers, db_session, monkeypatch
+):
+    """A cached classification whose top_category differs from the current category name only by
+    case (e.g. the category was renamed "Avrupa" -> "AVRUPA"; the cache key ignores case) must land
+    in that category — it used to fall into a bucket that was never rendered, dropping the article."""
+    category = _make_bulletin_category(db_session, name="AVRUPA")
+    feed = _make_feed(db_session)
+    article = _make_article(db_session, feed.id, title="Brüksel Haberi",
+                            published_at=datetime.now(timezone.utc) - timedelta(hours=1))
+    crud.create_bulletin_classification(
+        db_session, article_id=article.id,
+        category_set_hash=bulletin_service.compute_category_set_hash([category.name]),
+        top_category="Avrupa", subcategory="", article_type="haber", model_used="gpt-test",
+    )
+
+    texts = [p.text for p in _paragraphs(_generate(client, auth_headers))]
+
+    assert "📌 Test Feed - Brüksel Haberi" in texts
+    assert texts.index("AVRUPA") < texts.index("📌 Test Feed - Brüksel Haberi")
+    assert "DİĞER" not in texts

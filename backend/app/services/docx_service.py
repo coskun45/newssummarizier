@@ -1,21 +1,28 @@
 """
 Word (.docx) rendering for the on-demand bulletin report.
 
-Mutates a bundled template in place instead of rebuilding the document from
-scratch, so the icon legend and style definitions (Title/Heading1/Heading2
-fonts, theme) come from the template verbatim rather than being
-re-transcribed into Python constants. The "BAZI KAYNAKLAR" source list is
-NOT static — it's replaced with the app's actually-configured RSS feeds.
+The bundled template (`resources/bulletin_template.docx`) is a real edition of
+the bulletin. Everything up to and including the "BAZI KAYNAKLAR" source list
+(title, İçindekiler content control, icon legend, sources) is kept; the body
+after it is rebuilt for each run.
 
-Top-level categories render as Heading1, subcategories as Heading2 — this
-matches the template's own bundled TOC field, whose \t switch maps
-"Heading 1" to outline level 1 and "Heading 2" to level 2 (confirmed by
-inspecting the template's field codes). Using Heading3 here, as an earlier
-version of this module did, silently produced a broken-looking TOC that
-skipped level 2 entirely once Word recomputed it.
+New paragraphs are deep copies of the template's own paragraphs (a Heading1, a
+Heading3, a bold "📌" article header, a "🔹" bullet, a blank spacer) with only
+their text replaced. The template's look lives in direct paragraph/run
+formatting (bold, 13pt/23pt, 240 spacing — a Google Docs export), not in the
+style definitions, so a paragraph created with just a style name would lose it.
+
+Categories render as Heading1 and their topic groups as Heading3, exactly like
+the template; its TOC field maps "Heading 1" to level 1 and "Heading 3" to
+level 3. The TOC's cached result is rebuilt here too (one hyperlinked entry per
+heading, no page numbers — the field has \\n), so Word shows a correct
+İçindekiler on open without `updateFields`, which makes Word ask the reader
+whether to update fields every time the file is opened.
 """
+import copy
 import io
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -23,7 +30,6 @@ from typing import Any, Dict, List, Optional
 from docx import Document
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.text.paragraph import Paragraph
 
 from app.core.exceptions import BulletinGenerationError
 
@@ -33,29 +39,30 @@ TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "resources" / "bulletin
 
 TITLE_STYLE_ID = "Title"
 HEADING1_STYLE_ID = "Heading1"
-HEADING2_STYLE_ID = "Heading2"
-NORMAL_STYLE_ID = "Normal"
+HEADING3_STYLE_ID = "Heading3"
 
-GUNDEM_OZETI_LABEL = "GÜNDEM ÖZETİ"
-ONE_CIKAN_BASLIKLAR_LABEL = "ÖNE ÇIKAN BAŞLIKLAR"
 KAYNAKLAR_LABEL_PREFIX = "BAZI KAYNAKLAR"
-DIGER_CATEGORY_NAME = "DİĞER"
-NO_FEEDS_LINE = "Şu anda takip edilen bir RSS beslemesi yok."
-
-_ICON_BY_TYPE = {"haber": "📌", "haber_detayi": "🔹", "yorum": "⭕️"}
+RSS_SOURCES_LABEL = "RSS Beslemeleri"
+HEADER_ICONS = ("📌", "⭕️", "⭕")
+BULLET_ICON = "🔹"
+BOOKMARK_PREFIX = "_bulten_"
 
 _TURKISH_MONTHS = {
     1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan", 5: "Mayıs", 6: "Haziran",
     7: "Temmuz", 8: "Ağustos", 9: "Eylül", 10: "Ekim", 11: "Kasım", 12: "Aralık",
 }
 
-# Fold all four Turkish I-variants ('İ'/'I'/'ı'/'i') to the same character
-# before lowercasing. Python's default .lower()/.upper() handle Ç/Ö/Ş/Ü/Ğ
-# correctly but mishandle the dotted/dotless I pair — and the bundled
-# template itself is inconsistent (e.g. "AMERIKA" with a plain ASCII 'I'
-# where proper Turkish spelling is "AMERİKA"), so matching must tolerate
-# both forms rather than "correctly" telling them apart.
-_TR_I_FOLD = str.maketrans({"İ": "i", "I": "i", "ı": "i"})
+# lxml refuses control characters that are invalid in XML 1.0; scraped/LLM text can contain them.
+_XML_INVALID_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+_W_P = qn("w:p")
+_W_R = qn("w:r")
+_W_T = qn("w:t")
+_W_HYPERLINK = qn("w:hyperlink")
+_W_BOOKMARK_START = qn("w:bookmarkStart")
+_W_BOOKMARK_END = qn("w:bookmarkEnd")
+_W_FLDCHAR = qn("w:fldChar")
+_W_INSTRTEXT = qn("w:instrText")
 
 
 def format_turkish_date(dt: datetime) -> str:
@@ -63,285 +70,304 @@ def format_turkish_date(dt: datetime) -> str:
     return f"{dt.day:02d} {_TURKISH_MONTHS[dt.month]} {dt.year}"
 
 
-def _normalize(text: str) -> str:
-    return text.strip().translate(_TR_I_FOLD).lower()
+def _clean(text: str) -> str:
+    return _XML_INVALID_RE.sub("", text or "")
 
 
-def _style_id(paragraph: Paragraph) -> Optional[str]:
-    try:
-        return paragraph.style.style_id
-    except Exception:
+def _p_text(p) -> str:
+    return "".join(t.text or "" for t in p.iter(_W_T))
+
+
+def _p_style(p) -> Optional[str]:
+    ppr = p.pPr
+    if ppr is None or ppr.pStyle is None:
         return None
+    return ppr.pStyle.val
 
 
-def _insert_paragraph_after(paragraph: Paragraph, text: str, style=None) -> Paragraph:
-    """python-docx has no public "insert paragraph after" API — this is the
-    standard addnext()-based recipe, using the paragraph's own private
-    `_parent` to construct a new Paragraph wrapping a freshly inserted <w:p>."""
-    new_p = OxmlElement("w:p")
-    paragraph._p.addnext(new_p)
-    new_para = Paragraph(new_p, paragraph._parent)
-    if style is not None:
-        new_para.style = style
-    new_para.add_run(text)
-    return new_para
+def _is_field_run(r) -> bool:
+    return r.find(_W_FLDCHAR) is not None or r.find(_W_INSTRTEXT) is not None
 
 
-def _heading1_spans(document: Document) -> List[tuple]:
-    """[(heading1_paragraph, [child_paragraphs_until_next_heading1]), ...]."""
-    paragraphs = document.paragraphs
-    indices = [i for i, p in enumerate(paragraphs) if _style_id(p) == HEADING1_STYLE_ID]
-    spans = []
-    for pos, start in enumerate(indices):
-        end = indices[pos + 1] if pos + 1 < len(indices) else len(paragraphs)
-        spans.append((paragraphs[start], paragraphs[start + 1:end]))
-    return spans
+def _set_run_text(r, text: str) -> None:
+    for t in r.findall(_W_T):
+        r.remove(t)
+    t = OxmlElement("w:t")
+    t.set(qn("xml:space"), "preserve")
+    t.text = _clean(text)
+    r.append(t)
 
 
-def _remove_paragraph(paragraph: Paragraph) -> None:
-    element = paragraph._element
-    parent = element.getparent()
-    if parent is not None:
-        parent.remove(element)
+def _clone_with_text(proto, *texts: str):
+    """Copy `proto` keeping its paragraph/run formatting; the i-th text goes into its i-th run
+    (the source-list line has a bold label run and a plain text run). Extra runs are dropped."""
+    p = copy.deepcopy(proto)
+    for el in p.findall(_W_BOOKMARK_START) + p.findall(_W_BOOKMARK_END):
+        p.remove(el)
+    runs = p.findall(_W_R)
+    if not runs:
+        runs = [OxmlElement("w:r")]
+        p.append(runs[0])
+    while len(runs) < len(texts):
+        extra = copy.deepcopy(runs[-1])
+        runs[-1].addnext(extra)
+        runs.append(extra)
+    for r, text in zip(runs, texts):
+        _set_run_text(r, text)
+    for r in runs[len(texts):]:
+        p.remove(r)
+    return p
 
 
-def _set_paragraph_text(paragraph: Paragraph, text: str) -> None:
-    if paragraph.runs:
-        paragraph.runs[0].text = text
-        for extra in paragraph.runs[1:]:
-            extra.text = ""
-    else:
-        paragraph.add_run(text)
+class _Prototypes:
+    """Template paragraphs every generated paragraph is copied from."""
+
+    def __init__(self, body):
+        paragraphs = list(body.iter(_W_P))
+        first_h1 = next(
+            (i for i, p in enumerate(paragraphs) if _p_style(p) == HEADING1_STYLE_ID), None
+        )
+        if first_h1 is None:
+            raise BulletinGenerationError("Bulletin template has no Heading1 paragraph")
+        content = paragraphs[first_h1:]
+
+        def find(predicate, what):
+            found = next((p for p in content if predicate(p)), None)
+            if found is None:
+                raise BulletinGenerationError(f"Bulletin template has no {what} paragraph")
+            return copy.deepcopy(found)
+
+        self.heading1 = find(lambda p: _p_style(p) == HEADING1_STYLE_ID and _p_text(p).strip(), "Heading1")
+        self.heading3 = find(lambda p: _p_style(p) == HEADING3_STYLE_ID and _p_text(p).strip(), "Heading3")
+        self.header = find(lambda p: _p_style(p) is None and _p_text(p).startswith("📌"), "article header")
+        self.bullet = find(lambda p: _p_style(p) is None and _p_text(p).startswith(BULLET_ICON), "bullet")
+        self.blank = find(lambda p: _p_style(p) is None and not _p_text(p).strip(), "blank")
 
 
-def _set_title(document: Document, generated_at: datetime) -> Optional[Paragraph]:
-    text = f"{format_turkish_date(generated_at)} Dünya Bülteni"
-    for p in document.paragraphs:
-        if _style_id(p) == TITLE_STYLE_ID:
-            _set_paragraph_text(p, text)
-            return p
-    return None
+def _set_title(body, generated_at: datetime) -> None:
+    for p in body.iter(_W_P):
+        if _p_style(p) == TITLE_STYLE_ID:
+            runs = p.findall(_W_R)
+            if runs:
+                _set_run_text(runs[0], f"{format_turkish_date(generated_at)} Dünya Bülteni")
+                for r in runs[1:]:
+                    p.remove(r)
+            return
 
 
-def _replace_kaynaklar_section(
-    document: Document,
-    styles_by_id: Dict[str, Any],
-    feed_lines: List[str],
-) -> None:
-    """Replace the template's static "BAZI KAYNAKLAR" country/source list with
-    the app's actually-configured RSS feeds, one line per feed."""
-    normal_style = styles_by_id.get(NORMAL_STYLE_ID)
-
-    label_paragraph = None
-    for p in document.paragraphs:
-        if p.text.strip().startswith(KAYNAKLAR_LABEL_PREFIX):
-            label_paragraph = p
+def _append_rss_sources(body, feed_titles: List[str]) -> None:
+    """Keep the template's "Ülke: kaynaklar" list and add the app's followed RSS feeds as one
+    more line in the same format (bold label run + plain text run)."""
+    if not feed_titles:
+        return
+    children = list(body)
+    label_idx = next(
+        (i for i, el in enumerate(children)
+         if el.tag == _W_P and _p_text(el).strip().startswith(KAYNAKLAR_LABEL_PREFIX)),
+        None,
+    )
+    if label_idx is None:
+        logger.warning("BAZI KAYNAKLAR paragraph not found in bulletin template; RSS feeds not listed")
+        return
+    last_line = None
+    for el in children[label_idx + 1:]:
+        if el.tag != _W_P or not _p_text(el).strip() or _p_style(el):
             break
-    if label_paragraph is None:
-        logger.warning("BAZI KAYNAKLAR paragraph not found in bulletin template; skipping source list refresh")
+        last_line = el
+    if last_line is None or len(last_line.findall(_W_R)) < 2:
+        logger.warning("Bulletin template source list has no 'Ülke: kaynaklar' line to copy")
+        return
+    line = _clone_with_text(last_line, RSS_SOURCES_LABEL, ": " + ", ".join(feed_titles))
+    last_line.addnext(line)
+
+
+def _clear_body_after_sources(body) -> None:
+    """Drop the template's example edition: every body element from the first Heading1 on,
+    except the final section properties."""
+    children = list(body)
+    start = next(
+        (i for i, el in enumerate(children) if el.tag == _W_P and _p_style(el) == HEADING1_STYLE_ID),
+        None,
+    )
+    if start is None:
+        return
+    for el in children[start:]:
+        if el.tag != qn("w:sectPr"):
+            body.remove(el)
+
+
+def _max_bookmark_id(body) -> int:
+    ids = [int(el.get(qn("w:id"))) for el in body.iter(_W_BOOKMARK_START)
+           if (el.get(qn("w:id")) or "").lstrip("-").isdigit()]
+    return max(ids, default=0)
+
+
+def _add_bookmark(p, name: str, bookmark_id: int) -> None:
+    start = OxmlElement("w:bookmarkStart")
+    start.set(qn("w:id"), str(bookmark_id))
+    start.set(qn("w:name"), name)
+    end = OxmlElement("w:bookmarkEnd")
+    end.set(qn("w:id"), str(bookmark_id))
+    first_run = p.find(_W_R)
+    if first_run is not None:
+        first_run.addprevious(start)
+    else:
+        p.append(start)
+    start.addnext(end)
+
+
+def _build_body(body, protos: _Prototypes, sections: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Append the sections before the sectPr; returns the TOC entries (level, text, bookmark)."""
+    sect_pr = body.find(qn("w:sectPr"))
+
+    def append(p):
+        if sect_pr is not None:
+            sect_pr.addprevious(p)
+        else:
+            body.append(p)
+
+    toc_entries: List[Dict[str, Any]] = []
+    next_id = _max_bookmark_id(body) + 1
+
+    def heading(proto, text: str, level: int):
+        nonlocal next_id
+        p = _clone_with_text(proto, text)
+        name = f"{BOOKMARK_PREFIX}{next_id}"
+        _add_bookmark(p, name, next_id)
+        next_id += 1
+        append(p)
+        toc_entries.append({"level": level, "text": text, "bookmark": name})
+
+    for section in sections:
+        groups = [g for g in section.get("groups", []) if g.get("items")]
+        if not groups:
+            continue
+        heading(protos.heading1, section["title"], 1)
+        for group in groups:
+            heading(protos.heading3, group["title"], 3)
+            for item in group["items"]:
+                append(_clone_with_text(protos.header, item["header"]))
+                for bullet in item.get("bullets", []):
+                    append(_clone_with_text(protos.bullet, bullet))
+                append(copy.deepcopy(protos.blank))
+    return toc_entries
+
+
+def _rebuild_toc(body, entries: List[Dict[str, Any]]) -> None:
+    """Replace the TOC content control's cached entries with the real headings."""
+    sdt_content = next(
+        (sc for sdt in body.iter(qn("w:sdt")) for sc in sdt.findall(qn("w:sdtContent"))
+         if any(i.text and "TOC" in i.text for i in sc.iter(_W_INSTRTEXT))),
+        None,
+    )
+    if sdt_content is None:
+        logger.warning("No TOC content control in bulletin template; İçindekiler not rebuilt")
+        return
+    old = sdt_content.findall(_W_P)
+    if not old:
         return
 
-    # Remove every paragraph between the label and the next Heading1 (the
-    # template's static source list + trailing spacers).
-    node = label_paragraph._p.getnext()
-    while node is not None and node.tag == qn("w:p"):
-        candidate = Paragraph(node, label_paragraph._parent)
-        if _style_id(candidate) == HEADING1_STYLE_ID:
-            break
-        next_node = node.getnext()
-        _remove_paragraph(candidate)
-        node = next_node
+    begin_runs = [copy.deepcopy(r) for r in old[0].findall(_W_R) if _is_field_run(r)]
+    end_runs = [copy.deepcopy(r) for r in old[-1].findall(_W_R)
+                if r.find(_W_FLDCHAR) is not None and r.find(_W_FLDCHAR).get(qn("w:fldCharType")) == "end"]
+    has_link = [p for p in old if p.find(_W_HYPERLINK) is not None]
 
-    anchor = label_paragraph
-    for line in (feed_lines or [NO_FEEDS_LINE]):
-        anchor = _insert_paragraph_after(anchor, line, normal_style)
+    def entry_proto(indented: bool):
+        match = next((p for p in has_link if (p.find(f"{qn('w:pPr')}/{qn('w:ind')}") is not None) == indented),
+                     None)
+        match = match if match is not None else (has_link[0] if has_link else old[0])
+        proto = copy.deepcopy(match)
+        for r in proto.findall(_W_R):
+            if _is_field_run(r):
+                proto.remove(r)
+        return proto
+
+    level1, level3 = entry_proto(False), entry_proto(True)
+
+    for p in old:
+        sdt_content.remove(p)
+
+    new_paragraphs = []
+    for entry in entries:
+        p = copy.deepcopy(level1 if entry["level"] == 1 else level3)
+        link = p.find(_W_HYPERLINK)
+        if link is None:
+            continue
+        link.set(qn("w:anchor"), entry["bookmark"])
+        runs = link.findall(_W_R)
+        if runs:
+            _set_run_text(runs[0], entry["text"])
+            for r in runs[1:]:
+                link.remove(r)
+        new_paragraphs.append(p)
+
+    if not new_paragraphs:
+        new_paragraphs.append(copy.deepcopy(level1))
+        link = new_paragraphs[0].find(_W_HYPERLINK)
+        if link is not None:
+            new_paragraphs[0].remove(link)
+
+    first, last = new_paragraphs[0], new_paragraphs[-1]
+    anchor = first.find(qn("w:pPr"))
+    for r in begin_runs:
+        if anchor is not None:
+            anchor.addnext(r)
+        else:
+            first.insert(0, r)
+        anchor = r
+    for r in end_runs:
+        last.append(r)
+    for p in new_paragraphs:
+        sdt_content.append(p)
 
 
-def _enable_auto_update_fields(document: Document) -> None:
-    """Set updateFields=true in word/settings.xml so Word silently recomputes
-    every field (notably the İçindekiler/TOC) when the file is opened,
-    instead of showing whatever stale result was last cached in the bundled
-    template — python-docx has no API for this, so it's raw OOXML insertion,
-    same recipe as the paragraph-insertion helpers above."""
-    settings_element = document.settings.element
-    existing = settings_element.find(qn("w:updateFields"))
-    if existing is not None:
-        existing.set(qn("w:val"), "true")
-        return
-    update_fields = OxmlElement("w:updateFields")
-    update_fields.set(qn("w:val"), "true")
-    # CT_Settings is a strict, ordered sequence — updateFields must sit right
-    # before compat/docVars/rsids (inserting at index 0, ahead of elements
-    # like embedTrueTypeFonts/defaultTabStop that the schema requires first,
-    # produces an out-of-order settings.xml that Word's stricter settings
-    # parser can reject or repair, silently dropping the flag it's meant to
-    # set). Anchor on w:compat, which is present in every template we ship
-    # against; fall back to appending if a template ever lacks one.
-    compat = settings_element.find(qn("w:compat"))
-    if compat is not None:
-        compat.addprevious(update_fields)
-    else:
-        settings_element.append(update_fields)
-
-
-def _fix_toc_field_locale_independence(document: Document) -> None:
-    """The bundled template's TOC field selects entries purely via \\t — a
-    literal, English-only style-name list (" TOC \\h \\u \\z \\n \\t \"Heading
-    1,1,Heading 2,2,...\"") with no \\o switch. \\t matches a paragraph by its
-    LOCALIZED style display name string, and Word does not translate
-    "Heading 1" for that comparison on a non-English install (e.g. German's
-    "Überschrift 1", confirmed via Word COM automation — outline level is
-    correctly 1, but the name string doesn't match). With no \\o fallback,
-    the field then finds zero entries on a non-English Word even though our
-    Heading1/Heading2 paragraphs are entirely correct — and updating it
-    interactively prompts to create a brand new table instead of populating
-    the existing one. \\o "1-6" additionally matches by outline level, which
-    is locale-independent, so add it alongside \\t rather than replacing it."""
-    for instr_text in document.element.body.iter(qn("w:instrText")):
+def _fix_toc_field_locale_independence(body) -> None:
+    """The template's TOC field selects entries purely via \\t — a literal, English-only
+    style-name list (" TOC \\h \\u \\z \\n \\t \"Heading 1,1,...\"") with no \\o switch. \\t
+    matches a paragraph by its LOCALIZED style display name, which Word does not translate on a
+    non-English install (e.g. German "Überschrift 1", confirmed via Word COM automation), so a
+    manual "update field" there found zero entries. \\o "1-6" additionally matches by outline
+    level, which is locale-independent, so add it alongside \\t rather than replacing it."""
+    for instr_text in body.iter(_W_INSTRTEXT):
         text = instr_text.text or ""
         if text.strip().startswith("TOC") and "\\o" not in text and "\\t" in text:
             instr_text.text = text.replace("\\t", '\\o "1-6" \\t', 1)
 
 
-def _rebuild_category_sections(
-    document: Document,
-    styles_by_id: Dict[str, Any],
-    title_paragraph: Optional[Paragraph],
-    digest_items: List[Dict[str, Any]],
-    categorized: Dict[str, Dict[str, List[Dict[str, Any]]]],
-    category_order: List[str],
-) -> None:
-    normal_style = styles_by_id.get(NORMAL_STYLE_ID)
-    heading1_style = styles_by_id.get(HEADING1_STYLE_ID)
-    heading2_style = styles_by_id.get(HEADING2_STYLE_ID)
-
-    # The template has no standalone "GÜNDEM ÖZETİ" body paragraph — that text
-    # only ever appeared as a cached Table-of-Contents entry. Its closest real
-    # counterpart is "ÖNE ÇIKAN BAŞLIKLAR" (also dropped in v1, see plan): a
-    # leading, cross-region highlights section in the same document slot. We
-    # repurpose that heading — rename it and clear its stale example
-    # subheadings — as the home for the LLM-picked digest.
-    digest_anchor: Optional[Paragraph] = None
-    existing_by_name: Dict[str, Paragraph] = {}
-    for heading_p, children in _heading1_spans(document):
-        normalized = _normalize(heading_p.text)
-        if normalized == _normalize(ONE_CIKAN_BASLIKLAR_LABEL):
-            for child in children:
-                _remove_paragraph(child)
-            _set_paragraph_text(heading_p, GUNDEM_OZETI_LABEL)
-            digest_anchor = heading_p
-            continue
-        # Clear stale example subheadings/body left over from the template's
-        # last real edition — fresh ones are generated for this run below.
-        for child in children:
-            _remove_paragraph(child)
-        if not normalized:
-            # The bundled template has several blank Heading1 paragraphs used
-            # as layout spacers (a Google Docs export artifact) — not a real
-            # category. Drop them outright instead of keying them into
-            # existing_by_name under the same '' key, where each new one
-            # would silently overwrite the last and strand the rest as
-            # orphaned empty headings in the output (never reachable by the
-            # stray-cleanup loop below, since only the dict's survivor is).
-            _remove_paragraph(heading_p)
-            continue
-        existing_by_name[normalized] = heading_p
-
-    if digest_anchor is None:
-        if title_paragraph is not None:
-            digest_anchor = _insert_paragraph_after(title_paragraph, GUNDEM_OZETI_LABEL, heading1_style)
-        else:
-            logger.warning("Could not find a Title paragraph to anchor the GÜNDEM ÖZETİ section on")
-
-    if digest_anchor is not None:
-        for item in digest_items:
-            icon = _ICON_BY_TYPE.get(item.get("article_type"), "📌")
-            text = f"{icon} {item['blurb']}"
-            digest_anchor = _insert_paragraph_after(digest_anchor, text, normal_style)
-
-    ordered_names = list(category_order) + [DIGER_CATEGORY_NAME]
-
-    # Any template Heading1 that doesn't correspond to a current category
-    # (e.g. the user removed/renamed it since the template was last edited)
-    # is stale — its content was already cleared above, so drop the empty
-    # heading too rather than leaving it stranded in the output.
-    valid_keys = {_normalize(name) for name in ordered_names}
-    for key, stray in list(existing_by_name.items()):
-        if key not in valid_keys:
-            _remove_paragraph(stray)
-            del existing_by_name[key]
-
-    # Categories keep their original template position unless explicitly
-    # relocated here — reusing an existing Heading1 anchor "in place" would
-    # silently ignore the user's configured display_order (the bundled
-    # template's own heading order is fixed/hardcoded). `tail` tracks the
-    # last-placed paragraph so every category heading, reused or brand new,
-    # ends up physically positioned in `category_order` sequence — which is
-    # what the TOC field (recomputed via `_enable_auto_update_fields`) reads.
-    tail = digest_anchor if digest_anchor is not None else title_paragraph
-
-    for name in ordered_names:
-        groups = categorized.get(name)
-        # pop(), not get(): two category names that normalize to the same key
-        # (e.g. "Avrupa" / "AVRUPA") must not both claim this same template
-        # heading — the second one falls through to the `anchor is None`
-        # branch below and gets its own new heading instead of relocating
-        # (and thereby corrupting the position of) the first one's.
-        anchor = existing_by_name.pop(_normalize(name), None)
-
-        if not groups:
-            # No articles landed here this run — don't leave an empty heading.
-            if anchor is not None:
-                _remove_paragraph(anchor)
-            continue
-
-        if anchor is None:
-            anchor = _insert_paragraph_after(tail, name, heading1_style)
-        elif tail is not None:
-            tail._p.addnext(anchor._p)
-
-        tail = anchor
-        for subcategory, items in groups.items():
-            tail = _insert_paragraph_after(tail, subcategory, heading2_style)
-            for item in items:
-                article_type = item.get("article_type")
-                icon = _ICON_BY_TYPE.get(article_type, "📌")
-                source = item.get("source")
-                suffix = f" ({source})" if source and article_type != "haber_detayi" else ""
-                text = f"{icon} {item['synopsis']}{suffix}"
-                tail = _insert_paragraph_after(tail, text, normal_style)
+def _drop_update_fields(document) -> None:
+    """The TOC is pre-rendered, so Word must not be told to refresh fields on open (it would
+    ask the reader for permission every time)."""
+    settings_element = document.settings.element
+    for el in settings_element.findall(qn("w:updateFields")):
+        settings_element.remove(el)
 
 
 def render_bulletin_docx(
     generated_at: datetime,
-    digest_items: List[Dict[str, Any]],
-    categorized: Dict[str, Dict[str, List[Dict[str, Any]]]],
-    category_order: List[str],
-    feed_lines: Optional[List[str]] = None,
+    sections: List[Dict[str, Any]],
+    feed_titles: Optional[List[str]] = None,
 ) -> io.BytesIO:
     """Render the bulletin as an in-memory .docx (no temp file on disk).
 
-    The template's "İçindekiler" (Table of Contents) field can't be computed
-    by python-docx directly, so `_enable_auto_update_fields` sets Word's
-    updateFields document setting instead — this makes Word recompute every
-    field (the TOC included) from the document's real Heading1/Heading2
-    structure as soon as the file is opened, rather than showing whatever
-    stale result was cached in the bundled template.
+    `sections` is the body in order: [{"title": "AVRUPA", "groups": [{"title": "AVRUPA GÖÇ
+    GÜNDEMİ", "items": [{"header": "📌 Kaynak - Başlık", "bullets": ["🔹 ..."]}]}]}].
+    Sections/groups without items are left out.
     """
     if not TEMPLATE_PATH.exists():
         raise BulletinGenerationError(f"Bulletin template not found at {TEMPLATE_PATH}")
 
     try:
         document = Document(str(TEMPLATE_PATH))
-        styles_by_id = {s.style_id: s for s in document.styles if s.style_id}
+        body = document.element.body
+        protos = _Prototypes(body)
 
-        title_paragraph = _set_title(document, generated_at)
-        _replace_kaynaklar_section(document, styles_by_id, feed_lines or [])
-        _rebuild_category_sections(
-            document, styles_by_id, title_paragraph, digest_items, categorized, category_order
-        )
-        _fix_toc_field_locale_independence(document)
-        _enable_auto_update_fields(document)
+        _set_title(body, generated_at)
+        _append_rss_sources(body, feed_titles or [])
+        _clear_body_after_sources(body)
+        toc_entries = _build_body(body, protos, sections)
+        _rebuild_toc(body, toc_entries)
+        _fix_toc_field_locale_independence(body)
+        _drop_update_fields(document)
 
         buffer = io.BytesIO()
         document.save(buffer)

@@ -11,9 +11,13 @@ Deutsche Welle (DW) RSS beslemelerinden haber toplayan, kategorize eden ve yapay
 - **İnteraktif Dashboard**: Arama ve filtreleme ile React tabanlı kullanıcı arayüzü
 - **Maliyet Takibi**: Yapılandırılabilir limitlerle OpenAI API maliyetlerini izler
 - **LangGraph Workflow**: Karmaşık işleme hatları için sağlam agent orkestrasyon
-- **Word Bülten Raporu**: Seçilen zaman aralığı ve önem seviyesindeki haberleri, kullanıcı tanımlı üst
-  düzey kategorilere (Avrupa, Amerika vb.) göre gruplayıp şablona uygun bir Word (.docx) raporu üretir —
-  alt başlıklar ve gündem özeti her üretimde yapay zeka tarafından haberlere göre oluşturulur
+- **Word Bülten Raporu**: Seçilen zaman aralığı ve önem seviyesindeki haberlerden, şablondaki örnek bülten
+  yapısında bir Word (.docx) raporu üretir: en başta yapay zekanın seçtiği en fazla 5 haberlik **Öne Çıkan
+  Başlıklar**, ardından kullanıcı tanımlı üst düzey kategoriler (Avrupa, Amerika vb.; Heading1) ve her birinin
+  altında haberlerin konularına göre oluşturulan anlamlı alt başlıklar (Heading3). Her haber, uygulamanın kısa
+  özetiyle (`📌 Kaynak / Yazar - Başlık` + `🔹` maddeler) yazılır; kısa özeti olmayan habere aynı özetleyiciyle
+  özet üretilip kaydedilir. İçindekiler hazır doldurulur (Word açılışta güncelleme sormaz); "BAZI KAYNAKLAR"
+  listesine takip edilen RSS beslemeleri eklenir. Şablon: `backend/app/resources/bulletin_template.docx`
 - **Playground**: Header'daki sekmeden mevcut RSS'lerdeki haberlerden biri seçilip pipeline'ın (sınıflandırma +
   öncelik, kısa/standart/detaylı özet) sonucu görülebilir. Geçerli model ve prompt ayarları gösterilir; prompt'lar
   ve özet talimatları o çalıştırma için geçici olarak değiştirilebilir. Her aşama ayrıntılı incelenir (modele giden
