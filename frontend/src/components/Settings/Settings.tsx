@@ -13,7 +13,22 @@ interface SettingsProps {
   currentUser: AuthUser;
 }
 
+// Choices for the automatic refresh of all feeds (seconds). The backend accepts 5 min – 24 h.
+const REFRESH_INTERVAL_OPTIONS: { value: number; label: string }[] = [
+  { value: 900, label: '15 dakika' },
+  { value: 1800, label: '30 dakika' },
+  { value: 3600, label: '1 saat' },
+  { value: 7200, label: '2 saat' },
+  { value: 21600, label: '6 saat' },
+  { value: 43200, label: '12 saat' },
+  { value: 86400, label: '24 saat' },
+];
+
+const ADMIN_ONLY_NOTE = 'Bu ayarları yalnızca yöneticiler değiştirebilir.';
+
 function Settings({ category, currentUser }: SettingsProps) {
+  // Settings steer the pipeline (and its cost) for everyone — only admins may change them.
+  const isAdmin = currentUser.role === 'admin';
   const { data: settings, isLoading: settingsLoading } = useSettings();
   const { data: topics } = useTopics();
   const { mutate: updateSettings, isPending: isSaving } = useUpdateSettings();
@@ -31,6 +46,7 @@ function Settings({ category, currentUser }: SettingsProps) {
 
   const [enabledTopicIds, setEnabledTopicIds] = useState<number[]>([]);
   const [enabledSummaryTypes, setEnabledSummaryTypes] = useState<string[]>([]);
+  const [refreshInterval, setRefreshInterval] = useState<number>(3600);
   const [showAddTopic, setShowAddTopic] = useState(false);
   const [newTopicName, setNewTopicName] = useState('');
   const [newTopicDescription, setNewTopicDescription] = useState('');
@@ -69,10 +85,19 @@ function Settings({ category, currentUser }: SettingsProps) {
         ? settings.enabled_summary_types.split(',').map(t => t.trim())
         : ['brief', 'standard', 'detailed'];
       setEnabledSummaryTypes(summaryTypes);
+      setRefreshInterval(settings.feed_refresh_interval);
     }
   }, [settings]);
 
+  // Empty = all topics. Unchecking the last checked topic would therefore silently re-enable
+  // every topic, so the last one stays checked instead.
+  const isLastCheckedTopic = (topicId: number) =>
+    enabledTopicIds.length === 0
+      ? (topics?.length ?? 0) === 1
+      : enabledTopicIds.length === 1 && enabledTopicIds[0] === topicId;
+
   const handleTopicToggle = (topicId: number) => {
+    if (isLastCheckedTopic(topicId)) return;
     if (enabledTopicIds.length === 0) {
       // Empty = all topics selected. Deselect one → select all others explicitly.
       setEnabledTopicIds((topics || []).map(t => t.id).filter(id => id !== topicId));
@@ -260,7 +285,7 @@ function Settings({ category, currentUser }: SettingsProps) {
     updateSettings({
       enabled_topics: enabledTopicIds.join(','),
       enabled_summary_types: enabledSummaryTypes.join(','),
-      feed_refresh_interval: settings?.feed_refresh_interval || 1800
+      feed_refresh_interval: refreshInterval
     });
   };
 
@@ -277,6 +302,36 @@ function Settings({ category, currentUser }: SettingsProps) {
                     <p className="section-description">
                       RSS besleme kaynaklarını yönetin.
                     </p>
+                    <div className="refresh-interval-row">
+                      <label htmlFor="feed-refresh-interval" className="checkbox-text">
+                        Otomatik yenileme aralığı
+                      </label>
+                      <select
+                        id="feed-refresh-interval"
+                        className="topic-input"
+                        value={refreshInterval}
+                        onChange={(e) => setRefreshInterval(Number(e.target.value))}
+                        disabled={!isAdmin || isSaving}
+                      >
+                        {!REFRESH_INTERVAL_OPTIONS.some(o => o.value === refreshInterval) && (
+                          <option value={refreshInterval}>{Math.round(refreshInterval / 60)} dakika</option>
+                        )}
+                        {REFRESH_INTERVAL_OPTIONS.map(o => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </select>
+                      {isAdmin ? (
+                        <button
+                          className="save-button"
+                          onClick={handleSave}
+                          disabled={isSaving || refreshInterval === settings?.feed_refresh_interval}
+                        >
+                          {isSaving ? 'Kaydediliyor...' : 'Aralığı kaydet'}
+                        </button>
+                      ) : (
+                        <p className="section-description">{ADMIN_ONLY_NOTE}</p>
+                      )}
+                    </div>
                     <div className="user-list">
                       {feeds?.map(feed => (
                         editingFeedId === feed.id ? (
@@ -428,8 +483,8 @@ function Settings({ category, currentUser }: SettingsProps) {
           <h2 className="settings-content-title"><FolderIcon className="section-icon" /> Kategoriler</h2>
           <div className="section-content">
             <p className="section-description">
-              Sınıflandırma için kullanılacak kategorileri seçin.
-              Boş seçim = tüm kategoriler.
+              Yapay zeka haberleri yalnızca seçili kategorilere atar.
+              En az bir kategori seçili kalmalıdır.
             </p>
                 <div className="checkbox-group">
                   {topics?.map(topic => (
@@ -474,6 +529,8 @@ function Settings({ category, currentUser }: SettingsProps) {
                             type="checkbox"
                             checked={enabledTopicIds.length === 0 || enabledTopicIds.includes(topic.id)}
                             onChange={() => handleTopicToggle(topic.id)}
+                            disabled={!isAdmin || isLastCheckedTopic(topic.id)}
+                            title={isLastCheckedTopic(topic.id) ? 'En az bir kategori seçili kalmalı' : undefined}
                           />
                           <span className="checkbox-text">
                             {topic.name} ({topic.article_count || 0})
@@ -565,13 +622,17 @@ function Settings({ category, currentUser }: SettingsProps) {
                 )}
             </div>
             <div className="settings-save-row">
-              <button
-                className="save-button"
-                onClick={handleSave}
-                disabled={isSaving || enabledSummaryTypes.length === 0}
-              >
-                {isSaving ? 'Kaydediliyor...' : 'Ayarları kaydet'}
-              </button>
+              {isAdmin ? (
+                <button
+                  className="save-button"
+                  onClick={handleSave}
+                  disabled={isSaving || enabledSummaryTypes.length === 0}
+                >
+                  {isSaving ? 'Kaydediliyor...' : 'Ayarları kaydet'}
+                </button>
+              ) : (
+                <p className="section-description">{ADMIN_ONLY_NOTE}</p>
+              )}
             </div>
           </div>
       )}
@@ -590,6 +651,7 @@ function Settings({ category, currentUser }: SettingsProps) {
                       type="checkbox"
                       checked={enabledSummaryTypes.includes('brief')}
                       onChange={() => handleSummaryTypeToggle('brief')}
+                      disabled={!isAdmin}
                     />
                     <span className="checkbox-text">
                       <strong>Kısa</strong> - 2-3 cümle
@@ -600,6 +662,7 @@ function Settings({ category, currentUser }: SettingsProps) {
                       type="checkbox"
                       checked={enabledSummaryTypes.includes('standard')}
                       onChange={() => handleSummaryTypeToggle('standard')}
+                      disabled={!isAdmin}
                     />
                     <span className="checkbox-text">
                       <strong>Standart</strong> - Bir paragraf
@@ -610,6 +673,7 @@ function Settings({ category, currentUser }: SettingsProps) {
                       type="checkbox"
                       checked={enabledSummaryTypes.includes('detailed')}
                       onChange={() => handleSummaryTypeToggle('detailed')}
+                      disabled={!isAdmin}
                     />
                     <span className="checkbox-text">
                       <strong>Detaylı</strong> - Birden fazla paragraf (daha yüksek maliyet)
@@ -621,13 +685,17 @@ function Settings({ category, currentUser }: SettingsProps) {
                 )}
             </div>
             <div className="settings-save-row">
-              <button
-                className="save-button"
-                onClick={handleSave}
-                disabled={isSaving || enabledSummaryTypes.length === 0}
-              >
-                {isSaving ? 'Kaydediliyor...' : 'Ayarları kaydet'}
-              </button>
+              {isAdmin ? (
+                <button
+                  className="save-button"
+                  onClick={handleSave}
+                  disabled={isSaving || enabledSummaryTypes.length === 0}
+                >
+                  {isSaving ? 'Kaydediliyor...' : 'Ayarları kaydet'}
+                </button>
+              ) : (
+                <p className="section-description">{ADMIN_ONLY_NOTE}</p>
+              )}
             </div>
           </div>
       )}

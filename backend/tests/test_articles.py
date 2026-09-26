@@ -8,7 +8,10 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.db import models, crud
-from tests.conftest import _make_feed, _make_article, _make_topic, _make_article_topic, _make_summary
+from tests.conftest import (
+    _make_feed, _make_article, _make_topic, _make_article_topic, _make_summary,
+    _make_bulletin_classification,
+)
 
 
 def test_delete_all_by_priority_requires_auth(client):
@@ -16,8 +19,8 @@ def test_delete_all_by_priority_requires_auth(client):
     assert response.status_code == 401
 
 
-def test_delete_all_by_priority_rejects_invalid_priority(client, auth_headers):
-    response = client.post("/api/articles/priority/urgent/delete-all", headers=auth_headers)
+def test_delete_all_by_priority_rejects_invalid_priority(client, admin_headers):
+    response = client.post("/api/articles/priority/urgent/delete-all", headers=admin_headers)
     assert response.status_code == 400
 
 
@@ -26,14 +29,14 @@ def test_archive_all_by_priority_rejects_invalid_priority(client, auth_headers):
     assert response.status_code == 400
 
 
-def test_delete_all_by_priority_deletes_only_matching_unread_articles(client, auth_headers, db_session):
+def test_delete_all_by_priority_deletes_only_matching_unread_articles(client, admin_headers, db_session):
     feed = _make_feed(db_session)
     to_delete_1 = _make_article(db_session, feed.id, priority="high", is_read=False)
     to_delete_2 = _make_article(db_session, feed.id, priority="high", is_read=False)
     other_priority = _make_article(db_session, feed.id, priority="low", is_read=False)
     already_read = _make_article(db_session, feed.id, priority="high", is_read=True)
 
-    response = client.post("/api/articles/priority/high/delete-all", headers=auth_headers)
+    response = client.post("/api/articles/priority/high/delete-all", headers=admin_headers)
 
     assert response.status_code == 200
     assert response.json() == {"deleted_count": 2}
@@ -62,7 +65,7 @@ def test_archive_all_by_priority_marks_matching_unread_as_read(client, auth_head
     assert other_priority.is_read is False
 
 
-def test_delete_all_by_priority_scopes_to_feed_ids(client, auth_headers, db_session):
+def test_delete_all_by_priority_scopes_to_feed_ids(client, admin_headers, db_session):
     feed_a = _make_feed(db_session, url="https://example.com/feed-a")
     feed_b = _make_feed(db_session, url="https://example.com/feed-b")
     in_scope = _make_article(db_session, feed_a.id, priority="high", is_read=False)
@@ -71,7 +74,7 @@ def test_delete_all_by_priority_scopes_to_feed_ids(client, auth_headers, db_sess
     response = client.post(
         "/api/articles/priority/high/delete-all",
         params={"feed_ids": str(feed_a.id)},
-        headers=auth_headers,
+        headers=admin_headers,
     )
 
     assert response.status_code == 200
@@ -97,6 +100,39 @@ def test_delete_article_success_returns_204_and_tombstones_url(client, auth_head
     assert response.status_code == 204
     assert db_session.query(models.Article).filter(models.Article.id == article.id).first() is None
     assert "https://example.com/to-delete" in crud.get_deleted_urls(db_session)
+
+
+def test_delete_article_that_is_in_a_bulletin_succeeds(client, auth_headers, db_session):
+    feed = _make_feed(db_session)
+    article = _make_article(db_session, feed.id)
+    _make_bulletin_classification(db_session, article.id)
+
+    response = client.delete(f"/api/articles/{article.id}", headers=auth_headers)
+
+    assert response.status_code == 204
+    assert db_session.query(models.ArticleBulletinClassification).count() == 0
+
+
+def test_bulk_deletes_remove_articles_that_are_in_a_bulletin(db_session):
+    feed = _make_feed(db_session)
+    high = _make_article(db_session, feed.id, priority="high", importance="important")
+    unimportant = _make_article(db_session, feed.id, importance="unimportant")
+    _make_bulletin_classification(db_session, high.id)
+    _make_bulletin_classification(db_session, unimportant.id)
+
+    assert crud.delete_articles_by_priority(db_session, "high") == 1
+    assert crud.delete_articles_unimportant(db_session) == 1
+    assert db_session.query(models.ArticleBulletinClassification).count() == 0
+
+
+def test_delete_feed_removes_its_bulletin_classified_articles(db_session):
+    feed = _make_feed(db_session)
+    article = _make_article(db_session, feed.id)
+    _make_bulletin_classification(db_session, article.id)
+
+    assert crud.delete_feed(db_session, feed.id) is True
+    assert db_session.query(models.Article).count() == 0
+    assert db_session.query(models.ArticleBulletinClassification).count() == 0
 
 
 def test_delete_article_404_when_missing(client, auth_headers):
@@ -460,7 +496,7 @@ def test_get_article_ids_by_topic_returns_all_regardless_of_status(client, auth_
 
 # ==================== POST /unimportant/delete-all, /unimportant/archive-all ====================
 
-def test_delete_unimportant_scopes_to_importance_and_unread(client, auth_headers, db_session):
+def test_delete_unimportant_scopes_to_importance_and_unread(client, admin_headers, db_session):
     feed = _make_feed(db_session)
     to_delete = _make_article(db_session, feed.id, url="https://example.com/d1",
                                importance="unimportant", is_read=False)
@@ -471,7 +507,7 @@ def test_delete_unimportant_scopes_to_importance_and_unread(client, auth_headers
     unset = _make_article(db_session, feed.id, url="https://example.com/d4",
                            importance=None, is_read=False)
 
-    response = client.post("/api/articles/unimportant/delete-all", headers=auth_headers)
+    response = client.post("/api/articles/unimportant/delete-all", headers=admin_headers)
 
     assert response.status_code == 200
     assert response.json() == {"deleted_count": 1}
@@ -480,7 +516,7 @@ def test_delete_unimportant_scopes_to_importance_and_unread(client, auth_headers
     assert {read_unimportant.id, important.id, unset.id}.issubset(remaining_ids)
 
 
-def test_delete_unimportant_scopes_to_feed_ids(client, auth_headers, db_session):
+def test_delete_unimportant_scopes_to_feed_ids(client, admin_headers, db_session):
     feed_a = _make_feed(db_session, url="https://example.com/feed-a")
     feed_b = _make_feed(db_session, url="https://example.com/feed-b")
     in_scope = _make_article(db_session, feed_a.id, url="https://example.com/e1",
@@ -491,7 +527,7 @@ def test_delete_unimportant_scopes_to_feed_ids(client, auth_headers, db_session)
     response = client.post(
         "/api/articles/unimportant/delete-all",
         params={"feed_ids": str(feed_a.id)},
-        headers=auth_headers,
+        headers=admin_headers,
     )
 
     assert response.status_code == 200
@@ -701,8 +737,8 @@ def test_reprocess_requires_auth(client):
     assert client.get("/api/articles/reprocess-status").status_code == 401
 
 
-def test_reprocess_requires_article_ids_or_all_errors(client, auth_headers):
-    resp = client.post("/api/articles/reprocess", json={}, headers=auth_headers)
+def test_reprocess_requires_article_ids_or_all_errors(client, admin_headers):
+    resp = client.post("/api/articles/reprocess", json={}, headers=admin_headers)
     assert resp.status_code == 400
 
 
@@ -721,21 +757,21 @@ def captured_reprocess(monkeypatch):
 
 
 def test_reprocess_single_article_queues_it_and_leaves_error_group(
-        client, auth_headers, db_session, captured_reprocess):
+        client, admin_headers, db_session, captured_reprocess):
     _, arts = _error_fixture(db_session)
 
     resp = client.post("/api/articles/reprocess",
-                       json={"article_ids": [arts["error"].id]}, headers=auth_headers)
+                       json={"article_ids": [arts["error"].id]}, headers=admin_headers)
 
     assert resp.status_code == 200
     assert resp.json()["queued"] == 1
     assert captured_reprocess == [[arts["error"].id]]
     db_session.expire_all()
     assert arts["error"].status == "pending"
-    assert client.get("/api/articles/counts", headers=auth_headers).json()["error_count"] == 2
+    assert client.get("/api/articles/counts", headers=admin_headers).json()["error_count"] == 2
 
 
-def test_reprocess_registers_run_on_the_event_loop(client, auth_headers, db_session, monkeypatch):
+def test_reprocess_registers_run_on_the_event_loop(client, admin_headers, db_session, monkeypatch):
     """Regression: the route is a sync `def` (threadpool), but `_reprocess_status` is also mutated
     by `reprocess_articles_task` on the event loop. Registering from the worker thread could
     interleave with the task's final `status = "done"` and strand the new articles' progress."""
@@ -758,20 +794,20 @@ def test_reprocess_registers_run_on_the_event_loop(client, auth_headers, db_sess
     monkeypatch.setattr(background, "register_reprocess", recording_register)
 
     resp = client.post("/api/articles/reprocess",
-                       json={"article_ids": [arts["error"].id]}, headers=auth_headers)
+                       json={"article_ids": [arts["error"].id]}, headers=admin_headers)
 
     assert resp.status_code == 200
     assert on_loop == [True]
 
 
 def test_reprocess_ignores_articles_that_are_not_errors(
-        client, auth_headers, db_session, captured_reprocess):
+        client, admin_headers, db_session, captured_reprocess):
     _, arts = _error_fixture(db_session)
 
     resp = client.post(
         "/api/articles/reprocess",
         json={"article_ids": [arts["high"].id, arts["unimportant"].id, arts["error_failed"].id]},
-        headers=auth_headers,
+        headers=admin_headers,
     )
 
     assert resp.json()["queued"] == 1
@@ -782,25 +818,25 @@ def test_reprocess_ignores_articles_that_are_not_errors(
 
 
 def test_reprocess_all_errors_bulk_and_scoped_to_feed(
-        client, auth_headers, db_session, captured_reprocess):
+        client, admin_headers, db_session, captured_reprocess):
     feed, arts = _error_fixture(db_session)
     other_feed = _make_feed(db_session, url="https://example.com/other")
     other = _make_article(db_session, other_feed.id, title="other-err", status="summarized")
 
     resp = client.post("/api/articles/reprocess",
-                       json={"all_errors": True, "feed_ids": [other_feed.id]}, headers=auth_headers)
+                       json={"all_errors": True, "feed_ids": [other_feed.id]}, headers=admin_headers)
     assert resp.json()["article_ids"] == [other.id]
 
-    resp = client.post("/api/articles/reprocess", json={"all_errors": True}, headers=auth_headers)
+    resp = client.post("/api/articles/reprocess", json={"all_errors": True}, headers=admin_headers)
     assert resp.json()["queued"] == 3  # `other` is already pending; the 3 in `feed` remain
 
 
 def test_reprocess_with_nothing_to_do_queues_nothing(
-        client, auth_headers, db_session, captured_reprocess):
+        client, admin_headers, db_session, captured_reprocess):
     _, arts = _error_fixture(db_session)
 
     resp = client.post("/api/articles/reprocess",
-                       json={"article_ids": [arts["high"].id]}, headers=auth_headers)
+                       json={"article_ids": [arts["high"].id]}, headers=admin_headers)
 
     assert resp.json() == {"queued": 0, "article_ids": []}
     assert captured_reprocess == []
@@ -890,11 +926,11 @@ def test_labelled_failed_article_is_excluded_from_unread_and_priority_counts(cli
     assert body["by_priority"] == {"high": 1}
 
 
-def test_reprocess_accepts_labelled_failed_article(client, auth_headers, db_session, captured_reprocess):
+def test_reprocess_accepts_labelled_failed_article(client, admin_headers, db_session, captured_reprocess):
     _, ok, failed = _labelled_failed(db_session)
 
     resp = client.post("/api/articles/reprocess",
-                       json={"article_ids": [ok.id, failed.id]}, headers=auth_headers)
+                       json={"article_ids": [ok.id, failed.id]}, headers=admin_headers)
 
     assert resp.json()["article_ids"] == [failed.id]
     assert captured_reprocess == [[failed.id]]
@@ -920,3 +956,53 @@ def test_article_source_falls_back_to_domain_for_a_feed_without_name(client, aut
     listed = client.get("/api/articles/", headers=auth_headers).json()["articles"]
 
     assert listed[0]["source"] == "dw.com"
+
+
+# ==================== #37: one filter definition for list / count / mark-read ====================
+
+@pytest.mark.parametrize("filters", [
+    {},
+    {"priorities": ["high", "med"]},
+    {"priority": "low"},
+    {"is_starred": True},
+    {"is_error": True},
+    {"is_error": False, "priorities": ["high"]},
+    {"search_query": "NATO"},
+])
+def test_list_count_and_mark_read_agree_on_the_same_filters(db_session, filters):
+    """Regression (#37): the ~40-line filter block was copied three times and had drifted
+    (e.g. `priorities` was missing from mark-all-read), so "Tümünü okundu say" could mark a
+    different set than the one listed and counted."""
+    feed = _make_feed(db_session)
+    _make_article(db_session, feed.id, title="NATO zirvesi", priority="high", importance="important",
+                  status="summarized")
+    _make_article(db_session, feed.id, title="Ekonomi", priority="med", importance="important",
+                  status="summarized", is_starred=True)
+    _make_article(db_session, feed.id, title="Spor", priority="low", importance="important", status="summarized")
+    _make_article(db_session, feed.id, title="Hata", status="failed")
+
+    listed = crud.get_articles(db_session, is_read=False, **filters)
+    counted = crud.count_articles(db_session, is_read=False, **filters)
+    marked = crud.mark_articles_read_bulk(db_session, None, **filters)
+
+    assert len(listed) == counted == marked
+
+
+def test_counts_endpoint_values(client, auth_headers, db_session):
+    feed = _make_feed(db_session)
+    _make_article(db_session, feed.id, priority="high", importance="important", status="summarized")
+    _make_article(db_session, feed.id, priority="high", importance="important", status="summarized", is_read=True)
+    _make_article(db_session, feed.id, importance="unimportant", status="filtered", is_starred=True)
+    _make_article(db_session, feed.id, status="failed")
+
+    body = client.get("/api/articles/counts", headers=auth_headers).json()
+
+    assert body == {
+        "by_priority": {"high": 1},
+        "by_feed": {str(feed.id): 2},
+        "unimportant_count": 1,
+        "unread_count": 2,
+        "read_count": 1,
+        "starred_count": 1,
+        "error_count": 1,
+    }

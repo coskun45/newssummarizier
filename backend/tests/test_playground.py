@@ -93,9 +93,9 @@ def test_playground_requires_auth(client):
     assert client.post("/api/playground/run", json={"article_id": 1}).status_code == 401
 
 
-def test_run_unknown_article_is_404(client, auth_headers, monkeypatch, db_session):
+def test_run_unknown_article_is_404(client, admin_headers, monkeypatch, db_session):
     _install(monkeypatch, db_session)
-    response = client.post("/api/playground/run", json={"article_id": 999}, headers=auth_headers)
+    response = client.post("/api/playground/run", json={"article_id": 999}, headers=admin_headers)
     assert response.status_code == 404
 
 
@@ -105,36 +105,36 @@ def test_run_unknown_article_is_404(client, auth_headers, monkeypatch, db_sessio
     {"summary_types": ["huge"]},
     {"summary_instructions": {"huge": "x"}},
 ])
-def test_run_rejects_bad_input(client, auth_headers, monkeypatch, db_session, article, payload):
+def test_run_rejects_bad_input(client, admin_headers, monkeypatch, db_session, article, payload):
     fake = _install(monkeypatch, db_session)
-    response = client.post("/api/playground/run", json={"article_id": article.id, **payload}, headers=auth_headers)
+    response = client.post("/api/playground/run", json={"article_id": article.id, **payload}, headers=admin_headers)
     assert response.status_code == 400
     assert fake.calls == []
 
 
-def test_run_summarization_needs_article_content(client, auth_headers, monkeypatch, db_session):
+def test_run_summarization_needs_article_content(client, admin_headers, monkeypatch, db_session):
     fake = _install(monkeypatch, db_session)
     empty = _make_article(db_session, _make_feed(db_session, url="https://e.com/f2").id, title="Leer")
 
     response = client.post("/api/playground/run",
-                           json={"article_id": empty.id, "stages": ["summarization"]}, headers=auth_headers)
+                           json={"article_id": empty.id, "stages": ["summarization"]}, headers=admin_headers)
     assert response.status_code == 400
     assert fake.calls == []
 
     # Classification only needs the title, so it still works.
     response = client.post("/api/playground/run",
-                           json={"article_id": empty.id, "stages": ["classification"]}, headers=auth_headers)
+                           json={"article_id": empty.id, "stages": ["classification"]}, headers=admin_headers)
     assert response.status_code == 200
 
 
-def test_run_cost_limit_is_429(client, auth_headers, monkeypatch, db_session, article):
+def test_run_cost_limit_is_429(client, admin_headers, monkeypatch, db_session, article):
     _install(monkeypatch, db_session)
 
     async def over_limit():
         raise CostLimitExceededError("Daily cost limit exceeded")
 
     monkeypatch.setattr(summary_service, "check_cost_limits", over_limit)
-    response = client.post("/api/playground/run", json={"article_id": article.id}, headers=auth_headers)
+    response = client.post("/api/playground/run", json={"article_id": article.id}, headers=admin_headers)
     assert response.status_code == 429
 
 
@@ -176,11 +176,11 @@ def test_settings_prefer_active_db_prompt_and_enabled_types(client, auth_headers
 
 # --- run ---------------------------------------------------------------------------------
 
-def test_run_returns_stage_details_and_persists_nothing(client, auth_headers, monkeypatch, db_session, article):
+def test_run_returns_stage_details_and_persists_nothing(client, admin_headers, monkeypatch, db_session, article):
     fake = _install(monkeypatch, db_session)
     before = _row_counts(db_session)
 
-    response = client.post("/api/playground/run", json={"article_id": article.id}, headers=auth_headers)
+    response = client.post("/api/playground/run", json={"article_id": article.id}, headers=admin_headers)
 
     assert response.status_code == 200
     body = response.json()
@@ -204,13 +204,15 @@ def test_run_returns_stage_details_and_persists_nothing(client, auth_headers, mo
     assert body["total_cost"] == pytest.approx(cls["cost"] + sum(s["cost"] for s in body["summaries"]))
     assert len(fake.classification_calls) == 1 and len(fake.summary_calls) == 3
 
-    # Dry run: no rows written and the article itself is untouched.
+    # Dry run: no rows written and the article itself is untouched...
     assert _row_counts(db_session) == before
+    # ...but the OpenAI spend still counts towards the cost limits (#25).
+    assert crud.get_daily_cost(db_session) == pytest.approx(body["total_cost"])
     db_session.refresh(article)
     assert (article.importance, article.priority, article.status) == (None, None, "pending")
 
 
-def test_run_uses_prompt_overrides_for_this_call_only(client, auth_headers, monkeypatch, db_session, article):
+def test_run_uses_prompt_overrides_for_this_call_only(client, admin_headers, monkeypatch, db_session, article):
     fake = _install(monkeypatch, db_session)
     crud.upsert_system_prompt(db_session, "classification", "DB classification", True)
 
@@ -220,7 +222,7 @@ def test_run_uses_prompt_overrides_for_this_call_only(client, auth_headers, monk
         "summarization_prompt": "OVERRIDE SUM",
         "summary_types": ["brief"],
         "summary_instructions": {"brief": "Nur ein Satz."},
-    }, headers=auth_headers)
+    }, headers=admin_headers)
 
     body = response.json()
     cls_system = fake.classification_calls[0]["messages"][0]["content"]
@@ -239,35 +241,35 @@ def test_run_uses_prompt_overrides_for_this_call_only(client, auth_headers, monk
     assert crud.get_system_prompt(db_session, "classification").prompt_text == "DB classification"
 
 
-def test_run_skips_summaries_for_unimportant_unless_forced(client, auth_headers, monkeypatch, db_session, article):
+def test_run_skips_summaries_for_unimportant_unless_forced(client, admin_headers, monkeypatch, db_session, article):
     fake = _install(monkeypatch, db_session, classification=UNIMPORTANT)
 
-    body = client.post("/api/playground/run", json={"article_id": article.id}, headers=auth_headers).json()
+    body = client.post("/api/playground/run", json={"article_id": article.id}, headers=admin_headers).json()
     assert body["classification"]["pipeline_outcome"] == "filtered"
     assert body["skipped_reason"] == "unimportant"
     assert body["summaries"] == [] and fake.summary_calls == []
 
     body = client.post("/api/playground/run",
-                       json={"article_id": article.id, "force_summarize": True}, headers=auth_headers).json()
+                       json={"article_id": article.id, "force_summarize": True}, headers=admin_headers).json()
     assert body["skipped_reason"] is None
     assert len(body["summaries"]) == 3
 
 
-def test_run_single_stage_only_calls_that_stage(client, auth_headers, monkeypatch, db_session, article):
+def test_run_single_stage_only_calls_that_stage(client, admin_headers, monkeypatch, db_session, article):
     fake = _install(monkeypatch, db_session, classification=UNIMPORTANT)
 
     body = client.post("/api/playground/run",
-                       json={"article_id": article.id, "stages": ["summarization"]}, headers=auth_headers).json()
+                       json={"article_id": article.id, "stages": ["summarization"]}, headers=admin_headers).json()
 
     assert body["classification"] is None
     assert fake.classification_calls == []
     assert len(body["summaries"]) == 3  # no classification in this run → nothing to skip on
 
 
-def test_run_invalid_json_is_retried_then_reported_as_failed(client, auth_headers, monkeypatch, db_session, article):
+def test_run_invalid_json_is_retried_then_reported_as_failed(client, admin_headers, monkeypatch, db_session, article):
     fake = _install(monkeypatch, db_session, classification="not json at all")
 
-    body = client.post("/api/playground/run", json={"article_id": article.id}, headers=auth_headers).json()
+    body = client.post("/api/playground/run", json={"article_id": article.id}, headers=admin_headers).json()
 
     cls = body["classification"]
     assert len(cls["attempts"]) == 2 and len(fake.classification_calls) == 2
@@ -277,17 +279,17 @@ def test_run_invalid_json_is_retried_then_reported_as_failed(client, auth_header
     assert body["skipped_reason"] == "classification_failed" and body["summaries"] == []
 
 
-def test_run_important_without_priority_is_flagged_failed(client, auth_headers, monkeypatch, db_session, article):
+def test_run_important_without_priority_is_flagged_failed(client, admin_headers, monkeypatch, db_session, article):
     _install(monkeypatch, db_session, classification=json.dumps({"importance": "important", "priority": None, "topics": []}))
 
     body = client.post("/api/playground/run",
-                       json={"article_id": article.id, "stages": ["classification"]}, headers=auth_headers).json()
+                       json={"article_id": article.id, "stages": ["classification"]}, headers=admin_headers).json()
 
     assert body["classification"]["pipeline_outcome"] == "failed"
     assert "priority" in body["classification"]["error"]
 
 
-def test_run_one_failing_summary_type_does_not_hide_the_others(client, auth_headers, monkeypatch, db_session, article):
+def test_run_one_failing_summary_type_does_not_hide_the_others(client, admin_headers, monkeypatch, db_session, article):
     detailed_marker = summary_service.DEFAULT_SUMMARY_INSTRUCTIONS["detailed"]
 
     def summary(kwargs):
@@ -297,28 +299,28 @@ def test_run_one_failing_summary_type_does_not_hide_the_others(client, auth_head
 
     _install(monkeypatch, db_session, summary=summary)
 
-    body = client.post("/api/playground/run", json={"article_id": article.id}, headers=auth_headers).json()
+    body = client.post("/api/playground/run", json={"article_id": article.id}, headers=admin_headers).json()
 
     by_type = {s["summary_type"]: s for s in body["summaries"]}
     assert by_type["brief"]["summary_text"] == "ok" and by_type["brief"]["error"] is None
     assert by_type["detailed"]["summary_text"] is None and "boom" in by_type["detailed"]["error"]
 
 
-def test_run_reports_truncation_of_long_content(client, auth_headers, monkeypatch, db_session):
+def test_run_reports_truncation_of_long_content(client, admin_headers, monkeypatch, db_session):
     _install(monkeypatch, db_session)
     long_article = _make_article(db_session, _make_feed(db_session, url="https://e.com/f3").id,
                                  title="Lang", raw_content="x" * 50000)
 
     body = client.post("/api/playground/run",
                        json={"article_id": long_article.id, "stages": ["summarization"], "summary_types": ["brief"]},
-                       headers=auth_headers).json()
+                       headers=admin_headers).json()
 
     assert body["content_used"]["source"] == "raw"
     assert body["content_used"]["truncated"] is True
     assert body["content_used"]["used_chars"] < body["content_used"]["chars"]
 
 
-def test_run_truncation_flag_is_set_when_only_the_ellipsis_marker_is_added(client, auth_headers, monkeypatch, db_session):
+def test_run_truncation_flag_is_set_when_only_the_ellipsis_marker_is_added(client, admin_headers, monkeypatch, db_session):
     # truncate_content() cuts at max_tokens*4 chars and appends "...", so content that is only a
     # character or two over the limit ends up the same length or longer after truncation.
     _install(monkeypatch, db_session)
@@ -328,18 +330,18 @@ def test_run_truncation_flag_is_set_when_only_the_ellipsis_marker_is_added(clien
 
     body = client.post("/api/playground/run",
                        json={"article_id": barely_long.id, "stages": ["summarization"], "summary_types": ["brief"]},
-                       headers=auth_headers).json()
+                       headers=admin_headers).json()
 
     assert body["content_used"]["truncated"] is True
 
 
-def test_run_malformed_model_field_types_do_not_break_the_response(client, auth_headers, monkeypatch, db_session, article):
+def test_run_malformed_model_field_types_do_not_break_the_response(client, admin_headers, monkeypatch, db_session, article):
     malformed = json.dumps({"importance": "important", "priority": 3,
                             "topics": [{"name": "NATO", "confidence": "very high"}]})
     _install(monkeypatch, db_session, classification=malformed)
 
     response = client.post("/api/playground/run",
-                           json={"article_id": article.id, "stages": ["classification"]}, headers=auth_headers)
+                           json={"article_id": article.id, "stages": ["classification"]}, headers=admin_headers)
 
     assert response.status_code == 200
     cls = response.json()["classification"]
@@ -347,12 +349,12 @@ def test_run_malformed_model_field_types_do_not_break_the_response(client, auth_
     assert cls["topics"] == [{"name": "NATO", "confidence": None, "known": True}]
 
 
-def test_run_json_null_reply_is_retried_and_flagged(client, auth_headers, monkeypatch, db_session, article):
+def test_run_json_null_reply_is_retried_and_flagged(client, admin_headers, monkeypatch, db_session, article):
     replies = iter(["null", IMPORTANT])
     fake = _install(monkeypatch, db_session, classification=lambda kw: next(replies))
 
     body = client.post("/api/playground/run",
-                       json={"article_id": article.id, "stages": ["classification"]}, headers=auth_headers).json()
+                       json={"article_id": article.id, "stages": ["classification"]}, headers=admin_headers).json()
 
     cls = body["classification"]
     assert len(fake.classification_calls) == 2
@@ -361,17 +363,17 @@ def test_run_json_null_reply_is_retried_and_flagged(client, auth_headers, monkey
     assert cls["pipeline_outcome"] == "continue"
 
 
-def test_run_null_reply_twice_reports_an_error_instead_of_a_silent_failure(client, auth_headers, monkeypatch, db_session, article):
+def test_run_null_reply_twice_reports_an_error_instead_of_a_silent_failure(client, admin_headers, monkeypatch, db_session, article):
     _install(monkeypatch, db_session, classification="null")
 
     cls = client.post("/api/playground/run",
-                      json={"article_id": article.id, "stages": ["classification"]}, headers=auth_headers).json()["classification"]
+                      json={"article_id": article.id, "stages": ["classification"]}, headers=admin_headers).json()["classification"]
 
     assert cls["pipeline_outcome"] == "failed"
     assert cls["error"]
 
 
-def test_run_api_error_on_retry_keeps_the_first_attempt(client, auth_headers, monkeypatch, db_session, article):
+def test_run_api_error_on_retry_keeps_the_first_attempt(client, admin_headers, monkeypatch, db_session, article):
     calls = []
 
     def classification(kwargs):
@@ -383,7 +385,7 @@ def test_run_api_error_on_retry_keeps_the_first_attempt(client, auth_headers, mo
     _install(monkeypatch, db_session, classification=classification)
 
     body = client.post("/api/playground/run",
-                       json={"article_id": article.id, "stages": ["classification"]}, headers=auth_headers).json()
+                       json={"article_id": article.id, "stages": ["classification"]}, headers=admin_headers).json()
 
     cls = body["classification"]
     assert [a["raw_response"] for a in cls["attempts"]] == ["not json", None]
@@ -393,7 +395,7 @@ def test_run_api_error_on_retry_keeps_the_first_attempt(client, auth_headers, mo
     assert cls["cost"] > 0 and body["total_cost"] == pytest.approx(cls["cost"])
 
 
-def test_run_sends_feed_name_as_source_and_returns_the_model_author(client, auth_headers, monkeypatch, db_session):
+def test_run_sends_feed_name_as_source_and_returns_the_model_author(client, admin_headers, monkeypatch, db_session):
     feed = _make_feed(db_session, url="https://example.com/aa", title="Anadolu Ajansı")
     art = _make_article(db_session, feed.id, cleaned_content="ANKARA (AA) - ...", author="Anadolu Ajansı")
     fake = _install(monkeypatch, db_session,
@@ -402,7 +404,7 @@ def test_run_sends_feed_name_as_source_and_returns_the_model_author(client, auth
 
     body = client.post("/api/playground/run", json={
         "article_id": art.id, "stages": ["summarization"], "summary_types": ["brief"],
-    }, headers=auth_headers).json()
+    }, headers=admin_headers).json()
 
     user = fake.summary_calls[0]["messages"][1]["content"]
     assert "<article_source>\nAnadolu Ajansı\n</article_source>" in user
@@ -413,7 +415,7 @@ def test_run_sends_feed_name_as_source_and_returns_the_model_author(client, auth
     assert _row_counts(db_session) == before and art.author == "Anadolu Ajansı"  # dry run
 
 
-def test_run_uses_the_feed_author_as_hint_even_after_the_pipeline_cleared_it(client, auth_headers, monkeypatch, db_session):
+def test_run_uses_the_feed_author_as_hint_even_after_the_pipeline_cleared_it(client, admin_headers, monkeypatch, db_session):
     feed = _make_feed(db_session, url="https://example.com/dw", title="DW Türkçe")
     art = _make_article(db_session, feed.id, cleaned_content="text", author="Max Bird")
     crud.set_article_author(db_session, art.id, None)  # what a pipeline run with "no author" leaves
@@ -421,6 +423,6 @@ def test_run_uses_the_feed_author_as_hint_even_after_the_pipeline_cleared_it(cli
 
     client.post("/api/playground/run", json={
         "article_id": art.id, "stages": ["summarization"], "summary_types": ["brief"],
-    }, headers=auth_headers)
+    }, headers=admin_headers)
 
     assert "<author_hint>\nMax Bird\n</author_hint>" in fake.summary_calls[0]["messages"][1]["content"]

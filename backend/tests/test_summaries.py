@@ -3,6 +3,7 @@ Tests for app/api/routes/summaries.py (article summaries + cost stats).
 """
 from datetime import datetime, timezone, timedelta
 from app.core.config import settings
+from app.db import crud
 from tests.conftest import _make_feed, _make_article, _make_summary
 
 
@@ -110,10 +111,9 @@ def test_get_cost_stats_defaults_when_no_summaries(client, auth_headers):
     assert body["monthly_limit"] == settings.monthly_cost_limit
 
 
-def test_get_cost_stats_reflects_recent_summary_cost(client, auth_headers, db_session):
-    feed = _make_feed(db_session)
-    article = _make_article(db_session, feed.id)
-    _make_summary(db_session, article.id, cost=1.5)
+def test_get_cost_stats_reflects_recent_llm_spend(client, auth_headers, db_session):
+    crud.record_llm_usage(db_session, "summary", "gpt-4o", 100, 10, 1.0)
+    crud.record_llm_usage(db_session, "classification", "gpt-4o-mini", 100, 10, 0.5)
 
     response = client.get("/api/stats/costs", headers=auth_headers)
 
@@ -188,3 +188,16 @@ def test_get_daily_article_stats_zero_fills_days_with_no_articles(client, auth_h
     body = response.json()
     assert len(body["days"]) == 7
     assert all(d["incoming"] == 0 and d["processed"] == 0 for d in body["days"])
+
+
+def test_summaries_with_null_optional_columns_do_not_500(client, auth_headers, db_session):
+    """Regression (#33): model_used/tokens_used/cost are nullable in the DB but were required in
+    the response model."""
+    feed = _make_feed(db_session)
+    article = _make_article(db_session, feed.id)
+    _make_summary(db_session, article.id, model_used=None, tokens_used=None, cost=None)
+
+    response = client.get(f"/api/articles/{article.id}/summaries", headers=auth_headers)
+
+    assert response.status_code == 200
+    assert response.json()[0]["model_used"] is None

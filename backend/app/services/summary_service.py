@@ -99,6 +99,27 @@ def calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
     return input_cost + output_cost
 
 
+def _input_tokens(response, estimate: int) -> int:
+    """The prompt token count the API billed; the local tiktoken estimate only if it's missing."""
+    reported = getattr(getattr(response, "usage", None), "prompt_tokens", None)
+    return reported if isinstance(reported, int) else estimate
+
+
+def record_llm_usage(kind: str, model: str, input_tokens: int, output_tokens: int, cost: float,
+                     article_id: Optional[int] = None) -> None:
+    """Book one OpenAI call's spend for the cost limits and stats. Never raises: losing a usage
+    row must not fail the call that already happened (and was paid for)."""
+    if not (input_tokens or output_tokens or cost):
+        return
+    db = SessionLocal()
+    try:
+        crud.record_llm_usage(db, kind, model, input_tokens, output_tokens, cost, article_id=article_id)
+    except Exception as e:
+        logger.error(f"Could not record LLM usage ({kind}, ${cost:.4f}): {e}")
+    finally:
+        db.close()
+
+
 async def check_cost_limits() -> None:
     """
     Check if cost limits have been exceeded.
@@ -491,6 +512,7 @@ async def _run_classification(title: str, system_prompt: str, model: str) -> Dic
             logger.warning(f"Categorization attempt {attempt + 1} failed: {e}")
             break
 
+        input_tokens = _input_tokens(response, input_tokens)
         output_tokens = response.usage.completion_tokens
         total_input += input_tokens
         total_output += output_tokens
@@ -571,13 +593,15 @@ async def categorize_and_prioritize_article(title: str) -> Dict[str, Any]:
         db = SessionLocal()
         try:
             system_prompt, _ = _resolve_system_prompt(db, "classification", _CATEGORIZATION_SYSTEM_PROMPT)
-            db_topics = crud.get_topics(db)
+            db_topics = crud.get_enabled_topics(db)
         finally:
             db.close()
 
         system_prompt = build_classification_system_prompt(system_prompt, db_topics)
 
         detail = await _run_classification(title, system_prompt, settings.default_model)
+        record_llm_usage("classification", settings.default_model, detail.get("input_tokens", 0),
+                         detail.get("output_tokens", 0), detail.get("cost", 0.0))
         result = detail["parsed"]
         if result is None:
             raise TopicCategorizationError(f"Failed to get valid categorization JSON: {detail['error']}")
@@ -588,7 +612,7 @@ async def categorize_and_prioritize_article(title: str) -> Dict[str, Any]:
 
         logger.info(
             f"Categorized article: importance={importance}, priority={priority}, "
-            f"topics={len(topics)}, cost=${detail['cost']:.4f}"
+            f"topics={len(topics)}, cost=${detail.get('cost', 0.0):.4f}"
         )
         return {"importance": importance, "priority": priority, "topics": topics}
 
@@ -737,6 +761,7 @@ async def _run_summary(
     latency_ms = _elapsed_ms(started)
 
     raw_content = response.choices[0].message.content
+    input_tokens = _input_tokens(response, input_tokens)
     output_tokens = response.usage.completion_tokens
     error = "OpenAI response content was empty (possibly content-filtered)" if raw_content is None else None
     summary_text, author, structured = (
@@ -810,6 +835,7 @@ async def generate_summary(
             title, content, summary_type, system_prompt,
             DEFAULT_SUMMARY_INSTRUCTIONS[summary_type], model, max_tokens, source, author_hint,
         )
+        record_llm_usage("summary", model, detail["input_tokens"], detail["output_tokens"], detail["cost"])
         if detail["error"]:
             raise SummarizationError(detail["error"])
 
@@ -837,10 +863,12 @@ async def generate_summary(
 # ---------------------------------------------------------------------------
 
 def get_enabled_summary_types(db) -> List[str]:
-    """Summary types the pipeline generates, from the `enabled_summary_types` setting (canonical order)."""
-    raw = crud.get_setting(db, "enabled_summary_types") or "brief,standard,detailed"
-    enabled = [x.strip() for x in raw.split(",") if x.strip()]
-    return [t for t in SUMMARY_TYPES if t in enabled]
+    """Summary types the pipeline generates, from the `enabled_summary_types` setting (canonical
+    order). The single reader of that setting. `PUT /api/settings` rejects an empty selection, so
+    a value that yields no known type (unset, or a legacy empty row) means the default: all types."""
+    raw = crud.get_setting(db, "enabled_summary_types") or ""
+    enabled = {x.strip() for x in raw.split(",") if x.strip()}
+    return [t for t in SUMMARY_TYPES if t in enabled] or list(SUMMARY_TYPES)
 
 
 def get_pipeline_settings(db) -> Dict[str, Any]:
@@ -848,7 +876,7 @@ def get_pipeline_settings(db) -> Dict[str, Any]:
     classification_text, classification_source = _resolve_system_prompt(db, "classification", _CATEGORIZATION_SYSTEM_PROMPT)
     summarization_text, summarization_source = _resolve_system_prompt(db, "summarization", _DEFAULT_SUMMARIZATION_SYSTEM_PROMPT)
     enabled = get_enabled_summary_types(db)
-    topics = crud.get_topics(db)
+    topics = crud.get_enabled_topics(db)
 
     summary_types = []
     for summary_type in SUMMARY_TYPES:
@@ -968,7 +996,7 @@ async def run_playground(
             template, source = classification_prompt, "override"
         else:
             template, source = _resolve_system_prompt(db, "classification", _CATEGORIZATION_SYSTEM_PROMPT)
-        system_prompt = build_classification_system_prompt(template, crud.get_topics(db))
+        system_prompt = build_classification_system_prompt(template, crud.get_enabled_topics(db))
         model = settings.default_model
         try:
             detail = await _run_classification(article.title, system_prompt, model)
@@ -986,6 +1014,8 @@ async def run_playground(
         detail["error"] = detail.get("error") or outcome_error
         result["classification"] = {**detail, **outcome, "prompt_source": source}
         result["total_cost"] += detail["cost"]
+        record_llm_usage("playground", model, detail["input_tokens"], detail["output_tokens"],
+                         detail["cost"], article_id=article.id)
 
     if "summarization" in stages:
         classification = result["classification"]
@@ -1025,144 +1055,147 @@ async def run_playground(
                 run_one(t) for t in SUMMARY_TYPES if t in requested
             )))
             result["total_cost"] += sum(d["cost"] for d in result["summaries"])
+            for d in result["summaries"]:
+                record_llm_usage("playground", d["model"], d["input_tokens"], d["output_tokens"],
+                                 d["cost"], article_id=article.id)
 
     return result
 
 
 
 async def process_article_by_id(article_id: int) -> dict:
+    """(Re)process one stored article in its own session — see `process_article`."""
+    db = SessionLocal()
+    try:
+        return await process_article(db, article_id)
+    finally:
+        db.close()
+
+
+async def process_article(db, article_id: int) -> dict:
     """
-    (Re)process a single article by ID: extract content (if needed), re-categorize + prioritize,
-    then replace any previous topics/summaries and generate new summaries.
+    Process a stored article: extract content (if needed), categorize + prioritize, then replace
+    any previous topics/summaries and generate new summaries. The single processing path for both
+    the feed pipeline (new articles) and the "Error" group re-process.
 
     Returns a dict with `article_id`, `status`, `cost` and `success`. `success` is False when
     categorization failed (or yielded no priority) — the article is then left as
     `status="failed"` with no priority, so it stays in the "Error" group instead of being
     silently marked summarized.
     """
-    db = SessionLocal()
-    try:
-        article = crud.get_article(db, article_id)
-        if not article:
-            raise SummarizationError(f"Article not found: {article_id}")
-        # Read into locals: release_connection() expires `article`, and touching it right
-        # before an await would re-open the transaction we just ended.
-        title, url = article.title, article.url
+    article = crud.get_article(db, article_id)
+    if not article:
+        raise SummarizationError(f"Article not found: {article_id}")
+    # Read into locals: release_connection() expires `article`, and touching it right
+    # before an await would re-open the transaction we just ended.
+    title, url = article.title, article.url
 
-        # Extract content if missing
-        content = article.cleaned_content or article.raw_content or ""
-        if not article.cleaned_content:
-            try:
-                release_connection(db)  # don't hold a pooled connection while scraping
-                extracted, page_author, page_image_url = await extract_article_content(url)
-                if page_author and not article.author:
-                    crud.update_article_author(db=db, article_id=article.id, author=page_author)
-                if page_image_url and not article.image_url:
-                    crud.update_article_image(db=db, article_id=article.id, image_url=page_image_url)
-                if extracted:
-                    content = extracted
-                    crud.update_article_content(db=db, article_id=article.id, cleaned_content=content)
-                    crud.update_article_status(db=db, article_id=article.id, status="scraped")
-                    crud.create_log(db=db, article_id=article.id, agent_name="web_scraper", status="success", message=f"Extracted {len(content)} characters")
-                else:
-                    crud.create_log(db=db, article_id=article.id, agent_name="web_scraper", status="skipped", message="Using RSS content as fallback")
-            except Exception as e:
-                crud.create_log(db=db, article_id=article.id, agent_name="web_scraper", status="error", message="Extraction failed, using RSS fallback", error_details=str(e))
-
-        total_cost = 0.0
-
-        # Evaluate importance, priority, and classify topics
-        is_important = False
+    # Extract content if missing
+    content = article.cleaned_content or article.raw_content or ""
+    if not article.cleaned_content:
         try:
-            release_connection(db)
-            categorization = await categorize_and_prioritize_article(
-                title=title
-            )
-            importance = categorization.get("importance", "unimportant")
-            priority = categorization.get("priority")
-            topics = categorization.get("topics", [])
-
-            if importance != "unimportant" and priority not in ("high", "med", "low"):
-                raise TopicCategorizationError(f"Important article came back without a valid priority: {priority!r}")
-
-            # Only now that the re-classification succeeded is it safe to drop the old topics and
-            # summaries — clearing them earlier would lose good content when a retry fails. It
-            # also keeps a re-run from duplicating summaries or colliding on the
-            # (article_id, topic_id) primary key of ArticleTopic.
-            crud.remove_article_topics(db, article.id)
-            crud.delete_article_summaries(db, article.id)
-
-            crud.update_article_importance(db=db, article_id=article.id, importance=importance, priority=priority)
-            # It now has a label, so it is no longer an Error: send it (back) to the unread list.
-            crud.mark_article_unread(db, article.id)
-
-            if importance == "unimportant":
-                crud.update_article_status(db=db, article_id=article.id, status="filtered")
-                crud.create_log(db=db, article_id=article.id, agent_name="topic_categorizer", status="success", message="Article filtered as unimportant — skipping summarization")
-                return {"article_id": article.id, "status": "filtered", "cost": 0.0, "success": True}
-
-            is_important = True
-            linked_topic_ids = set()
-            for topic in topics:
-                topic_db = crud.get_topic_by_name(db, topic["name"]) if isinstance(topic, dict) else None
-                if topic_db and topic_db.id not in linked_topic_ids:
-                    linked_topic_ids.add(topic_db.id)
-                    crud.add_article_topic(db=db, article_id=article.id, topic_id=topic_db.id, confidence=topic.get("confidence", 1.0))
-
-            crud.create_log(db=db, article_id=article.id, agent_name="topic_categorizer", status="success", message=f"Important ({priority}): classified into {len(topics)} topics")
+            release_connection(db)  # don't hold a pooled connection while scraping
+            extracted, page_author, page_image_url = await extract_article_content(url)
+            if page_author and not article.author:
+                crud.update_article_author(db=db, article_id=article.id, author=page_author)
+            if page_image_url and not article.image_url:
+                crud.update_article_image(db=db, article_id=article.id, image_url=page_image_url)
+            if extracted:
+                content = extracted
+                crud.update_article_content(db=db, article_id=article.id, cleaned_content=content)
+                crud.update_article_status(db=db, article_id=article.id, status="scraped")
+                crud.create_log(db=db, article_id=article.id, agent_name="web_scraper", status="success", message=f"Extracted {len(content)} characters")
+            else:
+                crud.create_log(db=db, article_id=article.id, agent_name="web_scraper", status="skipped", message="Using RSS content as fallback")
         except Exception as e:
-            # A failed DB write above leaves the session unusable until it is rolled back.
-            db.rollback()
-            crud.create_log(db=db, article_id=article.id, agent_name="topic_categorizer", status="error", message="Topic categorization failed", error_details=str(e))
-            # Priority is still missing — keep the article in the "Error" group so it can be retried.
-            crud.update_article_importance(db=db, article_id=article.id, importance=None, priority=None)
-            crud.update_article_status(db=db, article_id=article.id, status="failed")
-            return {"article_id": article.id, "status": "failed", "cost": 0.0, "success": False}
+            crud.create_log(db=db, article_id=article.id, agent_name="web_scraper", status="error", message="Extraction failed, using RSS fallback", error_details=str(e))
 
-        summaries_created = 0
+    total_cost = 0.0
 
-        # Generate summaries (only for important articles)
-        if is_important:
-            try:
-                enabled_summary_types = crud.get_setting(db, "enabled_summary_types") or "brief,standard,detailed"
-                enabled_types = [x.strip() for x in enabled_summary_types.split(",") if x.strip()]
-                summary_types_map = {
-                    "brief": ("brief", "brief"),
-                    "standard": ("standard", "standard"),
-                    "detailed": ("detailed", "detailed")
-                }
-                summary_types = [summary_types_map[st] for st in enabled_types if st in summary_types_map]
-                source = article_source_name(article.feed.title if article.feed else None, article.url)
-                author_hint = clean_author(article.feed_author or article.author, source)
-                results = []
+    # Evaluate importance, priority, and classify topics
+    is_important = False
+    try:
+        release_connection(db)
+        categorization = await categorize_and_prioritize_article(
+            title=title
+        )
+        importance = categorization.get("importance", "unimportant")
+        priority = categorization.get("priority")
+        topics = categorization.get("topics", [])
 
-                for summary_type, _ in summary_types:
-                    try:
-                        release_connection(db)
-                        result = await generate_summary(title=title, content=truncate_content(content), summary_type=summary_type, source=source, author_hint=author_hint)
-                        results.append(result)
-                        total_cost += result.get("cost", 0.0)
-                        crud.create_summary(db=db, article_id=article.id, summary_text=result["summary_text"], summary_type=summary_type, model_used=result.get("model_used"), tokens_used=result.get("tokens_used", 0), cost=result.get("cost", 0.0))
-                        summaries_created += 1
-                    except Exception as e:
-                        crud.create_log(db=db, article_id=article.id, agent_name="summarizer", status="error", message=f"Failed to generate {summary_type} summary", error_details=str(e))
+        if importance != "unimportant" and priority not in ("high", "med", "low"):
+            raise TopicCategorizationError(f"Important article came back without a valid priority: {priority!r}")
 
-                if results:
-                    crud.set_article_author(db, article.id, resolve_summary_author(results, author_hint))
+        # Only now that the re-classification succeeded is it safe to drop the old topics and
+        # summaries — clearing them earlier would lose good content when a retry fails. It
+        # also keeps a re-run from duplicating summaries or colliding on the
+        # (article_id, topic_id) primary key of ArticleTopic.
+        crud.remove_article_topics(db, article.id)
+        crud.delete_article_summaries(db, article.id)
 
-            except Exception as e:
-                logger.error(f"Summary generation loop failed: {e}")
+        crud.update_article_importance(db=db, article_id=article.id, importance=importance, priority=priority)
+        # It now has a label, so it is no longer an Error: send it (back) to the unread list.
+        crud.mark_article_unread(db, article.id)
 
-        # "summarized" is reserved for articles that actually got at least one summary
-        if summaries_created == 0:
-            crud.update_article_status(db=db, article_id=article.id, status="failed")
-            crud.create_log(db=db, article_id=article.id, agent_name="article_processor", status="error", message="No summary could be generated — article left as failed")
-            return {"article_id": article.id, "status": "failed", "cost": total_cost, "success": False}
+        if importance == "unimportant":
+            crud.update_article_status(db=db, article_id=article.id, status="filtered")
+            crud.create_log(db=db, article_id=article.id, agent_name="topic_categorizer", status="success", message="Article filtered as unimportant — skipping summarization")
+            return {"article_id": article.id, "status": "filtered", "cost": 0.0, "success": True}
 
-        crud.update_article_status(db=db, article_id=article.id, status="summarized")
-        crud.create_log(db=db, article_id=article.id, agent_name="article_processor", status="success", message=f"Article processing completed. Cost: ${total_cost:.4f}")
+        is_important = True
+        # Only topics offered to the classifier (enabled in Ayarlar › Kategoriler); each once —
+        # the model sometimes repeats a topic, which would hit the article_topics primary key.
+        enabled_topic_ids = {t.id for t in crud.get_enabled_topics(db)}
+        linked_topic_ids = set()
+        for topic in topics if isinstance(topics, list) else []:
+            topic_db = crud.get_topic_by_name(db, topic.get("name")) if isinstance(topic, dict) else None
+            if topic_db and topic_db.id in enabled_topic_ids and topic_db.id not in linked_topic_ids:
+                linked_topic_ids.add(topic_db.id)
+                crud.add_article_topic(db=db, article_id=article.id, topic_id=topic_db.id, confidence=topic.get("confidence", 1.0))
 
-        return {"article_id": article.id, "status": "summarized", "cost": total_cost, "success": True}
+        crud.create_log(db=db, article_id=article.id, agent_name="topic_categorizer", status="success", message=f"Important ({priority}): classified into {len(topics)} topics")
+    except Exception as e:
+        # A failed DB write above leaves the session unusable until it is rolled back.
+        db.rollback()
+        crud.create_log(db=db, article_id=article.id, agent_name="topic_categorizer", status="error", message="Topic categorization failed", error_details=str(e))
+        # Priority is still missing — keep the article in the "Error" group so it can be retried.
+        crud.update_article_importance(db=db, article_id=article.id, importance=None, priority=None)
+        crud.update_article_status(db=db, article_id=article.id, status="failed")
+        return {"article_id": article.id, "status": "failed", "cost": 0.0, "success": False}
 
-    finally:
-        db.close()
+    summaries_created = 0
+
+    # Generate summaries (only for important articles)
+    if is_important:
+        try:
+            source = article_source_name(article.feed.title if article.feed else None, article.url)
+            author_hint = clean_author(article.feed_author or article.author, source)
+            results = []
+
+            for summary_type in get_enabled_summary_types(db):
+                try:
+                    release_connection(db)
+                    result = await generate_summary(title=title, content=truncate_content(content), summary_type=summary_type, source=source, author_hint=author_hint)
+                    results.append(result)
+                    total_cost += result.get("cost", 0.0)
+                    crud.create_summary(db=db, article_id=article.id, summary_text=result["summary_text"], summary_type=summary_type, model_used=result.get("model_used"), tokens_used=result.get("tokens_used", 0), cost=result.get("cost", 0.0))
+                    summaries_created += 1
+                except Exception as e:
+                    crud.create_log(db=db, article_id=article.id, agent_name="summarizer", status="error", message=f"Failed to generate {summary_type} summary", error_details=str(e))
+
+            if results:
+                crud.set_article_author(db, article.id, resolve_summary_author(results, author_hint))
+
+        except Exception as e:
+            logger.error(f"Summary generation loop failed: {e}")
+
+    # "summarized" is reserved for articles that actually got at least one summary
+    if summaries_created == 0:
+        crud.update_article_status(db=db, article_id=article.id, status="failed")
+        crud.create_log(db=db, article_id=article.id, agent_name="article_processor", status="error", message="No summary could be generated — article left as failed")
+        return {"article_id": article.id, "status": "failed", "cost": total_cost, "success": False}
+
+    crud.update_article_status(db=db, article_id=article.id, status="summarized")
+    crud.create_log(db=db, article_id=article.id, agent_name="article_processor", status="success", message=f"Article processing completed. Cost: ${total_cost:.4f}")
+
+    return {"article_id": article.id, "status": "summarized", "cost": total_cost, "success": True}

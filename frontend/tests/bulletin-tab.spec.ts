@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { loginAs } from './helpers/auth';
+import { ADMIN_USER, loginAs } from './helpers/auth';
 import { mockApi, makeArticle, makeBulletinCategory, makeGeneratedBulletin } from './helpers/mockApi';
 
 async function openBulletinTab(page: import('@playwright/test').Page) {
@@ -224,7 +224,7 @@ test('downloading a previously generated bulletin requests and downloads its fil
 });
 
 test('deleting a previously generated bulletin shows a confirm dialog and removes it on accept', async ({ page }) => {
-  await loginAs(page);
+  await loginAs(page, ADMIN_USER);
   const generatedBulletins = [makeGeneratedBulletin({ filename: 'eski-bulten.docx' })];
   await mockApi(page, { articles: [], generatedBulletins });
   await page.goto('/');

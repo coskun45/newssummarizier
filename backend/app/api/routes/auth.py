@@ -15,6 +15,8 @@ from app.api.deps import get_current_user, require_admin
 
 router = APIRouter()
 
+MIN_PASSWORD_LENGTH = 8
+
 
 # ==================== Pydantic Schemas ====================
 
@@ -114,6 +116,13 @@ def create_user(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Rol 'admin' veya 'user' olmalı",
         )
+    if len(request.password) < MIN_PASSWORD_LENGTH:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Şifre en az {MIN_PASSWORD_LENGTH} karakter olmalı",
+        )
+    if not request.email.strip():
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="E-posta adresi boş olamaz")
     existing = crud.get_user_by_email(db, request.email)
     if existing:
         raise HTTPException(

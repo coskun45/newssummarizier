@@ -453,7 +453,7 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
     settings: {
       enabled_topics: '',
       enabled_summary_types: 'brief,standard,detailed',
-      feed_refresh_interval: 1800,
+      feed_refresh_interval: 3600, // backend default: hourly
       ...overrides.settings,
     },
     prompts: overrides.prompts ?? new Map(),

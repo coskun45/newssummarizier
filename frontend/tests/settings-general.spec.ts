@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { loginAs } from './helpers/auth';
-import { mockApi } from './helpers/mockApi';
+import { ADMIN_USER, loginAs } from './helpers/auth';
+import { mockApi, makeTopic } from './helpers/mockApi';
 
 async function openSummaryTypesCategory(page: import('@playwright/test').Page) {
   await page.getByRole('button', { name: 'Ayarlar' }).click();
@@ -44,7 +44,7 @@ test('navigating away without saving does not send a PUT', async ({ page }) => {
 });
 
 test('saving toggled summary types sends PUT', async ({ page }) => {
-  await loginAs(page);
+  await loginAs(page, ADMIN_USER);
   await mockApi(page, {
     articles: [],
     settings: { enabled_summary_types: 'brief,standard,detailed' },
@@ -62,7 +62,7 @@ test('saving toggled summary types sends PUT', async ({ page }) => {
 });
 
 test('save button disabled when all summary types are unchecked', async ({ page }) => {
-  await loginAs(page);
+  await loginAs(page, ADMIN_USER);
   await mockApi(page, { articles: [] });
   await page.goto('/');
 
@@ -72,4 +72,44 @@ test('save button disabled when all summary types are unchecked', async ({ page 
   await content.getByRole('checkbox', { name: /Detaylı/ }).uncheck();
 
   await expect(content.getByRole('button', { name: 'Ayarları kaydet' })).toBeDisabled();
+});
+
+
+test('the last checked category cannot be unchecked', async ({ page }) => {
+  // #27: unchecking the last topic emptied the list, and empty means "all topics"
+  await loginAs(page, ADMIN_USER);
+  const topics = [makeTopic({ id: 1, name: 'NATO' }), makeTopic({ id: 2, name: 'Spor' })];
+  await mockApi(page, { articles: [], topics, settings: { enabled_topics: '1' } });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Ayarlar' }).click();
+  await page.getByRole('button', { name: 'Kategoriler' }).click();
+
+  const content = page.locator('.settings-category');
+  const nato = content.getByRole('checkbox', { name: /NATO/ });
+  await expect(nato).toBeChecked();
+  await expect(nato).toBeDisabled();
+  await expect(content.getByRole('checkbox', { name: /Spor/ })).not.toBeChecked();
+
+  await content.getByRole('checkbox', { name: /Spor/ }).check();
+  await expect(nato).toBeEnabled();
+});
+
+test('the automatic refresh interval is saved from RSS Beslemeleri', async ({ page }) => {
+  // #27: the interval was stored but never used and could not be changed in the UI
+  await loginAs(page, ADMIN_USER);
+  await mockApi(page, { articles: [], settings: { feed_refresh_interval: 3600 } });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Ayarlar' }).click();
+  await page.getByRole('button', { name: 'RSS Beslemeleri' }).click();
+
+  const select = page.getByLabel('Otomatik yenileme aralığı');
+  await expect(select).toHaveValue('3600');
+  await select.selectOption({ label: '2 saat' });
+
+  const req = page.waitForRequest(
+    (r) => r.url().endsWith('/api/settings/') && r.method() === 'PUT' && r.postDataJSON().feed_refresh_interval === 7200
+  );
+  await page.getByRole('button', { name: 'Aralığı kaydet' }).click();
+  await req;
+  await expect(page.getByRole('button', { name: 'Aralığı kaydet' })).toBeDisabled();
 });

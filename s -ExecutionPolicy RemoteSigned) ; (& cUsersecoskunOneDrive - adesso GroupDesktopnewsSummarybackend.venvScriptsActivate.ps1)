@@ -1,0 +1,162 @@
+[33mcommit 5280e7df55accbe5e28936349ee1ca21a7c98d79[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mfix/github-issues-22-39[m[33m)[m
+Author: Eyüp Coskun <eyuep.coskun@adesso.de>
+Date:   Fri Sep 25 18:00:07 2026 +0200
+
+    push regel changed
+
+[33mcommit f6456d682e13d7d29a956d6bb196135376c3c6b9[m[33m ([m[1;31mmygit/master[m[33m, [m[1;31mmygit/HEAD[m[33m, [m[1;32mmaster[m[33m)[m
+Author: Eyüp Coskun <eyuep.coskun@adesso.de>
+Date:   Fri Sep 25 17:46:36 2026 +0200
+
+    db fix
+
+[33mcommit 4b805af090b910985af9ab6e79f117c79b738fea[m
+Author: Eyüp Coskun <eyuep.coskun@adesso.de>
+Date:   Wed Sep 23 23:12:36 2026 +0200
+
+    feat: show feed name as article source; summarizer returns the author
+    
+    - Card shows "Kaynak" (the feed's name) above "Yazar"; the feed name is now
+      required (API 422 on blank, form enforces it). Export uses it too.
+    - Every summary call gets the source and the feed/page author as a hint and
+      must answer JSON {"summary", "author"}; the author is kept only if it is a
+      real person (e.g. "Sputnik Türkiye" in dc:creator is dropped), else empty.
+    - Feed-reported author is kept in a new feed_author column so re-runs and the
+      Playground still send it as a hint after a run cleared the shown author.
+    - Summary calls reserve SUMMARY_JSON_OVERHEAD_TOKENS for the JSON wrapper and
+      a cut-off answer is recovered as plain text instead of stored raw JSON.
+    - Playground shows the author the model returned.
+    
+    Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+    Claude-Session: https://claude.ai/code/session_012wSeHTsUNDdtn2L4yaYC8z
+
+[33mcommit 2e4b9af08e9650d8205b08a2e9932bcf66671889[m
+Author: Eyüp Coskun <eyuep.coskun@adesso.de>
+Date:   Wed Sep 23 17:41:34 2026 +0200
+
+    fix: Turkish auth errors, word-start search, pager contrast, archive and bulletin guards
+    
+    - auth: user-facing error messages are Turkish ("E-posta veya şifre hatalı", ...)
+    - search: match at the start of a word instead of any substring, so "nato" no
+      longer hits "donations"/"senator"; prefix search and Turkish letters still work
+    - home hero: pager labels follow the theme — white text vanished on the light
+      blue / near-white backgrounds of the dark theme (contrast was 1.1–1.8)
+    - "Tümünü Arşive Gönder" asks for confirmation with the article count
+    - unread article cards get an "Arşive gönder" button (single mark-as-read)
+    - Bülten: "Oluştur ve İndir" is disabled while the selection matches 0 articles
+      (the backend rejects that); mockApi mirrors the 400 and word-start search
+    
+    Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+    Claude-Session: https://claude.ai/code/session_014teQUNKdQp4MZ3FhVaQgMn
+
+[33mcommit 29157485b36feda9b19bf8f25ab757c475f3b467[m
+Author: Eyüp Coskun <eyuep.coskun@adesso.de>
+Date:   Wed Sep 23 17:40:20 2026 +0200
+
+    test(e2e): cover login session, favorites export and manual feed refresh
+    
+    - auth-session: successful login stores the JWT and sends it on API calls,
+      survives a reload; generic error without a detail; a 401 logs the user out
+    - favorites-export: Favori selection, Word download content, WhatsApp
+      clipboard message, Listeyi Temizle confirm/dismiss
+    - feed-refresh: refreshes all or only the selected feeds, polls the status
+      and shows the aggregated result; a failed refresh resets the button
+    - theme-toggle: mock dev-login as disabled so a local backend running with
+      DEV_AUTO_LOGIN=true can't skip the login page and break the spec
+    
+    Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+    Claude-Session: https://claude.ai/code/session_014teQUNKdQp4MZ3FhVaQgMn
+
+[33mcommit 0402f604b31e8c75eadef8b1faf0ceb96ae3c7a5[m
+Author: Eyüp Coskun <eyuep.coskun@adesso.de>
+Date:   Wed Sep 23 13:23:19 2026 +0200
+
+    chore: add dev.ps1 to start DB, backend and frontend with hot reload
+    
+    Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+    Claude-Session: https://claude.ai/code/session_01NbSvJxbsjPb7u5bjx7sDpD
+
+[33mcommit d55ff149ca2365446562fe6d3f2aaee69404f0c9[m
+Author: Eyüp Coskun <eyuep.coskun@adesso.de>
+Date:   Wed Sep 23 13:23:19 2026 +0200
+
+    feat: DEV_AUTO_LOGIN skips the login page in local development
+    
+    POST /api/auth/dev-login issues an admin token without a password, honoured
+    only while DEV_AUTO_LOGIN and DEBUG are both true (Docker forces
+    DEBUG=false, so it is always off on the server).
+    
+    Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+    Claude-Session: https://claude.ai/code/session_01NbSvJxbsjPb7u5bjx7sDpD
+
+[33mcommit e4a18954aae40078db8e6360890d3337d1af51ee[m
+Author: Eyüp Coskun <eyuep.coskun@adesso.de>
+Date:   Wed Sep 23 13:23:18 2026 +0200
+
+    fix: show Top News summary when brief is disabled or generated later
+    
+    - HomeHero only looked for a 'brief' summary, so with brief turned off in
+      Ayarlar every slide showed "Özet mevcut değil". It now shows the shortest
+      summary text among the generated types.
+    - useSummaries cached an empty list forever (staleTime: Infinity). The
+      pipeline sets priority before writing summaries, so a fresh hero story
+      kept "Özet mevcut değil" until reload. It now refetches once when the
+      article's has_summaries flag flips while the cached list is empty, without
+      polling articles that will never get summaries.
+    
+    Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+    Claude-Session: https://claude.ai/code/session_01NbSvJxbsjPb7u5bjx7sDpD
+
+[33mcommit 652e560df2c785f49008cfeeccd0ab89937f4c37[m[33m ([m[1;33mtag: [m[1;33mv2.4.0[m[33m)[m
+Author: Eyüp Coskun <eyuep.coskun@adesso.de>
+Date:   Wed Sep 23 10:52:46 2026 +0200
+
+    chore: remove unused CHECKPOINTS_DB setting
+    
+    The LangGraph graph is compiled without a checkpointer (agents/graph.py),
+    so checkpoints_db was never read. Drop it from config, .env.example,
+    docker-compose, the deploy/CI legacy-file moves, .gitignore and README;
+    the README "reset DB" steps now describe the Postgres volume instead of
+    deleting SQLite files. Leftover CHECKPOINTS_DB lines in existing .env files
+    are harmless (Settings uses extra="ignore").
+    
+    Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+    Claude-Session: https://claude.ai/code/session_01XGR2Esob2ryXaHQAgt4EmA
+
+[33mcommit 4c249a3636473ffec7542be2f7615ea798f08ed5[m
+Author: Eyüp Coskun <eyuep.coskun@adesso.de>
+Date:   Wed Sep 23 10:45:18 2026 +0200
+
+    chore(claude): permission allowlist, features check for manual pushes
+    
+    - .claude/settings.json: allowlist the test/typecheck/lint/docker-status
+      commands used most in past sessions (no interpreter/runner wildcards)
+    - check_features_json.py: add a git pre-push mode (for manual pushes) next
+      to the Claude hook; one bypass for both: FEATURES_OK=1; a new branch is
+      compared with master's upstream instead of a stale origin/master
+    - .gitignore / conftest: drop stale "SQLite data" wording (app is on Postgres)
+    
+    Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+    Claude-Session: https://claude.ai/code/session_01XGR2Esob2ryXaHQAgt4EmA
+
+[33mcommit 1b9ed374e4718309d99fb82a774be47e3970bc0d[m
+Author: Eyüp Coskun <eyuep.coskun@adesso.de>
+Date:   Wed Sep 23 10:35:28 2026 +0200
+
+    fix: price gpt-4o / gpt-4o-mini calls at their own rates
+    
+    PRICING had no entry for the configured DEFAULT_MODEL (gpt-4o-mini) or
+    DETAILED_MODEL (gpt-4o), so calculate_cost silently used gpt-3.5-turbo
+    prices: gpt-4o cost was ~6x under-counted, gpt-4o-mini ~2.7x over-counted,
+    skewing stored costs, stats and the daily/monthly cost limits.
+    
+    - add gpt-4o-mini / gpt-4o list prices
+    - resolve dated snapshot names (gpt-4o-mini-2024-07-18) to the base model
+    - log a warning when a model has no price instead of failing silently
+    - regression tests for per-model cost, configured models, unknown model
+    
+    Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+    Claude-Session: https://claude.ai/code/session_01XGR2Esob2ryXaHQAgt4EmA
+
+[33mcommit 914dd160a09cf32e4501c43edd9a40456b870b65[m
+Aut

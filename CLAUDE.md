@@ -71,7 +71,8 @@ files). The essentials:
   test exists that would catch it coming back. Do this for every fix, however small; only skip it
   if the change is truly untestable (e.g. a comment/typo fix).
 - **Feature added/removed/changed** → update `frontend/src/data/features.json` (rendered by
-  Ayarlar › Features) in the same change — see `.claude/rules/features.md`.
+  Ayarlar › Features) in the same change, without being asked — no hook checks this, so it is on you.
+  See `.claude/rules/features.md`.
 - **Learned a new recurring convention/gotcha** → record it with the `/add-rule` skill into
   `.claude/rules/` (do not bloat this file).
 - **Before a PR** → run the `/update-docs` skill to sync `README.md` + `.env.example`.
@@ -79,5 +80,4 @@ files). The essentials:
 
 Hooks in `.claude/settings.json` (scripts in `.claude/hooks/`) enforce part of this automatically: ruff/eslint
 run on every edit under `backend/app/` / `frontend/src/` (fix what they report, same checks as CI); writing
-`.env*` (except `.env.example`) or `git add`-ing it is denied; `git push` is denied while feature code changed
-without a `features.json` update (see `.claude/rules/features.md`).
+`.env*` (except `.env.example`) or `git add`-ing it is denied.

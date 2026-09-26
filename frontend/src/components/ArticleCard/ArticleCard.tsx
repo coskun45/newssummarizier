@@ -32,10 +32,12 @@ interface ArticleCardProps {
   onDeleted?: (id: number) => void;
   isArchiveView?: boolean;
   selectable?: boolean;
+  /** Re-processing spends OpenAI budget, so only admins get the "Tekrar dene" button. */
+  canReprocess?: boolean;
 }
 
 
-function ArticleCard({ article, isSelected = false, onToggleSelect, onDeleted, isArchiveView = false, selectable = false }: ArticleCardProps) {
+function ArticleCard({ article, isSelected = false, onToggleSelect, onDeleted, isArchiveView = false, selectable = false, canReprocess = false }: ArticleCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [showContent, setShowContent] = useState(false);
   const [summaryType, setSummaryType] = useState<'brief' | 'standard' | 'detailed'>('standard');
@@ -97,6 +99,8 @@ function ArticleCard({ article, isSelected = false, onToggleSelect, onDeleted, i
         className="delete-icon-btn"
         title="Sil"
         onClick={() => {
+          // The URL is blacklisted on delete, so the feed never brings the article back.
+          if (!confirm(`"${article.title}" kalıcı olarak silinsin mi? Bu haber bir daha getirilmez.`)) return;
           deleteArticleMutation.mutate(article.id, { onSuccess: () => onDeleted?.(article.id) });
         }}
         disabled={deleteArticleMutation.isPending}
@@ -190,7 +194,7 @@ function ArticleCard({ article, isSelected = false, onToggleSelect, onDeleted, i
             <ArchiveBoxArrowDownIcon /> Arşive gönder
           </button>
         )}
-        {isError && (
+        {isError && canReprocess && (
           <button
             className="btn btn-outline"
             onClick={() => reprocessMutation.mutate({ article_ids: [article.id] })}
@@ -244,7 +248,7 @@ function ArticleCard({ article, isSelected = false, onToggleSelect, onDeleted, i
               <p>{summary.summary_text}</p>
               <div className="summary-meta">
                 <span className="text-small text-muted">
-                  Model: {summary.model_used} | Maliyet: ${summary.cost.toFixed(4)}
+                  Model: {summary.model_used ?? '—'} | Maliyet: ${(summary.cost ?? 0).toFixed(4)}
                 </span>
               </div>
             </div>

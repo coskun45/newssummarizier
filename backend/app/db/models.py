@@ -50,6 +50,9 @@ class Article(Base):
     summaries = relationship("Summary", back_populates="article", cascade="all, delete-orphan")
     topics = relationship("ArticleTopic", back_populates="article", cascade="all, delete-orphan")
     logs = relationship("ProcessingLog", back_populates="article", cascade="all, delete-orphan")
+    bulletin_classifications = relationship(
+        "ArticleBulletinClassification", back_populates="article", cascade="all, delete-orphan"
+    )
 
 
 class Summary(Base):
@@ -67,6 +70,23 @@ class Summary(Base):
     
     # Relationships
     article = relationship("Article", back_populates="summaries")
+
+
+class LlmUsage(Base):
+    """One OpenAI call (classification, summary, bulletin, playground) and what it cost. The cost
+    limits and stats sum this table, so every call counts — including ones whose result is never
+    stored or is later deleted. `article_id` is informational only (no FK): the spend stays on
+    the books when the article goes."""
+    __tablename__ = "llm_usage"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    kind = Column(String, nullable=False)  # classification | summary | bulletin | playground
+    model = Column(String)
+    input_tokens = Column(Integer, nullable=False, default=0)
+    output_tokens = Column(Integer, nullable=False, default=0)
+    cost = Column(Float, nullable=False, default=0.0)
+    article_id = Column(Integer, nullable=True)
+    created_at = Column(UTCDateTime(), server_default=func.now(), index=True)
 
 
 class Topic(Base):
@@ -184,7 +204,7 @@ class ArticleBulletinClassification(Base):
     created_at = Column(UTCDateTime(), server_default=func.now())
 
     # Relationships
-    article = relationship("Article")
+    article = relationship("Article", back_populates="bulletin_classifications")
 
     __table_args__ = (
         UniqueConstraint("article_id", "category_set_hash", name="uq_bulletin_classification_article_hash"),

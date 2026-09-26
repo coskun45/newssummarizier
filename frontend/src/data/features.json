@@ -21,8 +21,8 @@
         },
         {
           "id": "background-scheduler",
-          "title": "Saatlik otomatik RSS işleme",
-          "description": "Zamanlayıcı her saat başı tüm aktif RSS beslemelerini işler."
+          "title": "Otomatik RSS işleme",
+          "description": "Zamanlayıcı tüm aktif RSS beslemelerini Ayarlar › RSS Beslemeleri'nde seçilen aralıkta (varsayılan: saatte bir) işler."
         },
         {
           "id": "agent-pipeline",
@@ -32,7 +32,7 @@
         {
           "id": "openai-summaries",
           "title": "OpenAI özetleme ve maliyet takibi",
-          "description": "Tüm OpenAI çağrıları tek serviste yapılır; kısa, standart ve detaylı özetler üretilir ve maliyet limitleri izlenir."
+          "description": "Tüm OpenAI çağrıları tek serviste yapılır; kısa, standart ve detaylı özetler üretilir. Sınıflandırma, özet, bülten ve Playground dahil her çağrının maliyeti kaydedilir ve günlük/aylık limitlere sayılır."
         },
         {
           "id": "home-hero",
@@ -52,7 +52,7 @@
         {
           "id": "article-actions",
           "title": "Haber işlemleri",
-          "description": "Haberi favorilere ekleme, okundu işaretleme, silme, orijinal sayfayı açma ve tam içeriği modalda görüntüleme."
+          "description": "Haberi favorilere ekleme, okundu işaretleme, silme (onay ister; silinen haber bir daha getirilmez), orijinal sayfayı açma ve tam içeriği modalda görüntüleme."
         },
         {
           "id": "article-filters",
@@ -62,7 +62,7 @@
         {
           "id": "bulk-actions",
           "title": "Toplu işlemler",
-          "description": "Öncelik veya önemsiz haberlere göre toplu arşivleme/silme, seçili haberleri toplu okundu işaretleme ve tüm favorileri kaldırma."
+          "description": "Öncelik veya önemsiz haberlere göre toplu arşivleme, seçili haberleri toplu okundu işaretleme ve tüm favorileri kaldırma. Toplu silme yalnızca yöneticilere açıktır."
         },
         {
           "id": "article-export",
@@ -72,7 +72,7 @@
         {
           "id": "error-tab-reprocess",
           "title": "Error sekmesi ve yeniden işleme",
-          "description": "Sınıflandırılamayan haberler Error sekmesinde toplanır; yeniden işleme başlatılabilir ve durumu izlenir."
+          "description": "Sınıflandırılamayan haberler Error sekmesinde toplanır; yöneticiler yeniden işlemeyi başlatıp durumunu izleyebilir."
         },
         {
           "id": "feed-refresh",
@@ -82,17 +82,17 @@
         {
           "id": "settings-feeds",
           "title": "RSS Beslemeleri",
-          "description": "RSS beslemesi ekleme, düzenleme, silme ve bağlantı testi. Besleme adı zorunludur; haberlerde \"Kaynak\" olarak görünür."
+          "description": "RSS beslemesi ekleme, düzenleme, silme ve bağlantı testi; tüm beslemelerin otomatik yenileme aralığı da buradan seçilir. Besleme adı zorunludur; haberlerde \"Kaynak\" olarak görünür."
         },
         {
           "id": "settings-topics",
           "title": "Kategoriler",
-          "description": "Haber konularını (kategorilerini) ekleme, düzenleme, silme ve etkinleştirme."
+          "description": "Haber konularını (kategorilerini) ekleme, düzenleme, silme ve etkinleştirme. Yapay zekâ haberleri yalnızca etkin kategorilere atar; en az bir kategori etkin kalır."
         },
         {
           "id": "settings-summary-types",
           "title": "Özet Türleri",
-          "description": "Hangi özet türlerinin (kısa, standart, detaylı) üretileceğini seçme."
+          "description": "Hangi özet türlerinin (kısa, standart, detaylı) üretileceğini seçme; en az bir tür seçili olmalıdır. Pipeline ayarlarını yalnızca yöneticiler değiştirebilir."
         }
       ]
     },
@@ -103,7 +103,7 @@
         {
           "id": "bulletin-report",
           "title": "Word bülten raporu",
-          "description": "Seçilen zaman aralığı ve önem seviyesindeki haberleri kullanıcı tanımlı üst düzey kategorilere göre gruplayıp şablona uygun bir Word (.docx) raporu üretir; geçmiş raporlar indirilebilir veya silinebilir."
+          "description": "Seçilen zaman aralığı ve önem seviyesindeki haberlerden örnek bülten yapısında bir Word (.docx) raporu üretir: en fazla 5 haberlik Öne Çıkan Başlıklar, ardından kullanıcı tanımlı kategoriler altında yapay zekanın konulara göre belirlediği alt başlıklar. Her haber kısa özetiyle (📌 kaynak - başlık, 🔹 maddeler) yazılır; kısa özeti olmayanlara özet üretilir. İçindekiler hazır gelir, kaynak listesine takip edilen RSS beslemeleri eklenir. Geçmiş raporlar indirilebilir, silme yalnızca yöneticilere açıktır."
         },
         {
           "id": "bulletin-categories",
@@ -113,7 +113,7 @@
         {
           "id": "playground",
           "title": "Pipeline denemesi",
-          "description": "Bir haber seçilip sınıflandırma, öncelik ve özet aşamaları çalıştırılır. Prompt ve özet talimatları o çalıştırma için geçici değiştirilebilir; prompt, ham cevap, token, maliyet ve süre gösterilir. Veritabanına hiçbir şey yazılmaz."
+          "description": "Yalnızca yöneticilere açıktır. Bir haber seçilip sınıflandırma, öncelik ve özet aşamaları çalıştırılır. Prompt ve özet talimatları o çalıştırma için geçici değiştirilebilir; prompt, ham cevap, token, maliyet ve süre gösterilir. Haber veya özet kaydedilmez; yalnızca maliyeti limitlere sayılır."
         },
         {
           "id": "settings-prompts",

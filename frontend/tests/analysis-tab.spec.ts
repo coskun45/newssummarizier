@@ -1,9 +1,9 @@
 import { test, expect } from '@playwright/test';
-import { loginAs } from './helpers/auth';
+import { ADMIN_USER, loginAs } from './helpers/auth';
 import { mockApi } from './helpers/mockApi';
 
 test('Analiz sits right after Playground in the header', async ({ page }) => {
-  await loginAs(page);
+  await loginAs(page, ADMIN_USER);
   await mockApi(page, { articles: [] });
   await page.goto('/');
 

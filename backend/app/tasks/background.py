@@ -41,11 +41,6 @@ async def process_feed_async(feed_id: int):
 
         feed_url = feed.url
 
-        # Count articles before processing to detect new ones
-        from app.db.models import Article
-        from sqlalchemy import func
-        articles_before = db.query(func.count(Article.id)).scalar() or 0
-
         _job_status[feed_id] = {"status": "running"}
 
         logger.info(f"Starting feed processing: {feed_url}")
@@ -81,17 +76,14 @@ async def process_feed_async(feed_id: int):
         )
         
         # Log results
-        total_articles = len(final_state.get("processed_articles", []))
+        processed = final_state.get("processed_articles", [])
+        total_articles = len(processed)
         total_cost = final_state.get("total_cost", 0.0)
         errors = final_state.get("errors", [])
-        
-        # Count new articles added during this run
-        db2 = SessionLocal()
-        try:
-            articles_after = db2.query(func.count(Article.id)).scalar() or 0
-        finally:
-            db2.close()
-        new_articles = max(0, articles_after - articles_before)
+
+        # Articles this run actually stored for this feed — not a before/after diff of the global
+        # article count, which other feeds' jobs and user deletions change meanwhile.
+        new_articles = sum(1 for article in processed if article.get("created"))
 
         _job_status[feed_id] = {
             "status": "done",

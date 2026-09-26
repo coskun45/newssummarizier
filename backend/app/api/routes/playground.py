@@ -9,7 +9,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import CostLimitExceededError
-from app.db import crud
+from app.api.deps import require_admin
+from app.db import crud, models
 from app.db.database import get_db
 from app.services import summary_service
 
@@ -139,8 +140,13 @@ def get_playground_settings(db: Session = Depends(get_db)):
 
 
 @router.post("/run", response_model=PlaygroundRunResponse)
-async def run_playground(body: PlaygroundRunRequest, db: Session = Depends(get_db)):
-    """Dry-run classification and/or summarization on one stored article. Persists nothing."""
+async def run_playground(
+    body: PlaygroundRunRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_admin),
+):
+    """Dry-run classification and/or summarization on one stored article. Persists nothing, but
+    spends OpenAI budget — admin only."""
     invalid_stages = sorted(set(body.stages) - set(STAGES))
     if invalid_stages or not body.stages:
         raise HTTPException(status_code=400, detail=f"Invalid stages: {', '.join(invalid_stages) or '(none)'}")

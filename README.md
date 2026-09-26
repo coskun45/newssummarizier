@@ -11,9 +11,13 @@ Deutsche Welle (DW) RSS beslemelerinden haber toplayan, kategorize eden ve yapay
 - **İnteraktif Dashboard**: Arama ve filtreleme ile React tabanlı kullanıcı arayüzü
 - **Maliyet Takibi**: Yapılandırılabilir limitlerle OpenAI API maliyetlerini izler
 - **LangGraph Workflow**: Karmaşık işleme hatları için sağlam agent orkestrasyon
-- **Word Bülten Raporu**: Seçilen zaman aralığı ve önem seviyesindeki haberleri, kullanıcı tanımlı üst
-  düzey kategorilere (Avrupa, Amerika vb.) göre gruplayıp şablona uygun bir Word (.docx) raporu üretir —
-  alt başlıklar ve gündem özeti her üretimde yapay zeka tarafından haberlere göre oluşturulur
+- **Word Bülten Raporu**: Seçilen zaman aralığı ve önem seviyesindeki haberlerden, şablondaki örnek bülten
+  yapısında bir Word (.docx) raporu üretir: en başta yapay zekanın seçtiği en fazla 5 haberlik **Öne Çıkan
+  Başlıklar**, ardından kullanıcı tanımlı üst düzey kategoriler (Avrupa, Amerika vb.; Heading1) ve her birinin
+  altında haberlerin konularına göre oluşturulan anlamlı alt başlıklar (Heading3). Her haber, uygulamanın kısa
+  özetiyle (`📌 Kaynak / Yazar - Başlık` + `🔹` maddeler) yazılır; kısa özeti olmayan habere aynı özetleyiciyle
+  özet üretilip kaydedilir. İçindekiler hazır doldurulur (Word açılışta güncelleme sormaz); "BAZI KAYNAKLAR"
+  listesine takip edilen RSS beslemeleri eklenir. Şablon: `backend/app/resources/bulletin_template.docx`
 - **Playground**: Header'daki sekmeden mevcut RSS'lerdeki haberlerden biri seçilip pipeline'ın (sınıflandırma +
   öncelik, kısa/standart/detaylı özet) sonucu görülebilir. Geçerli model ve prompt ayarları gösterilir; prompt'lar
   ve özet talimatları o çalıştırma için geçici olarak değiştirilebilir. Her aşama ayrıntılı incelenir (modele giden
@@ -274,7 +278,8 @@ Aşağıdaki tablo öne çıkanlardır; tam liste `.env.example`'dadır. Contain
 | `CORS_ORIGINS` | `http://localhost:5173,...` | İzin verilen CORS origin'leri (deploy sunucu IP'sine ayarlar) |
 | `DEFAULT_MODEL` / `DETAILED_MODEL` | `gpt-4o-mini` / `gpt-4o` | Kategorizasyon/kısa özet ve detaylı özet modelleri |
 | `MAX_TOKENS_OUTPUT_BRIEF` / `_STANDARD` / `_DETAILED` | `1500` / `3000` / `10000` | Özet tipine göre çıktı token limiti |
-| `DAILY_COST_LIMIT` / `MONTHLY_COST_LIMIT` | `10.0` / `100.0` | Maliyet limitleri (USD) |
+| `DAILY_COST_LIMIT` / `MONTHLY_COST_LIMIT` | `10.0` / `100.0` | Maliyet limitleri (USD) — sınıflandırma, özet, bülten ve Playground dahil tüm OpenAI çağrılarının toplamı |
+| `FEED_REFRESH_INTERVAL` | `3600` | Otomatik feed yenileme aralığının varsayılanı (saniye); admin Ayarlar › RSS Beslemeleri'nden değiştirir |
 
 ### Sürümleme
 
@@ -466,14 +471,14 @@ DATABASE_URL=postgresql+psycopg2://bulten:changeme@localhost:5432/bulten
 
 # RSS Feed
 DEFAULT_FEED_URL=https://rss.dw.com/atom/rss-de-all
-FEED_REFRESH_INTERVAL=1800  # 30 dakika
+FEED_REFRESH_INTERVAL=3600  # 1 saat (Ayarlar'dan değiştirilebilir)
 
 # Scraping
 SCRAPING_ENABLED=True
 SCRAPING_DELAY=1.0  # İstekler arası saniye
 
 # Maliyet Limitleri
-DAILY_COST_LIMIT=5.0  # USD
+DAILY_COST_LIMIT=10.0  # USD
 MONTHLY_COST_LIMIT=100.0  # USD
 
 # Bülten Raporu
@@ -640,7 +645,7 @@ npm install
 
 1. `.env` dosyasında `DAILY_COST_LIMIT` değerini düşürün
 2. GPT-4 yerine sadece `gpt-3.5-turbo` kullanın
-3. `FEED_REFRESH_INTERVAL` değerini artırın
+3. Ayarlar › RSS Beslemeleri'nde otomatik yenileme aralığını artırın
 
 ### Docker sorunları
 

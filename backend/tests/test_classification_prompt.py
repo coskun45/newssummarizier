@@ -153,3 +153,38 @@ def test_seed_summarization_prompt_is_the_pipeline_default(seed_db):
 
     seed_db.expire_all()
     assert crud.get_system_prompt(seed_db, "summarization").prompt_text == summary_service._DEFAULT_SUMMARIZATION_SYSTEM_PROMPT
+
+
+def test_classification_prompt_lists_only_enabled_topics(monkeypatch, db_session):
+    """Regression (#27): Ayarlar › Kategoriler selection was saved but the classifier was still
+    offered every topic."""
+    import asyncio
+
+    nato = _make_topic(db_session, "NATO")
+    _make_topic(db_session, "Spor")
+    crud.set_setting(db_session, "enabled_topics", str(nato.id))
+    monkeypatch.setattr(summary_service, "SessionLocal", sessionmaker(bind=db_session.get_bind()))
+    sent = {}
+
+    async def fake_run(title, system_prompt, model):
+        sent["prompt"] = system_prompt
+        return {"parsed": {"importance": "unimportant", "priority": None, "topics": []},
+                "cost": 0.0, "error": None}
+
+    async def no_limit():
+        return None
+
+    monkeypatch.setattr(summary_service, "_run_classification", fake_run)
+    monkeypatch.setattr(summary_service, "check_cost_limits", no_limit)
+
+    asyncio.run(summary_service.categorize_and_prioritize_article("Başlık"))
+
+    assert "- NATO" in sent["prompt"] and "Spor" not in sent["prompt"]
+
+
+@pytest.mark.parametrize("stored", [None, "", "999"])
+def test_enabled_topics_fall_back_to_all_topics(db_session, topics, stored):
+    """No selection (or only ids of deleted topics) means every topic, never an empty list."""
+    if stored is not None:
+        crud.set_setting(db_session, "enabled_topics", stored)
+    assert {t.name for t in crud.get_enabled_topics(db_session)} == {"NATO", "Ukrayna Savaşı"}

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { loginAs } from './helpers/auth';
+import { ADMIN_USER, loginAs } from './helpers/auth';
 import { mockApi, makeArticle } from './helpers/mockApi';
 
 function fixtures() {
@@ -27,7 +27,7 @@ test('archive all unimportant fires immediately', async ({ page }) => {
 });
 
 test('delete all unimportant requires confirmation, cancel sends nothing', async ({ page }) => {
-  await loginAs(page);
+  await loginAs(page, ADMIN_USER);
   await mockApi(page, { articles: fixtures() });
   let deleteAllCalled = false;
   await page.route(
@@ -52,7 +52,7 @@ test('delete all unimportant requires confirmation, cancel sends nothing', async
 });
 
 test('confirming sends the unimportant delete-all request', async ({ page }) => {
-  await loginAs(page);
+  await loginAs(page, ADMIN_USER);
   await mockApi(page, { articles: fixtures() });
   await page.goto('/');
   await page.getByRole('button', { name: 'Haberler', exact: true }).click();

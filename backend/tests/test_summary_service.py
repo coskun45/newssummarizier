@@ -228,16 +228,29 @@ def test_failed_categorization_write_error_is_rolled_back(reprocess_env, monkeyp
     assert article.status == "failed" and article.priority is None
 
 
-def test_reset_stale_pending_articles_makes_them_retryable(db_session):
+def test_reset_interrupted_articles_makes_them_retryable(db_session):
     feed = _make_feed(db_session)
     stuck = _make_article(db_session, feed.id, status="pending")
     fine = _make_article(db_session, feed.id, status="summarized", priority="high")
 
     assert crud.get_error_article_ids(db_session) == []  # pending is invisible to the Error group
-    assert crud.reset_stale_pending_articles(db_session) == 1
+    assert crud.reset_interrupted_articles(db_session) == 1
 
     db_session.expire_all()
     assert stuck.status == "failed" and fine.status == "summarized"
+    assert crud.get_error_article_ids(db_session) == [stuck.id]
+
+
+def test_reset_at_startup_also_frees_articles_stuck_after_scraping(db_session):
+    """Regression (#28): a run interrupted after the page was scraped left the article "scraped"
+    for good — excluded from the Error group, so "Tekrar Dene" could never pick it up."""
+    feed = _make_feed(db_session)
+    stuck = _make_article(db_session, feed.id, status="scraped", cleaned_content="body")
+
+    assert crud.reset_interrupted_articles(db_session) == 1
+
+    db_session.expire_all()
+    assert stuck.status == "failed"
     assert crud.get_error_article_ids(db_session) == [stuck.id]
 
 
@@ -332,6 +345,7 @@ def test_pipeline_node_categorization_failure_is_failed_not_summarized(monkeypat
     summaries and marked the unlabelled article "summarized"."""
     from sqlalchemy.orm import sessionmaker
     from app.agents import nodes
+    from app.services import summary_service
 
     monkeypatch.setattr(nodes, "SessionLocal", sessionmaker(bind=db_session.get_bind(), expire_on_commit=False))
     feed = _make_feed(db_session)
@@ -348,9 +362,9 @@ def test_pipeline_node_categorization_failure_is_failed_not_summarized(monkeypat
         summary_calls.append(kwargs)
         return {"summary_text": "s", "model_used": "m", "tokens_used": 1, "cost": 0.0}
 
-    monkeypatch.setattr(nodes, "extract_article_content", fake_extract)
-    monkeypatch.setattr(nodes, "categorize_and_prioritize_article", failing_categorize)
-    monkeypatch.setattr(nodes, "generate_summary", fake_summary)
+    monkeypatch.setattr(summary_service, "extract_article_content", fake_extract)
+    monkeypatch.setattr(summary_service, "categorize_and_prioritize_article", failing_categorize)
+    monkeypatch.setattr(summary_service, "generate_summary", fake_summary)
 
     state = {
         "feed_id": feed.id, "feed_url": feed.url, "current_article_index": 0,
@@ -608,6 +622,7 @@ def test_pipeline_node_sends_feed_name_and_stores_model_author(monkeypatch, db_s
     source was guessed; now the feed name is the source and the model's answer sets the author."""
     from sqlalchemy.orm import sessionmaker
     from app.agents import nodes
+    from app.services import summary_service
 
     monkeypatch.setattr(nodes, "SessionLocal", sessionmaker(bind=db_session.get_bind(), expire_on_commit=False))
     feed = _make_feed(db_session, title="Sputnik Türkiye")
@@ -625,9 +640,9 @@ def test_pipeline_node_sends_feed_name_and_stores_model_author(monkeypatch, db_s
         return {"summary_text": "s", "model_used": "m", "tokens_used": 1, "cost": 0.0,
                 "author": None, "structured": True}
 
-    monkeypatch.setattr(nodes, "extract_article_content", fake_extract)
-    monkeypatch.setattr(nodes, "categorize_and_prioritize_article", fake_categorize)
-    monkeypatch.setattr(nodes, "generate_summary", fake_summary)
+    monkeypatch.setattr(summary_service, "extract_article_content", fake_extract)
+    monkeypatch.setattr(summary_service, "categorize_and_prioritize_article", fake_categorize)
+    monkeypatch.setattr(summary_service, "generate_summary", fake_summary)
 
     state = {
         "feed_id": feed.id, "feed_url": feed.url, "current_article_index": 0,
