@@ -244,7 +244,7 @@ docker compose ps
    - Claude'a ulaşılamazsa issue yine açılır, bu durumda ham bulgular kullanılır.
 
 **Kurulum:** repo → *Settings → Secrets and variables → Actions* altına `ANTHROPIC_API_KEY` ekleyin.
-`SSH_HOST`, `SSH_USER` ve `SSH_PRIVATE_KEY` deploy için tanımlı olanlardır. İsteğe bağlı olarak *Variables* sekmesindeki `CLAUDE_MODEL`
+`SERVER_HOST`, `SERVER_USER` ve `SSH_PRIVATE_KEY` deploy için tanımlı olanlardır. İsteğe bağlı olarak *Variables* sekmesindeki `CLAUDE_MODEL`
 ile model değiştirilebilir (varsayılan `claude-opus-5`). Elle denemek için: *Actions → Daily Health → Run workflow*.
 
 > Zamanlanmış workflow'lar yalnızca `main` dalında çalışır. GitHub, 60 gün commit almayan public repolarda

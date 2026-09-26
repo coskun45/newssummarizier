@@ -51,7 +51,7 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         id: http
         env:
-          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_HOST: ${{ secrets.SERVER_HOST }}
         run: |
           code=$(curl -s -o /dev/null -w '%{http_code}' -m 15 --retry 2 --retry-delay 10 "http://$SSH_HOST/api/health" || true)
           echo "status=${code:-000}" >> "$GITHUB_OUTPUT"
@@ -61,8 +61,8 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         id: ssh
         env:
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_HOST: ${{ secrets.SERVER_HOST }}
+          SSH_USER: ${{ secrets.SERVER_USER }}
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
           install -m 700 -d ~/.ssh
