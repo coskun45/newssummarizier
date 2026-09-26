@@ -1,0 +1,148 @@
+name: Daily Health
+
+# Her sabah 08:00 (Europe/Berlin) sunucunun son 24 saatini Claude'a analiz ettirir.
+# Sorun varsa `daily-health` etiketli issue açar (açık olan varsa yorum ekler);
+# her şey yolundaysa açık issue'yu kapatır. Sunucunun DIŞINDA çalıştığı için
+# sunucu tamamen çökse bile "erişilemiyor" bildirimi gelir.
+#
+# GitHub cron yalnızca UTC bilir: 06:00 UTC yaz saatinde (CEST), 07:00 UTC kış saatinde
+# (CET) 08:00'e denk gelir. "gate" adımı yalnızca o günkü doğru olanı çalıştırır —
+# zamanlanmış çalışma birkaç dakika gecikse bile.
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: daily-health
+  cancel-in-progress: false
+
+jobs:
+  health:
+    name: Sunucu sağlık raporu
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Saat kapısı (08:00 Europe/Berlin)
+        id: gate
+        env:
+          FIRED_CRON: ${{ github.event.schedule }}
+        run: |
+          offset=$(TZ=Europe/Berlin date +%z)
+          run=true
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            if [ "$FIRED_CRON" = "0 6 * * *" ] && [ "$offset" != "+0200" ]; then run=false; fi
+            if [ "$FIRED_CRON" = "0 7 * * *" ] && [ "$offset" != "+0100" ]; then run=false; fi
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "Berlin UTC$offset, cron='$FIRED_CRON' → run=$run"
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.run == 'true'
+
+      - name: Dış sağlık kontrolü (/api/health)
+        if: steps.gate.outputs.run == 'true'
+        id: http
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' -m 15 --retry 2 --retry-delay 10 "http://$SSH_HOST/api/health" || true)
+          echo "status=${code:-000}" >> "$GITHUB_OUTPUT"
+          echo "/api/health → HTTP ${code:-000}"
+
+      - name: Sunucudan log ve durum topla (SSH, salt-okunur)
+        if: steps.gate.outputs.run == 'true'
+        id: ssh
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_health
+          chmod 600 ~/.ssh/id_health
+          set +e
+          timeout 180 ssh -i ~/.ssh/id_health -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
+            -o ConnectTimeout=20 "$SSH_USER@$SSH_HOST" 'bash -s' > health_bundle.txt 2>&1 <<'REMOTE'
+          cd "$HOME/newssummarizier" || { echo "HATA: ~/newssummarizier bulunamadı"; exit 0; }
+          PATTERN='error|critical|traceback|exception|fatal|out of memory|oom|killed'
+          echo "=== docker compose ps -a ==="
+          docker compose ps -a 2>&1
+          echo
+          echo "=== container restart/health ==="
+          for id in $(docker compose ps -aq 2>/dev/null); do
+            docker inspect --format '{{.Name}} status={{.State.Status}} restarts={{.RestartCount}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}-{{end}} started={{.State.StartedAt}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' "$id" 2>&1
+          done
+          echo
+          echo "=== son 24 saatte servis başına hata satırı sayısı ==="
+          for svc in db backend frontend; do
+            n=$(docker compose logs --since 24h --no-color "$svc" 2>&1 | grep -ciE "$PATTERN")
+            echo "$svc: $n"
+          done
+          echo
+          echo "=== hata logları (son 24 saat, bağlamla, en fazla 800 satır) ==="
+          docker compose logs --since 24h --no-color --timestamps 2>&1 | grep -iE -B2 -A6 "$PATTERN" | tail -n 800
+          echo
+          echo "=== backend son 40 satır ==="
+          docker compose logs --no-color --timestamps --tail 40 backend 2>&1
+          echo
+          echo "=== disk ==="
+          df -h / 2>&1
+          echo
+          echo "=== bellek ==="
+          free -m 2>&1
+          echo
+          echo "=== uptime ==="
+          uptime 2>&1
+          REMOTE
+          rc=$?
+          set -e
+          rm -f ~/.ssh/id_health
+          if [ $rc -eq 0 ]; then echo "ok=1" >> "$GITHUB_OUTPUT"; else echo "ok=0" >> "$GITHUB_OUTPUT"; fi
+          echo "SSH çıkış kodu: $rc, toplanan veri: $(wc -c < health_bundle.txt) bayt"
+
+      - name: Claude ile analiz
+        if: steps.gate.outputs.run == 'true'
+        id: report
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL }}
+        run: |
+          python3 scripts/daily_health_report.py \
+            --bundle health_bundle.txt \
+            --health-status "${{ steps.http.outputs.status || '000' }}" \
+            --ssh-ok "${{ steps.ssh.outputs.ok || '0' }}" \
+            --out-md issue.md --out-json report.json
+          cat issue.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Issue aç / güncelle / kapat
+        if: steps.gate.outputs.run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SEVERITY: ${{ steps.report.outputs.severity }}
+          TITLE: ${{ steps.report.outputs.title }}
+        run: |
+          gh label create daily-health --color D93F0B --description "Günlük sağlık raporu" --force >/dev/null
+          open=$(gh issue list --label daily-health --state open --limit 1 --json number --jq '.[0].number // empty')
+          if [ "$SEVERITY" = "OK" ]; then
+            if [ -n "$open" ]; then
+              gh issue comment "$open" --body-file issue.md
+              gh issue close "$open" --comment "✅ Bugünkü kontrolde sorun görülmedi, issue otomatik kapatıldı."
+              echo "Sorun giderilmiş → #$open kapatıldı"
+            else
+              echo "Sorun yok, issue açılmadı."
+            fi
+          elif [ -n "$open" ]; then
+            gh issue comment "$open" --body-file issue.md
+            gh issue edit "$open" --title "$TITLE"
+            echo "Açık issue #$open güncellendi ($SEVERITY)"
+          else
+            gh issue create --title "$TITLE" --body-file issue.md --label daily-health
+          fi

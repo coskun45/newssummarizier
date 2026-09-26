@@ -10,7 +10,8 @@ paths:
 
 Standalone Python scripts run outside the app: `ensure_env.py` prepares the server's single `.env`
 (called by `deploy.sh` and `.github/workflows/deploy.yml`); `next_version.py` computes the release
-version (called by `.github/workflows/ci-cd.yml`). See [[config-and-deploy]] and [[features]].
+version (called by `.github/workflows/ci-cd.yml`); `daily_health_report.py` redacts the server logs and has
+Claude classify them (called by `.github/workflows/daily-health.yml`, raw `urllib` because of the stdlib rule). See [[config-and-deploy]] and [[features]].
 
 ## Constraints
 - **Standard library only, no `app.*` imports** — they run with the server's bare `python3` and in CI
@@ -24,7 +25,7 @@ version (called by `.github/workflows/ci-cd.yml`). See [[config-and-deploy]] and
   as the version, so diagnostics go to stderr. The major comes from the highest `vN` in
   `features.json`; never hardcode a version.
 - **Changing a script's CLI (args, flags, output) means updating every caller in the same change**:
-  `deploy.sh`, `.github/workflows/deploy.yml`, `.github/workflows/ci-cd.yml`.
+  `deploy.sh`, `.github/workflows/deploy.yml`, `.github/workflows/ci-cd.yml`, `.github/workflows/daily-health.yml`.
 - Docstrings and user-facing messages are **Turkish**, matching the existing scripts.
 
 ## Tests
