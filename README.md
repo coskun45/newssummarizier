@@ -228,6 +228,28 @@ docker compose ps
 
 > `<sunucu-ip>` ve SSH kullanıcı adı deploy'un yapıldığı ortama özeldir (bkz. `.github/workflows/deploy.yml` secrets). Loglar Docker'ın container log sürücüsünden okunur; ayrı bir log dosyasına yazılmaz.
 
+### Günlük Sağlık Raporu (Claude)
+
+`.github/workflows/daily-health.yml` her sabah **08:00 (Europe/Berlin)** sunucuyu kontrol eder. GitHub Actions
+üzerinde, yani sunucunun **dışında** çalışır; bu sayede sunucu tamamen çökse bile bildirim gelir.
+
+1. `http://<sunucu>/api/health` dışarıdan çağrılır.
+2. SSH ile salt-okunur olarak toplanır: `docker compose ps`, restart/health durumu, son 24 saatin hata logları
+   (`error|exception|traceback|fatal|oom…`), disk, bellek ve uptime.
+3. `scripts/daily_health_report.py` secret'ları, e-postaları ve IP'leri maskeler, veriyi Claude'a (Anthropic API)
+   analiz ettirir ve `OK` / `UYARI` / `KRİTİK` derecesini belirler. Health kontrolü ya da SSH başarısızsa derece her zaman `KRİTİK` olur.
+4. Sonuç:
+   - **UYARI/KRİTİK:** `daily-health` etiketli bir issue açılır (GitHub e-posta gönderir). Açık bir issue varsa yenisi açılmaz, mevcut issue'ya yorum eklenir.
+   - **OK:** açık issue varsa otomatik kapatılır.
+   - Claude'a ulaşılamazsa issue yine açılır, bu durumda ham bulgular kullanılır.
+
+**Kurulum:** repo → *Settings → Secrets and variables → Actions* altına `ANTHROPIC_API_KEY` ekleyin.
+`SERVER_HOST`, `SERVER_USER` ve `SSH_PRIVATE_KEY` deploy için tanımlı olanlardır. İsteğe bağlı olarak *Variables* sekmesindeki `CLAUDE_MODEL`
+ile model değiştirilebilir (varsayılan `claude-opus-5`). Elle denemek için: *Actions → Daily Health → Run workflow*.
+
+> Zamanlanmış workflow'lar yalnızca varsayılan dalda (`master`) çalışır. GitHub, 60 gün commit almayan public repolarda
+> zamanlanmış workflow'ları devre dışı bırakır; bu durumda Actions sekmesinden yeniden etkinleştirin.
+
 ### Ortam Değişkenleri
 
 Tüm değişkenler repo kökündeki **tek `.env`** dosyasından gelir (şablon: `.env.example`);
