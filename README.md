@@ -247,7 +247,7 @@ docker compose ps
 `SERVER_HOST`, `SERVER_USER` ve `SSH_PRIVATE_KEY` deploy için tanımlı olanlardır. İsteğe bağlı olarak *Variables* sekmesindeki `CLAUDE_MODEL`
 ile model değiştirilebilir (varsayılan `claude-opus-5`). Elle denemek için: *Actions → Daily Health → Run workflow*.
 
-> Zamanlanmış workflow'lar yalnızca `main` dalında çalışır. GitHub, 60 gün commit almayan public repolarda
+> Zamanlanmış workflow'lar yalnızca varsayılan dalda (`master`) çalışır. GitHub, 60 gün commit almayan public repolarda
 > zamanlanmış workflow'ları devre dışı bırakır; bu durumda Actions sekmesinden yeniden etkinleştirin.
 
 ### Ortam Değişkenleri
