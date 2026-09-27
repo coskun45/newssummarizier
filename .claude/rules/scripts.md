@@ -11,7 +11,8 @@ paths:
 Standalone Python scripts run outside the app: `ensure_env.py` prepares the server's single `.env`
 (called by `deploy.sh` and `.github/workflows/deploy.yml`); `next_version.py` computes the release
 version (called by `.github/workflows/ci-cd.yml`); `daily_health_report.py` redacts the server logs and has
-Claude classify them (called by `.github/workflows/daily-health.yml`, raw `urllib` because of the stdlib rule). See [[config-and-deploy]] and [[features]].
+Claude classify them (called by `.github/workflows/daily-health.yml`, raw `urllib` because of the stdlib rule). `daily_health_gate.py` decides whether a scheduled run reports today (Berlin ≥ 08:00 and no
+successful report step yet today, via `gh`) — its `REPORT_STEP` must match the workflow's last step name. See [[config-and-deploy]] and [[features]].
 
 ## Constraints
 - **Standard library only, no `app.*` imports** — they run with the server's bare `python3` and in CI

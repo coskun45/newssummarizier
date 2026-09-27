@@ -1,21 +1,23 @@
 name: Daily Health
 
-# Her sabah 08:00 (Europe/Berlin) sunucunun son 24 saatini Claude'a analiz ettirir.
+# Her sabah ~08:17 (Europe/Berlin) sunucunun son 24 saatini Claude'a analiz ettirir.
 # Sorun varsa `daily-health` etiketli issue açar (açık olan varsa yorum ekler);
 # her şey yolundaysa açık issue'yu kapatır. Sunucunun DIŞINDA çalıştığı için
 # sunucu tamamen çökse bile "erişilemiyor" bildirimi gelir.
 #
-# GitHub cron yalnızca UTC bilir: 06:00 UTC yaz saatinde (CEST), 07:00 UTC kış saatinde
-# (CET) 08:00'e denk gelir. "gate" adımı yalnızca o günkü doğru olanı çalıştırır —
-# zamanlanmış çalışma birkaç dakika gecikse bile.
+# GitHub cron yalnızca UTC bilir ve zamanlanmış çalışmaları (özellikle saat başında) geciktirebilir
+# ya da hiç tetiklemeyebilir. Bu yüzden iki zamanlama var, saat başından uzakta: 06:17 ve 07:17 UTC.
+# "gate" adımı (scripts/daily_health_gate.py): Berlin'de 08:00 olmadıysa durur; olduysa ve bugün
+# raporu teslim etmiş başka bir zamanlanmış çalışma yoksa çalışır — ikinci zamanlama yedektir.
 
 on:
   schedule:
-    - cron: "0 6 * * *"
-    - cron: "0 7 * * *"
+    - cron: "17 6 * * *"
+    - cron: "17 7 * * *"
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
   issues: write
 
@@ -30,22 +32,14 @@ jobs:
     timeout-minutes: 15
 
     steps:
+      - uses: actions/checkout@v4
+
       - name: Saat kapısı (08:00 Europe/Berlin)
         id: gate
         env:
-          FIRED_CRON: ${{ github.event.schedule }}
-        run: |
-          offset=$(TZ=Europe/Berlin date +%z)
-          run=true
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            if [ "$FIRED_CRON" = "0 6 * * *" ] && [ "$offset" != "+0200" ]; then run=false; fi
-            if [ "$FIRED_CRON" = "0 7 * * *" ] && [ "$offset" != "+0100" ]; then run=false; fi
-          fi
-          echo "run=$run" >> "$GITHUB_OUTPUT"
-          echo "Berlin UTC$offset, cron='$FIRED_CRON' → run=$run"
-
-      - uses: actions/checkout@v4
-        if: steps.gate.outputs.run == 'true'
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: python3 scripts/daily_health_gate.py
 
       - name: Dış sağlık kontrolü (/api/health)
         if: steps.gate.outputs.run == 'true'
