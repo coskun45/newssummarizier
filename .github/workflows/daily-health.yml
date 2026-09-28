@@ -9,7 +9,7 @@ name: Daily Health
 # ya da hiç tetiklemeyebilir. Bu yüzden iki zamanlama var, saat başından uzakta: 06:17 ve 07:17 UTC.
 # "gate" adımı (scripts/daily_health_gate.py): Berlin'de 08:00 olmadıysa durur; olduysa ve bugün
 # raporu teslim etmiş başka bir zamanlanmış çalışma yoksa çalışır — ikinci zamanlama yedektir.
-
+# git hesabi degisti
 on:
   schedule:
     - cron: "17 6 * * *"
