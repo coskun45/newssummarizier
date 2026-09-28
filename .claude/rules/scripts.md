@@ -34,3 +34,10 @@ successful report step yet today, via `gh`) — its `REPORT_STEP` must match the
   `importlib.util.spec_from_file_location` (`scripts/` is not a package) — follow
   `test_ensure_env.py`. Use `tmp_path` for files and never touch the real `.env`.
 - Cover idempotency (running twice changes nothing) and the "existing value is kept" cases.
+
+## Scheduled workflows (`schedule:` cron)
+- **GitHub runs a scheduled workflow as the account whose commit last changed its `cron` lines.** If that
+  commit's author email maps to an account without write access (e.g. the work email → `coskunadesso`,
+  `read` only), the schedule silently never fires while `workflow_dispatch` still works. Commit cron
+  changes as `coskun45` (repo-local `user.email` = `67566471+coskun45@users.noreply.github.com`) and check
+  `gh run list --workflow <file> --event schedule` the next day.

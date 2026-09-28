@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Daily Health workflow'unun bu çalışmada rapor üretip üretmeyeceğine karar verir.
 
-.github/workflows/daily-health.yml iki zamanlama kullanır (06:17 ve 07:17 UTC), çünkü GitHub cron
+.github/workflows/daily-health.yml iki zamanlama kullanır (06:23 ve 07:23 UTC), çünkü GitHub cron
 yalnızca UTC bilir ve zamanlanmış çalışmaları geciktirebilir ya da hiç tetiklemeyebilir. Kural:
 
   * elle başlatılan çalışma (workflow_dispatch) her zaman çalışır;
