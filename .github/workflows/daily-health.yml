@@ -14,6 +14,7 @@ on:
   schedule:
     - cron: "23 6 * * *"
     - cron: "23 7 * * *"
+    - cron: "*/10 * * * *"  # GEÇİCİ TEST — zamanlama tetikleniyor mu? Doğrulanınca kaldırılacak.
   workflow_dispatch:
 
 permissions:
