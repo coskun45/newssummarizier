@@ -1,20 +1,20 @@
 name: Daily Health
 
-# Her sabah ~08:23 (Europe/Berlin) sunucunun son 24 saatini Claude'a analiz ettirir.
-# Sorun varsa `daily-health` etiketli issue açar (açık olan varsa yorum ekler);
-# her şey yolundaysa açık issue'yu kapatır. Sunucunun DIŞINDA çalıştığı için
-# sunucu tamamen çökse bile "erişilemiyor" bildirimi gelir.
+# Günde bir kez (Berlin 08:00'den sonraki ilk zamanlanmış çalışmada) sunucunun son 24 saatini
+# Claude'a analiz ettirir. Sorun varsa `daily-health` etiketli issue açar (açık olan varsa yorum
+# ekler); her şey yolundaysa açık issue'yu kapatır. Sunucunun DIŞINDA çalıştığı için sunucu tamamen
+# çökse bile "erişilemiyor" bildirimi gelir.
 #
-# GitHub cron yalnızca UTC bilir ve zamanlanmış çalışmaları (özellikle saat başında) geciktirebilir
-# ya da hiç tetiklemeyebilir. Bu yüzden iki zamanlama var, saat başından uzakta: 06:23 ve 07:23 UTC.
-# "gate" adımı (scripts/daily_health_gate.py): Berlin'de 08:00 olmadıysa durur; olduysa ve bugün
-# raporu teslim etmiş başka bir zamanlanmış çalışma yoksa çalışır — ikinci zamanlama yedektir.
-# git hesabi degisti
+# GitHub zamanlanmış çalışmaları çok düzensiz tetikliyor (10 dakikalık cron günde yalnızca birkaç kez
+# geliyor, sabit saatli 06:23/07:23 hiç gelmedi). Bu yüzden sık bir cron var ve günde tek raporu
+# `gate` job'u (scripts/daily_health_gate.py) garanti eder: Berlin'de 08:00 olmadıysa ya da bugünün
+# raporu zaten teslim edildiyse `health` job'u atlanır (Actions'ta gri "skipped" görünür).
+#
+# DİKKAT: GitHub zamanlamayı cron satırını en son değiştiren commit'in yazarı adına çalıştırır. Yazma
+# yetkisi olmayan bir hesapla (ör. iş e-postası → coskunadesso) commit'lenirse zamanlama hiç tetiklenmez.
 on:
   schedule:
-    - cron: "23 6 * * *"
-    - cron: "23 7 * * *"
-    - cron: "*/10 * * * *"  # GEÇİCİ TEST — zamanlama tetikleniyor mu? Doğrulanınca kaldırılacak.
+    - cron: "5-59/10 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -27,10 +27,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  health:
-    name: Sunucu sağlık raporu
+  gate:
+    name: Saat kapısı
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.gate.outputs.run }}
 
     steps:
       - uses: actions/checkout@v4
@@ -42,8 +44,17 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: python3 scripts/daily_health_gate.py
 
+  health:
+    name: Sunucu sağlık raporu
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
       - name: Dış sağlık kontrolü (/api/health)
-        if: steps.gate.outputs.run == 'true'
         id: http
         env:
           SSH_HOST: ${{ secrets.SERVER_HOST }}
@@ -53,7 +64,6 @@ jobs:
           echo "/api/health → HTTP ${code:-000}"
 
       - name: Sunucudan log ve durum topla (SSH, salt-okunur)
-        if: steps.gate.outputs.run == 'true'
         id: ssh
         env:
           SSH_HOST: ${{ secrets.SERVER_HOST }}
@@ -104,7 +114,6 @@ jobs:
           echo "SSH çıkış kodu: $rc, toplanan veri: $(wc -c < health_bundle.txt) bayt"
 
       - name: Claude ile analiz
-        if: steps.gate.outputs.run == 'true'
         id: report
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -118,7 +127,6 @@ jobs:
           cat issue.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Issue aç / güncelle / kapat
-        if: steps.gate.outputs.run == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           SEVERITY: ${{ steps.report.outputs.severity }}

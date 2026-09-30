@@ -132,3 +132,19 @@ def test_workflow_uses_gate_script_and_report_step_name():
     text = _WORKFLOW.read_text(encoding="utf-8")
     assert "scripts/daily_health_gate.py" in text
     assert f"name: {gate.REPORT_STEP}" in text
+
+
+def test_workflow_uses_frequent_cron_not_fixed_times():
+    # Sabit saatli 06:23/07:23 UTC cron'ları GitHub hiç tetiklemedi; günde bir raporu ancak sık bir
+    # zamanlama + kapı garanti ediyor. Tek bir sabit saate geri dönülmemeli.
+    crons = re.findall(r'cron:\s*"([^"]+)"', _WORKFLOW.read_text(encoding="utf-8"))
+    assert any("/" in cron.split()[0] and cron.split()[1] == "*" for cron in crons), crons
+
+
+def test_report_job_is_skipped_by_gate_job():
+    # Kapıda duran çalışmalar Actions'ta gri "skipped" görünsün diye kapı ayrı bir job'dur.
+    text = _WORKFLOW.read_text(encoding="utf-8")
+    assert "needs: gate" in text
+    assert "if: needs.gate.outputs.run == 'true'" in text
+    assert "steps.gate.outputs.run" in text  # gate job'unun çıktısı
+    assert "if: steps.gate.outputs.run" not in text  # adım bazlı eski koşullar kalmadı

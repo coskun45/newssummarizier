@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """Daily Health workflow'unun bu çalışmada rapor üretip üretmeyeceğine karar verir.
 
-.github/workflows/daily-health.yml iki zamanlama kullanır (06:23 ve 07:23 UTC), çünkü GitHub cron
-yalnızca UTC bilir ve zamanlanmış çalışmaları geciktirebilir ya da hiç tetiklemeyebilir. Kural:
+.github/workflows/daily-health.yml sık bir zamanlama kullanır (10 dakikada bir), çünkü GitHub
+zamanlanmış çalışmaları çok düzensiz tetikler; günde tek raporu bu kapı sağlar. Kural:
 
   * elle başlatılan çalışma (workflow_dispatch) her zaman çalışır;
   * zamanlanmış çalışma, Berlin saatiyle 08:00 olmadıysa çalışmaz;
   * 08:00'den sonraysa, bugün (Berlin tarihi) raporu teslim etmiş başka bir zamanlanmış çalışma
-    yoksa çalışır — böylece ilki atlanırsa ikincisi yedek görevi görür.
+    yoksa çalışır — 08:00'den sonra gelen ilk çalışma raporu üretir, sonrakiler atlanır.
 
 "Raporu teslim etmiş" = workflow'daki REPORT_STEP adımı başarıyla bitmiş. Kapıda duran
-çalışmalarda bu adım `skipped` olur, başarısız olanlarda `failure` — ikisi de sayılmaz.
+çalışmalarda rapor job'u atlanır (adımı yoktur), başarısız olanlarda adım `failure` — ikisi de sayılmaz.
 
 Yalnızca standart kütüphane ve `gh` CLI kullanır; sonucu GITHUB_OUTPUT'a `run=true|false` yazar.
 """

@@ -235,12 +235,17 @@ docker compose ps
 
 ### Günlük Sağlık Raporu (Claude)
 
-`.github/workflows/daily-health.yml` her sabah **~08:23 (Europe/Berlin)** sunucuyu kontrol eder. GitHub Actions
-üzerinde, yani sunucunun **dışında** çalışır; bu sayede sunucu tamamen çökse bile bildirim gelir.
+`.github/workflows/daily-health.yml` sunucuyu **günde bir kez**, Berlin saatiyle 08:00'den sonraki ilk zamanlanmış
+çalışmada kontrol eder. GitHub Actions üzerinde, yani sunucunun **dışında** çalışır; bu sayede sunucu tamamen çökse
+bile bildirim gelir.
 
-GitHub zamanlanmış çalışmaları (özellikle saat başında) geciktirebilir ya da hiç tetiklemeyebilir. Bu yüzden iki
-zamanlama vardır (06:23 ve 07:23 UTC). `scripts/daily_health_gate.py` Berlin'de 08:00 olmadıysa çalışmayı durdurur;
-olduysa ve o gün rapor henüz gönderilmediyse raporu üretir. Böylece ilk çalışma kaçarsa ikincisi yedek görevi görür.
+GitHub zamanlanmış çalışmaları çok düzensiz tetikler (sabit saatli cron'lar hiç gelmeyebilir). Bu yüzden workflow sık
+bir zamanlamayla (10 dakikada bir) başlar; `gate` job'u (`scripts/daily_health_gate.py`) Berlin'de 08:00 olmadıysa
+ya da o günün raporu zaten gönderildiyse rapor job'unu atlar (Actions'ta gri "skipped"). Böylece günde tam bir rapor
+üretilir. Elle başlatma (`workflow_dispatch`) her zaman rapor üretir.
+
+> Zamanlama, cron satırını en son değiştiren commit'in yazarı adına çalışır. Bu commit repoda yazma yetkisi olmayan
+> bir hesapla atılırsa zamanlama hiç tetiklenmez.
 
 1. `http://<sunucu>/api/health` dışarıdan çağrılır.
 2. SSH ile salt-okunur olarak toplanır: `docker compose ps`, restart/health durumu, son 24 saatin hata logları

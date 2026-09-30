@@ -40,4 +40,7 @@ successful report step yet today, via `gh`) — its `REPORT_STEP` must match the
   commit's author email maps to an account without write access (e.g. the work email → `coskunadesso`,
   `read` only), the schedule silently never fires while `workflow_dispatch` still works. Commit cron
   changes as `coskun45` (repo-local `user.email` = `67566471+coskun45@users.noreply.github.com`) and check
-  `gh run list --workflow <file> --event schedule` the next day.
+  `gh run list --workflow <file> --event schedule` the next day. A new/changed schedule can take hours to start.
+- **GitHub fires cron very unreliably here** — fixed-time crons (06:23/07:23 UTC) never came; a 10-minute cron
+  arrives only a few times a day. So `daily-health.yml` uses a frequent cron plus the `gate` job for "once a
+  day"; never go back to relying on one fixed-time cron.
