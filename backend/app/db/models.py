@@ -221,3 +221,84 @@ class User(Base):
     role = Column(String, nullable=False, default="user")  # "admin" or "user"
     is_active = Column(Boolean, default=True)
     created_at = Column(UTCDateTime(), server_default=func.now())
+
+    # Relationships
+    newsletter_subscriptions = relationship(
+        "NewsletterSubscription", back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+class NewsletterSubscription(Base):
+    """A periodic e-mail bulletin subscription. Owned by the logged-in user who created it, but
+    may target any address: a non-own address stays "pending" until confirmed by mail."""
+    __tablename__ = "newsletter_subscriptions"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    email = Column(String, nullable=False, index=True)
+    frequency = Column(String, nullable=False)  # "daily" | "weekly"
+    send_hour = Column(Integer, nullable=False)  # 0-23, in settings.newsletter_timezone
+    send_weekday = Column(Integer, nullable=True)  # 0=Monday..6=Sunday; weekly only
+    max_articles = Column(Integer, nullable=False)  # upper bound, fewer if fewer match
+    priorities = Column(String, nullable=True)  # comma-separated, e.g. "high,med"; null = all
+    include_favorites = Column(Boolean, nullable=False, default=False)
+    delivery_format = Column(String, nullable=False)  # "docx" | "email" | "both"
+    status = Column(String, nullable=False, default="pending")  # pending|active|paused|unsubscribed|disabled
+    confirm_token = Column(String, nullable=True, unique=True)
+    confirm_sent_at = Column(UTCDateTime(), nullable=True)
+    unsubscribe_token = Column(String, nullable=False, unique=True)
+    consecutive_failures = Column(Integer, nullable=False, default=0)
+    active_since = Column(UTCDateTime(), nullable=True)  # slots before this are never sent (no back-fill on create/resume)
+    last_sent_at = Column(UTCDateTime(), nullable=True)  # start of the last slot claimed for sending
+    last_manual_send_at = Column(UTCDateTime(), nullable=True)  # "Şimdi gönder" rate limit
+    created_at = Column(UTCDateTime(), server_default=func.now())
+    updated_at = Column(UTCDateTime(), server_default=func.now(), onupdate=func.now())
+
+    # Relationships
+    user = relationship("User", back_populates="newsletter_subscriptions")
+    category_links = relationship(
+        "NewsletterSubscriptionCategory", cascade="all, delete-orphan", passive_deletes=True
+    )
+    deliveries = relationship(
+        "NewsletterDelivery", back_populates="subscription", cascade="all, delete-orphan",
+        passive_deletes=True, order_by="desc(NewsletterDelivery.sent_at)",
+    )
+
+    @property
+    def category_ids(self):
+        return sorted(link.category_id for link in self.category_links)
+
+
+class NewsletterSubscriptionCategory(Base):
+    """Top-level bulletin categories a subscription is limited to (none = all). Rows vanish
+    with their category (ON DELETE CASCADE), so deleting a category just drops it from
+    subscriptions."""
+    __tablename__ = "newsletter_subscription_categories"
+
+    subscription_id = Column(
+        Integer, ForeignKey("newsletter_subscriptions.id", ondelete="CASCADE"), primary_key=True
+    )
+    category_id = Column(
+        Integer, ForeignKey("bulletin_categories.id", ondelete="CASCADE"), primary_key=True
+    )
+
+
+class NewsletterDelivery(Base):
+    """One send attempt of a subscription (scheduled or "Şimdi gönder"), for the history list."""
+    __tablename__ = "newsletter_deliveries"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    subscription_id = Column(
+        Integer, ForeignKey("newsletter_subscriptions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    sent_at = Column(UTCDateTime(), server_default=func.now())
+    # sent | failed | skipped_no_articles | skipped_cost_limit | skipped_no_categories | skipped_build_error
+    status = Column(String, nullable=False)
+    article_count = Column(Integer, nullable=False, default=0)
+    attempts = Column(Integer, nullable=False, default=1)
+    manual = Column(Boolean, nullable=False, default=False)
+    cost = Column(Float, nullable=False, default=0.0)  # LLM cost booked while building it (shared per group)
+    error = Column(Text, nullable=True)
+
+    # Relationships
+    subscription = relationship("NewsletterSubscription", back_populates="deliveries")

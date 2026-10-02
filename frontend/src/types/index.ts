@@ -210,6 +210,70 @@ export interface GeneratedBulletin {
     generated_at: string;
 }
 
+// Bulletin subscriptions (periodic e-mail delivery)
+export type NewsletterFrequency = 'daily' | 'weekly';
+export type NewsletterFormat = 'docx' | 'email' | 'both';
+export type NewsletterStatus = 'pending' | 'active' | 'paused' | 'unsubscribed' | 'disabled';
+export type BulletinPriority = 'high' | 'med' | 'low';
+
+export interface NewsletterSubscriptionInput {
+    email: string;
+    frequency: NewsletterFrequency;
+    send_hour: number;
+    send_weekday: number | null; // 0 = Pazartesi; weekly only
+    max_articles: number;
+    priorities: BulletinPriority[]; // empty = all
+    include_favorites: boolean;
+    category_ids: number[]; // empty = all top-level categories
+    delivery_format: NewsletterFormat;
+}
+
+export interface NewsletterSubscription extends NewsletterSubscriptionInput {
+    id: number;
+    owner_email: string;
+    status: NewsletterStatus;
+    consecutive_failures: number;
+    confirm_sent_at: string | null;
+    last_sent_at: string | null;
+    created_at: string;
+}
+
+export type NewsletterDeliveryStatus =
+    | 'sent'
+    | 'failed'
+    | 'skipped_no_articles'
+    | 'skipped_cost_limit'
+    | 'skipped_no_categories'
+    | 'skipped_build_error';
+
+export interface NewsletterDelivery {
+    id: number;
+    sent_at: string;
+    status: NewsletterDeliveryStatus;
+    article_count: number;
+    attempts: number;
+    manual: boolean;
+    cost: number;
+    error: string | null;
+}
+
+export interface NewsletterSendNowResponse {
+    status: 'queued';
+}
+
+export interface NewsletterStatusInfo {
+    email_configured: boolean;
+    max_articles_limit: number;
+    max_subscriptions: number;
+    timezone: string;
+}
+
+export interface AdminNewsletterSubscriptions {
+    subscriptions: NewsletterSubscription[];
+    cost_last_30_days: number;
+    categories_missing: boolean;
+}
+
 // Playground (dry-run of the pipeline on a single stored article)
 export type PlaygroundStage = 'classification' | 'summarization';
 export type PlaygroundSummaryType = 'brief' | 'standard' | 'detailed';

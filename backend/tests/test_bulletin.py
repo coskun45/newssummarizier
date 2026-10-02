@@ -439,6 +439,19 @@ def test_generate_bulletin_marks_opinion_pieces_with_yorum_icon(client, auth_hea
     assert "⭕️ Test Feed - Köşe Yazısı" in texts
 
 
+def test_generated_docx_has_bulletin_metadata(client, auth_headers, db_session):
+    """The template's own author/dates must not leak into generated reports."""
+    _make_bulletin_category(db_session, name="AVRUPA")
+    feed = _make_feed(db_session)
+    _make_article(db_session, feed.id, title="Haber", priority="high",
+                  published_at=datetime.now(timezone.utc) - timedelta(hours=1))
+    props = DocxDocument(io.BytesIO(_generate(client, auth_headers).content)).core_properties
+    assert props.author == "Bülten"
+    assert props.last_modified_by == "Bülten"
+    assert props.title.startswith("Bülten – ")
+    assert props.created.date() == datetime.now(timezone.utc).date()
+
+
 def test_article_block_parses_single_line_brief():
     article = models.Article(id=1, title="Başlık", url="https://x/1")
     block = bulletin_service._article_block(article, "**📌 DW / Ali Veli - Başlık** 🔹 Bir. 🔹 İki.", "haber")

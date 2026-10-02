@@ -19,6 +19,17 @@ Deutsche Welle (DW) RSS beslemelerinden haber toplayan, kategorize eden ve yapay
   özetiyle (`📌 Kaynak / Yazar - Başlık` + `🔹` maddeler) yazılır; kısa özeti olmayan habere aynı özetleyiciyle
   özet üretilip kaydedilir; üretilemezse kayıtlı standart, o da yoksa detaylı özet kullanılır. İçindekiler hazır doldurulur (Word açılışta güncelleme sormaz); "BAZI KAYNAKLAR"
   listesine takip edilen RSS beslemeleri eklenir. Şablon: `backend/app/resources/bulletin_template.docx`
+- **Bülten Aboneliği (e-posta)**: Bülten › Abonelikler'den günlük veya haftalık abonelik oluşturulur. Günlük bülten
+  gönderim anından geriye son 24 saatin, haftalık bülten son 7 günün haberlerini alır. Gönderim saati (haftalıkta
+  gün de), en fazla haber sayısı, önem seviyesi, üst düzey kategoriler ve format (Word eki, mail içinde bülten ya da
+  ikisi) seçilir. Haber sayısı üst sınırdır: daha az haber varsa hepsi alınır, fazlaysa önce önem (Yüksek > Orta >
+  Düşük), sonra güncellik sırasına göre kırpılır. İçerik ve Word şablonu elle üretilen bültenle aynıdır; aynı
+  filtrelere sahip abonelikler için bülten bir kez üretilir. Kendi hesap adresiniz dışındaki adreslere önce onay
+  maili gider. Her mailde girişsiz "Abonelikten çık" bağlantısı (ve tek tıkla çıkma header'ı) vardır; abonelik
+  uygulamadan da durdurulur, sürdürülür, silinir. Haber yoksa ya da maliyet limiti dolmuşsa kısa bir bilgi maili
+  gider; başarısız gönderim 3 kez denenir, üst üste 3 kez başarısız olan abonelik devre dışı kalır. "Şimdi gönder"
+  (arka planda; saatte bir, haber olmadığı için bülten üretilmeyen deneme sayılmaz), gönderim geçmişi ve yöneticiler için tüm aboneler tablosu vardır. Gönderim için `SMTP_*` ayarları
+  gerekir (bkz. [Ortam Değişkenleri](#ortam-değişkenleri)).
 - **Playground**: Header'daki sekmeden mevcut RSS'lerdeki haberlerden biri seçilip pipeline'ın (sınıflandırma +
   öncelik, kısa/standart/detaylı özet) sonucu görülebilir. Geçerli model ve prompt ayarları gösterilir; prompt'lar
   ve özet talimatları o çalıştırma için geçici olarak değiştirilebilir. Her aşama ayrıntılı incelenir (modele giden
@@ -290,6 +301,12 @@ Aşağıdaki tablo öne çıkanlardır; tam liste `.env.example`'dadır. Contain
 | `MAX_TOKENS_OUTPUT_BRIEF` / `_STANDARD` / `_DETAILED` | `1500` / `3000` / `10000` | Özet tipine göre çıktı token limiti |
 | `DAILY_COST_LIMIT` / `MONTHLY_COST_LIMIT` | `10.0` / `100.0` | Maliyet limitleri (USD) — sınıflandırma, özet, bülten ve Playground dahil tüm OpenAI çağrılarının toplamı |
 | `FEED_REFRESH_INTERVAL` | `3600` | Otomatik feed yenileme aralığının varsayılanı (saniye); admin Ayarlar › RSS Beslemeleri'nden değiştirir |
+| `SMTP_HOST` / `SMTP_PORT` | – / `587` | Bülten aboneliği maillerinin gönderildiği SMTP sunucusu. `SMTP_HOST` boşken mail gönderilmez, Bülten › Abonelikler'de uyarı görünür |
+| `SMTP_USERNAME` / `SMTP_PASSWORD` | – | SMTP kimlik bilgileri (boşsa kimlik doğrulama yapılmaz) |
+| `SMTP_FROM` | – (boşsa `SMTP_USERNAME`) | Gönderen adres, ör. `Bülten <bulten@example.com>` — teslim edilebilirlik için alan adının SPF/DKIM kayıtları bu sunucuya izin vermeli |
+| `SMTP_USE_TLS` | `true` | 587'de STARTTLS; port `465` ise otomatik SSL kullanılır |
+| `APP_PUBLIC_URL` | `http://localhost:5174` | Maillerdeki onay / abonelikten çık linklerinin başı — sunucuda uygulamanın dışarıdan erişilen adresi (deploy `http://<sunucu-ip>` yapar) |
+| `NEWSLETTER_TIMEZONE` | `Europe/Berlin` | Abonelik gönderim saati/gününün yorumlandığı saat dilimi (IANA adı; yaz/kış saati otomatik) |
 
 ### Sürümleme
 
@@ -452,6 +469,19 @@ Bulten/
 - `POST /api/bulletin/generate` - Filtrelere (tarih aralığı, önem seviyesi) göre Word (.docx) bülten
   raporu oluşturur ve dosya olarak döner
 
+#### Bülten Aboneliği
+
+- `GET /api/newsletter/subscriptions` - Kendi aboneliklerim; `POST` yeni abonelik (kendi adresiniz değilse onay
+  maili gönderilir), `PUT`/`DELETE /api/newsletter/subscriptions/{id}` düzenle/sil (sahibi veya admin)
+- `POST /api/newsletter/subscriptions/{id}/pause` · `/resume` · `/resend-confirmation` · `/send-now` (202: arka planda
+  hazırlanıp gönderilir, sonuç gönderim geçmişinde; saatte bir — bülten üretilmeyen deneme hakkı yakmaz)
+- `GET /api/newsletter/subscriptions/{id}/deliveries` - Gönderim geçmişi
+- `GET /api/newsletter/status` - Mail gönderimi yapılandırılmış mı, form limitleri
+- `GET /api/newsletter/admin/subscriptions` - Tüm abonelikler + son 30 günün maliyeti (admin)
+- `GET`/`POST /api/newsletter/public/confirm?token=…` ve `/public/unsubscribe?token=…` - Maildeki bağlantılar
+  (JWT gerekmez). GET yalnızca butonlu bir sayfa gösterir, işlemi POST yapar — mail tarayıcıları (ör. Outlook
+  Safe Links) linkleri kendiliğinden açtığı için
+
 #### Sistem Promptları
 
 - `GET /api/prompts/{prompt_type}/locked` - Promptun düzenlenemeyen, pipeline'ın kendisinin eklediği kısmı.
@@ -494,6 +524,16 @@ MONTHLY_COST_LIMIT=100.0  # USD
 # Bülten Raporu
 BULLETIN_CLASSIFICATION_BATCH_SIZE=15  # LLM sınıflandırma çağrısı başına haber sayısı
 BULLETIN_MAX_ARTICLES=50  # Tek bir raporda izin verilen maksimum haber sayısı
+
+# Bülten Aboneliği (e-posta) — SMTP_HOST boşken mail gönderilmez
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USERNAME=
+SMTP_PASSWORD=
+SMTP_FROM=  # ör. Bülten <bulten@example.com>
+SMTP_USE_TLS=true
+APP_PUBLIC_URL=http://localhost:5174  # maildeki onay / abonelikten çık linklerinin başı
+NEWSLETTER_TIMEZONE=Europe/Berlin
 
 # CORS
 CORS_ORIGINS=http://localhost:5173,http://localhost:3000
@@ -595,6 +635,7 @@ Bulten/
 - Trafilatura (İçerik Çıkarma)
 - Aiohttp (Async HTTP)
 - python-docx (Word Bülten Raporu Üretimi)
+- smtplib (standart kütüphane; bülten aboneliği mailleri) + tzdata (abonelik saat dilimi)
 
 **Frontend:**
 
@@ -656,6 +697,19 @@ npm install
 1. `.env` dosyasında `DAILY_COST_LIMIT` değerini düşürün
 2. GPT-4 yerine sadece `gpt-3.5-turbo` kullanın
 3. Ayarlar › RSS Beslemeleri'nde otomatik yenileme aralığını artırın
+
+### Abonelik maili gelmiyor
+
+1. Bülten › Abonelikler'de "E-posta gönderimi yapılandırılmamış" uyarısı varsa `.env`'de `SMTP_HOST` (ve gerekiyorsa
+   `SMTP_USERNAME`/`SMTP_PASSWORD`/`SMTP_FROM`) boştur; doldurup backend'i yeniden başlatın. Sunucuda GitHub
+   secret'ları (`SMTP_HOST`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`) tanımlıysa deploy boş değerleri doldurur
+2. Abonelik kartındaki **Geçmiş**'e bakın: `Başarısız` satırında SMTP hatası yazar; abonelik "Onay bekliyor" ise
+   alıcı onay bağlantısına henüz tıklamamıştır (bağlantı 7 gün geçerli, sonra abonelik silinir)
+3. Gönderim her saat başını 5 geçe kontrol edilir; sunucu planlanan saatte kapalıysa en geç 6 saat içinde telafi
+   edilir, daha geç açılırsa o dönem atlanır
+4. Mailler spam'e düşüyorsa gönderen alan adının SPF/DKIM kayıtlarının SMTP sunucusuna izin verdiğini kontrol edin
+5. Yerelde denemek için Mailpit: `docker run -p 1025:1025 -p 8025:8025 axllent/mailpit` →
+   `SMTP_HOST=localhost`, `SMTP_PORT=1025`, `SMTP_USE_TLS=false`; gelen mailler http://localhost:8025'te
 
 ### Docker sorunları
 

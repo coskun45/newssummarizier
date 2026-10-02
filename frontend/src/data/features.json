@@ -111,6 +111,11 @@
           "description": "Üst düzey bülten kategorilerini (Avrupa, Amerika vb.) ekleme, düzenleme, silme ve sıralama; rapor öncesi haber sayısı önizlemesi."
         },
         {
+          "id": "bulletin-subscription",
+          "title": "Bülten aboneliği (e-posta)",
+          "description": "Bülten › Abonelikler'den günlük (son 24 saat) veya haftalık (son 7 gün) bülten aboneliği: gönderim saati/günü, en fazla haber sayısı (fazlası önem ve güncelliğe göre kırpılır), önem seviyesi, üst düzey kategoriler ve format (Word eki, mail içinde bülten ya da ikisi) seçilir. Kendi adresiniz dışındaki adreslere önce onay maili gider; her maildeki bağlantıyla ya da uygulamadan abonelikten çıkılır, durdurup sürdürülebilir. Şimdi gönder ile bülten arka planda hazırlanıp hemen gönderilir (saatte bir; haber yoksa hak yanmaz), gönderim geçmişi görülür; başarısız gönderimler tekrar denenir. Yöneticiler tüm aboneleri ve son 30 günün maliyetini görür. Word dosyası başlık, konu, kategori ve filtre bilgilerini metadata olarak taşır."
+        },
+        {
           "id": "playground",
           "title": "Pipeline denemesi",
           "description": "Yalnızca yöneticilere açıktır. Bir haber seçilip sınıflandırma, öncelik ve özet aşamaları çalıştırılır. Prompt ve özet talimatları o çalıştırma için geçici değiştirilebilir; prompt, ham cevap, token, maliyet ve süre gösterilir. Haber veya özet kaydedilmez; yalnızca maliyeti limitlere sayılır."

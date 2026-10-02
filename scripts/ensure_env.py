@@ -30,7 +30,11 @@ PLACEHOLDERS = {
 # docker-compose.yml bunları container içinde zaten kendisi belirler; eski dosyadan taşınmaz.
 CONTAINER_ONLY = {"DATABASE_URL", "CHECKPOINTS_DB", "BULLETIN_STORAGE_DIR"}
 # Ortam değişkeninden gelen ilk-kurulum değerleri.
-INITIAL_FROM_ENV = ("OPENAI_API_KEY", "ADMIN_EMAIL", "ADMIN_PASSWORD")
+INITIAL_FROM_ENV = (
+    "OPENAI_API_KEY", "ADMIN_EMAIL", "ADMIN_PASSWORD",
+    # Bülten aboneliği maili (GitHub secret olarak verilirse ilk boş değeri doldurur).
+    "SMTP_HOST", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_FROM",
+)
 
 
 def _split(line: str) -> Optional[tuple]:
@@ -128,6 +132,9 @@ def ensure_env(root: Path, initial: Dict[str, str], server_ip: Optional[str] = N
         current_cors = _get(lines, "CORS_ORIGINS")
         if current_cors in (None, "", example_cors) or _only_localhost(current_cors):
             _set(lines, "CORS_ORIGINS", f"http://{server_ip}")
+        current_public = _get(lines, "APP_PUBLIC_URL")
+        if current_public in (None, "", _get(example_lines, "APP_PUBLIC_URL")) or _only_localhost(current_public):
+            _set(lines, "APP_PUBLIC_URL", f"http://{server_ip}")
 
     env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     if legacy_to_rename is not None:

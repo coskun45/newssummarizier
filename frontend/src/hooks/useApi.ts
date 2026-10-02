@@ -3,8 +3,15 @@
  */
 import { useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
-import { articlesApi, summariesApi, topicsApi, settingsApi, statsApi, appApi, feedsApi, authApi, bulletinApi, playgroundApi, promptsApi } from '../services/api';
-import type { ArticleFilters, UserSettings, BulletinGenerateRequest, ReprocessRequest, PlaygroundRunRequest } from '../types';
+import { articlesApi, summariesApi, topicsApi, settingsApi, statsApi, appApi, feedsApi, authApi, bulletinApi, newsletterApi, playgroundApi, promptsApi } from '../services/api';
+import type {
+    ArticleFilters,
+    UserSettings,
+    BulletinGenerateRequest,
+    ReprocessRequest,
+    PlaygroundRunRequest,
+    NewsletterSubscriptionInput,
+} from '../types';
 
 // Articles hooks
 export const useArticleCounts = () => {
@@ -437,6 +444,8 @@ export const useDeleteBulletinCategory = () => {
         mutationFn: (categoryId: number) => bulletinApi.deleteCategory(categoryId),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['bulletinCategories'] });
+            // A deleted category drops out of every subscription's category list.
+            queryClient.invalidateQueries({ queryKey: ['newsletterSubscriptions'] });
         },
     });
 };
@@ -498,6 +507,79 @@ export const useDeleteGeneratedBulletin = () => {
         },
     });
 };
+
+// Bulletin subscription (newsletter) hooks
+export const useNewsletterStatus = () => {
+    return useQuery({
+        queryKey: ['newsletterStatus'],
+        queryFn: () => newsletterApi.status(),
+    });
+};
+
+// Own list (['newsletterSubscriptions', 'mine']) and the admin list (['newsletterSubscriptions', 'all'])
+// share a prefix so one invalidation refreshes both.
+export const useNewsletterSubscriptions = () => {
+    return useQuery({
+        queryKey: ['newsletterSubscriptions', 'mine'],
+        queryFn: () => newsletterApi.list(),
+    });
+};
+
+export const useAllNewsletterSubscriptions = (enabled: boolean) => {
+    return useQuery({
+        queryKey: ['newsletterSubscriptions', 'all'],
+        queryFn: () => newsletterApi.listAll(),
+        enabled,
+    });
+};
+
+export const useNewsletterDeliveries = (subscriptionId: number | null) => {
+    return useQuery({
+        queryKey: ['newsletterDeliveries', subscriptionId],
+        queryFn: () => newsletterApi.deliveries(subscriptionId!),
+        enabled: subscriptionId !== null,
+        // "Şimdi gönder" runs in the background, so poll while the history is open.
+        refetchInterval: 15000,
+    });
+};
+
+const useNewsletterMutation = <TVariables, TResult>(
+    mutationFn: (variables: TVariables) => Promise<TResult>,
+    alsoDeliveries = false,
+) => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn,
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['newsletterSubscriptions'] });
+            if (alsoDeliveries) {
+                queryClient.invalidateQueries({ queryKey: ['newsletterDeliveries'] });
+            }
+        },
+    });
+};
+
+export const useCreateNewsletterSubscription = () =>
+    useNewsletterMutation((payload: NewsletterSubscriptionInput) => newsletterApi.create(payload));
+
+export const useUpdateNewsletterSubscription = () =>
+    useNewsletterMutation(({ id, payload }: { id: number; payload: NewsletterSubscriptionInput }) =>
+        newsletterApi.update(id, payload));
+
+export const useDeleteNewsletterSubscription = () =>
+    useNewsletterMutation((id: number) => newsletterApi.remove(id));
+
+export const usePauseNewsletterSubscription = () =>
+    useNewsletterMutation((id: number) => newsletterApi.pause(id));
+
+export const useResumeNewsletterSubscription = () =>
+    useNewsletterMutation((id: number) => newsletterApi.resume(id));
+
+export const useResendNewsletterConfirmation = () =>
+    useNewsletterMutation((id: number) => newsletterApi.resendConfirmation(id));
+
+export const useSendNewsletterNow = () =>
+    useNewsletterMutation((id: number) => newsletterApi.sendNow(id), true);
 
 // System prompt hooks
 // The read-only part the pipeline appends to a prompt (null promptType = not needed, no request).

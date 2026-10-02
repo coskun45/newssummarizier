@@ -1,15 +1,18 @@
 """
-APScheduler-based periodic feed processing.
-Runs all active RSS feeds every `feed_refresh_interval` seconds (Ayarlar setting, hourly by default).
+APScheduler-based periodic jobs:
+- runs all active RSS feeds every `feed_refresh_interval` seconds (Ayarlar setting, hourly by default);
+- every hour on the hour (NEWSLETTER_TIMEZONE) sends the bulletin subscriptions that are due.
 """
 import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 logger = logging.getLogger(__name__)
 
 _scheduler: AsyncIOScheduler | None = None
 JOB_ID = "process_all_feeds"
+NEWSLETTER_JOB_ID = "send_due_newsletters"
 
 
 async def _process_all_feeds() -> None:
@@ -69,6 +72,20 @@ def start_scheduler() -> None:
         replace_existing=True,
         misfire_grace_time=300,  # tolerate up to 5-min delay
         max_instances=1,  # a slow run is skipped over, never stacked
+    )
+
+    from app.core.config import settings
+    from app.services.newsletter_service import run_scheduled_newsletters
+
+    _scheduler.add_job(
+        run_scheduled_newsletters,
+        # A few minutes past the hour, so a feed refresh started on the hour has a head start.
+        trigger=CronTrigger(minute=5, timezone=settings.newsletter_timezone),
+        id=NEWSLETTER_JOB_ID,
+        name="Bulletin subscription mails",
+        replace_existing=True,
+        misfire_grace_time=600,
+        max_instances=1,
     )
 
     _scheduler.start()
