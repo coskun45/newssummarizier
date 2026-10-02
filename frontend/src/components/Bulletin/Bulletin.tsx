@@ -11,8 +11,10 @@ import {
   ChevronDownIcon,
   DocumentArrowDownIcon,
   ArrowPathIcon,
+  EnvelopeIcon,
 } from '@heroicons/react/24/outline';
 import { DateFilterSection } from '../DateFilter/DateFilter';
+import NewsletterSubscriptions from '../NewsletterSubscriptions/NewsletterSubscriptions';
 import {
   useBulletinCategories,
   useCreateBulletinCategory,
@@ -89,9 +91,14 @@ async function extractErrorMessage(
 interface BulletinPanelProps {
   /** Generated reports are shared by all users, so only admins may delete them. */
   isAdmin?: boolean;
+  /** Pre-filled as the address of a new subscription. */
+  currentUserEmail?: string;
 }
 
-function BulletinPanel({ isAdmin = false }: BulletinPanelProps) {
+type BulletinTab = 'generate' | 'subscriptions';
+
+function BulletinPanel({ isAdmin = false, currentUserEmail = '' }: BulletinPanelProps) {
+  const [activeTab, setActiveTab] = useState<BulletinTab>('generate');
   const [dateFilter, setDateFilter] = useState<DateFilterState>(EMPTY_DATE_FILTER);
   const [selectedPriorities, setSelectedPriorities] = useState<string[]>([]);
   const [includeFavorites, setIncludeFavorites] = useState(false);
@@ -191,6 +198,33 @@ function BulletinPanel({ isAdmin = false }: BulletinPanelProps) {
 
   return (
     <div className="bulletin-panel">
+      <div className="bulletin-tabs" role="tablist" aria-label="Bülten">
+        <button
+          role="tab"
+          aria-selected={activeTab === 'generate'}
+          className={`bulletin-tab${activeTab === 'generate' ? ' bulletin-tab--active' : ''}`}
+          onClick={() => setActiveTab('generate')}
+        >
+          <DocumentArrowDownIcon /> Bülten Oluştur
+        </button>
+        <button
+          role="tab"
+          aria-selected={activeTab === 'subscriptions'}
+          className={`bulletin-tab${activeTab === 'subscriptions' ? ' bulletin-tab--active' : ''}`}
+          onClick={() => setActiveTab('subscriptions')}
+        >
+          <EnvelopeIcon /> Abonelikler
+        </button>
+      </div>
+
+      {activeTab === 'subscriptions' ? (
+        <NewsletterSubscriptions
+          isAdmin={isAdmin}
+          currentUserEmail={currentUserEmail}
+          categories={categories ?? []}
+        />
+      ) : (
+      <>
       <div className="bulletin-panel-grid">
         <section className="bulletin-section">
           <h3 className="bulletin-section-title">Zaman Aralığı</h3>
@@ -408,6 +442,8 @@ function BulletinPanel({ isAdmin = false }: BulletinPanelProps) {
           </ul>
         )}
       </section>
+      </>
+      )}
     </div>
   );
 }

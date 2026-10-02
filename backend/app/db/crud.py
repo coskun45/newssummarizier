@@ -333,9 +333,12 @@ def get_bulletin_candidate_articles(
     include_favorites: bool = False,
     skip: int = 0,
     limit: int = 100,
+    order_by_priority: bool = False,
 ) -> List[models.Article]:
     """Articles eligible for bulletin generation: within the date range AND
-    (priority-matched OR starred, per include_favorites)."""
+    (priority-matched OR starred, per include_favorites). Newest first; with
+    `order_by_priority`, high > med > low > unset first, then newest — so a `limit`
+    cuts the least important articles, not the oldest important ones."""
     query = db.query(models.Article).options(
         selectinload(models.Article.summaries),
         selectinload(models.Article.feed),
@@ -348,7 +351,16 @@ def get_bulletin_candidate_articles(
     if end_date:
         query = query.filter(models.Article.published_at <= end_date)
 
-    query = query.order_by(desc(models.Article.published_at))
+    if order_by_priority:
+        priority_rank = case(
+            (models.Article.priority == "high", 0),
+            (models.Article.priority == "med", 1),
+            (models.Article.priority == "low", 2),
+            else_=3,
+        )
+        query = query.order_by(priority_rank, desc(models.Article.published_at))
+    else:
+        query = query.order_by(desc(models.Article.published_at))
     return query.offset(skip).limit(limit).all()
 
 
@@ -723,9 +735,13 @@ def backfill_llm_usage_from_summaries(db: Session) -> int:
     return len(summaries)
 
 
-def get_total_cost(db: Session, start_date: datetime = None, end_date: datetime = None) -> float:
-    """Total OpenAI spend (every recorded call) in the given window."""
+def get_total_cost(
+    db: Session, start_date: datetime = None, end_date: datetime = None, kind: Optional[str] = None
+) -> float:
+    """Total OpenAI spend (every recorded call, or only `kind`) in the given window."""
     query = db.query(func.sum(models.LlmUsage.cost))
+    if kind:
+        query = query.filter(models.LlmUsage.kind == kind)
 
     if start_date:
         query = query.filter(models.LlmUsage.created_at >= start_date)
@@ -1291,3 +1307,246 @@ def delete_generated_bulletin(db: Session, bulletin_id: int) -> bool:
         return True
     return False
 
+
+
+# ==================== Newsletter Subscription Operations ====================
+
+def get_newsletter_subscription(db: Session, subscription_id: int) -> Optional[models.NewsletterSubscription]:
+    return db.query(models.NewsletterSubscription).filter(
+        models.NewsletterSubscription.id == subscription_id
+    ).first()
+
+
+def get_newsletter_subscriptions(db: Session, user_id: Optional[int] = None) -> List[models.NewsletterSubscription]:
+    """A user's subscriptions, or every subscription (admin view) when `user_id` is None. Newest first."""
+    query = db.query(models.NewsletterSubscription).options(
+        selectinload(models.NewsletterSubscription.category_links),
+        selectinload(models.NewsletterSubscription.user),
+    )
+    if user_id is not None:
+        query = query.filter(models.NewsletterSubscription.user_id == user_id)
+    return query.order_by(
+        desc(models.NewsletterSubscription.created_at), desc(models.NewsletterSubscription.id)
+    ).all()
+
+
+def count_user_newsletter_subscriptions(db: Session, user_id: int) -> int:
+    """Subscriptions counting against the per-user cap (unsubscribed ones don't)."""
+    return db.query(func.count(models.NewsletterSubscription.id)).filter(
+        models.NewsletterSubscription.user_id == user_id,
+        models.NewsletterSubscription.status != "unsubscribed",
+    ).scalar() or 0
+
+
+def newsletter_settings_key(sub: Any) -> tuple:
+    """Everything that makes two subscriptions "the same" (address, schedule, content, format).
+    Works on a model row or any object exposing the same attributes (priorities as csv or list)."""
+    priorities = sub.priorities
+    if isinstance(priorities, (list, tuple)):
+        priorities = ",".join(sorted(priorities))
+    elif priorities:
+        priorities = ",".join(sorted(priorities.split(",")))
+    return (
+        normalize_email(sub.email),
+        sub.frequency,
+        sub.send_hour,
+        sub.send_weekday if sub.frequency == "weekly" else None,
+        sub.max_articles,
+        priorities or None,
+        bool(sub.include_favorites),
+        sub.delivery_format,
+        tuple(sorted(set(sub.category_ids))),
+    )
+
+
+def find_duplicate_newsletter_subscription(
+    db: Session,
+    user_id: int,
+    settings_key: tuple,
+    exclude_id: Optional[int] = None,
+) -> Optional[models.NewsletterSubscription]:
+    """A live (not unsubscribed) subscription of `user_id` with the same `newsletter_settings_key`."""
+    for sub in get_newsletter_subscriptions(db, user_id=user_id):
+        if sub.id == exclude_id or sub.status == "unsubscribed":
+            continue
+        if newsletter_settings_key(sub) == settings_key:
+            return sub
+    return None
+
+
+def create_newsletter_subscription(
+    db: Session,
+    *,
+    user_id: int,
+    email: str,
+    frequency: str,
+    send_hour: int,
+    send_weekday: Optional[int],
+    max_articles: int,
+    priorities: Optional[List[str]],
+    include_favorites: bool,
+    delivery_format: str,
+    category_ids: List[int],
+    status: str,
+    unsubscribe_token: str,
+    confirm_token: Optional[str] = None,
+    confirm_sent_at: Optional[datetime] = None,
+    active_since: Optional[datetime] = None,
+) -> models.NewsletterSubscription:
+    sub = models.NewsletterSubscription(
+        user_id=user_id,
+        email=normalize_email(email),
+        frequency=frequency,
+        send_hour=send_hour,
+        send_weekday=send_weekday if frequency == "weekly" else None,
+        max_articles=max_articles,
+        priorities=",".join(priorities) if priorities else None,
+        include_favorites=include_favorites,
+        delivery_format=delivery_format,
+        status=status,
+        unsubscribe_token=unsubscribe_token,
+        confirm_token=confirm_token,
+        confirm_sent_at=confirm_sent_at,
+        active_since=active_since,
+        category_links=[
+            models.NewsletterSubscriptionCategory(category_id=cid) for cid in sorted(set(category_ids))
+        ],
+    )
+    db.add(sub)
+    db.commit()
+    db.refresh(sub)
+    return sub
+
+
+def update_newsletter_subscription(
+    db: Session,
+    sub: models.NewsletterSubscription,
+    category_ids: Optional[List[int]] = None,
+    **fields: Any,
+) -> models.NewsletterSubscription:
+    """Set the given columns (and, if passed, replace the category set) and commit."""
+    if fields.get("email") is not None:
+        fields["email"] = normalize_email(fields["email"])
+    if isinstance(fields.get("priorities"), list):
+        fields["priorities"] = ",".join(fields["priorities"]) or None
+    for key, value in fields.items():
+        setattr(sub, key, value)
+    if sub.frequency != "weekly":
+        sub.send_weekday = None
+    if category_ids is not None:
+        wanted = set(category_ids)
+        sub.category_links = [link for link in sub.category_links if link.category_id in wanted]
+        existing = {link.category_id for link in sub.category_links}
+        for cid in sorted(wanted - existing):
+            sub.category_links.append(models.NewsletterSubscriptionCategory(category_id=cid))
+    db.commit()
+    db.refresh(sub)
+    return sub
+
+
+def delete_newsletter_subscription(db: Session, subscription_id: int) -> bool:
+    sub = get_newsletter_subscription(db, subscription_id)
+    if sub:
+        db.delete(sub)
+        db.commit()
+        return True
+    return False
+
+
+def get_newsletter_subscription_by_confirm_token(db: Session, token: str) -> Optional[models.NewsletterSubscription]:
+    if not token:
+        return None
+    return db.query(models.NewsletterSubscription).filter(
+        models.NewsletterSubscription.confirm_token == token
+    ).first()
+
+
+def get_newsletter_subscription_by_unsubscribe_token(db: Session, token: str) -> Optional[models.NewsletterSubscription]:
+    if not token:
+        return None
+    return db.query(models.NewsletterSubscription).filter(
+        models.NewsletterSubscription.unsubscribe_token == token
+    ).first()
+
+
+def get_sendable_newsletter_subscriptions(db: Session) -> List[models.NewsletterSubscription]:
+    """Active subscriptions whose owner account is still active — the scheduler decides
+    which of them are due."""
+    return db.query(models.NewsletterSubscription).join(models.User).options(
+        selectinload(models.NewsletterSubscription.category_links),
+    ).filter(
+        models.NewsletterSubscription.status == "active",
+        models.User.is_active.is_(True),
+    ).all()
+
+
+def claim_newsletter_slot(db: Session, subscription_id: int, slot: datetime) -> bool:
+    """Atomically mark `slot` as taken for this subscription. Returns False when another run
+    already claimed it (or a later one), so the same bulletin is never sent twice."""
+    updated = db.query(models.NewsletterSubscription).filter(
+        models.NewsletterSubscription.id == subscription_id,
+        models.NewsletterSubscription.status == "active",
+        or_(
+            models.NewsletterSubscription.last_sent_at.is_(None),
+            models.NewsletterSubscription.last_sent_at < slot,
+        ),
+    ).update({models.NewsletterSubscription.last_sent_at: slot}, synchronize_session=False)
+    db.commit()
+    return updated == 1
+
+
+def create_newsletter_delivery(
+    db: Session,
+    subscription_id: int,
+    status: str,
+    article_count: int = 0,
+    attempts: int = 1,
+    manual: bool = False,
+    cost: float = 0.0,
+    error: Optional[str] = None,
+) -> models.NewsletterDelivery:
+    row = models.NewsletterDelivery(
+        subscription_id=subscription_id,
+        status=status,
+        article_count=article_count,
+        attempts=attempts,
+        manual=manual,
+        cost=cost,
+        error=error,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def get_newsletter_deliveries(db: Session, subscription_id: int, limit: int = 50) -> List[models.NewsletterDelivery]:
+    return db.query(models.NewsletterDelivery).filter(
+        models.NewsletterDelivery.subscription_id == subscription_id
+    ).order_by(desc(models.NewsletterDelivery.sent_at), desc(models.NewsletterDelivery.id)).limit(limit).all()
+
+
+def get_newsletter_cost(db: Session, since: datetime) -> float:
+    """LLM cost booked by newsletter deliveries since `since` (admin overview)."""
+    result = db.query(func.sum(models.NewsletterDelivery.cost)).filter(
+        models.NewsletterDelivery.sent_at >= since
+    ).scalar()
+    return result or 0.0
+
+
+def delete_expired_pending_newsletter_subscriptions(db: Session, sent_before: datetime) -> int:
+    """Drop never-confirmed subscriptions whose confirmation mail — or, if it never went out, the
+    last change that put them into "pending" (updated_at, not created_at: an old subscription can
+    re-enter pending) — is older than `sent_before`."""
+    sub = models.NewsletterSubscription
+    rows = db.query(sub).filter(
+        sub.status == "pending",
+        or_(
+            sub.confirm_sent_at < sent_before,
+            (sub.confirm_sent_at.is_(None)) & (sub.updated_at < sent_before),
+        ),
+    ).all()
+    for row in rows:
+        db.delete(row)
+    db.commit()
+    return len(rows)

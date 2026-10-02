@@ -111,3 +111,27 @@ def test_legacy_does_not_override_existing_root_values_and_localhost_cors_gets_s
 
     assert v["MAX_TOKENS_INPUT"] == "1234"
     assert v["CORS_ORIGINS"] == "http://5.6.7.8"
+
+
+def test_smtp_secrets_and_public_url_are_filled_once(root):
+    example = root / ".env.example"
+    example.write_text(
+        example.read_text(encoding="utf-8")
+        + "SMTP_HOST=\nSMTP_PASSWORD=\nAPP_PUBLIC_URL=http://localhost:5174\n",
+        encoding="utf-8",
+    )
+    ensure_env_mod.ensure_env(root, {"SMTP_HOST": "smtp.example.com", "SMTP_PASSWORD": "s3cret"}, "1.2.3.4")
+    v = _values(root / ".env")
+    assert v["SMTP_HOST"] == "smtp.example.com"
+    assert v["SMTP_PASSWORD"] == "s3cret"
+    assert v["APP_PUBLIC_URL"] == "http://1.2.3.4"
+
+    # A value set by hand on the server (e.g. a domain) survives later deploys.
+    env = root / ".env"
+    env.write_text(env.read_text(encoding="utf-8").replace("http://1.2.3.4\n", "https://bulten.example.com\n", 1)
+                   .replace("APP_PUBLIC_URL=http://1.2.3.4", "APP_PUBLIC_URL=https://bulten.example.com"),
+                   encoding="utf-8")
+    ensure_env_mod.ensure_env(root, {"SMTP_HOST": "other.example.com"}, "1.2.3.4")
+    v = _values(env)
+    assert v["APP_PUBLIC_URL"] == "https://bulten.example.com"
+    assert v["SMTP_HOST"] == "smtp.example.com"

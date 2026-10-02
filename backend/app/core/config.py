@@ -67,7 +67,18 @@ class Settings(BaseSettings):
     bulletin_classification_batch_size: int = 15  # articles per LLM classification call
     bulletin_max_articles: int = 50  # hard cap on articles selected for a single report
     bulletin_storage_dir: str = "./bulletin_reports"  # persisted .docx reports, for re-download
-    
+
+    # E-mail (SMTP) for bulletin subscriptions. Sending is disabled while SMTP_HOST is empty.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""  # sender address, e.g. "Bülten <bulten@example.com>"
+    smtp_use_tls: bool = True  # STARTTLS on smtp_port (port 465 uses implicit SSL instead)
+    # Public URL of the app, used for the confirm/unsubscribe links in mails.
+    app_public_url: str = "http://localhost:5174"
+    newsletter_timezone: str = "Europe/Berlin"  # send_hour/send_weekday are in this zone
+
     # CORS
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
 

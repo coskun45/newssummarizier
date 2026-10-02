@@ -342,16 +342,45 @@ def _drop_update_fields(document) -> None:
         settings_element.remove(el)
 
 
+METADATA_AUTHOR = "Bülten"
+_CORE_PROPERTY_FIELDS = ("title", "subject", "keywords", "comments", "category")
+
+
+def _set_core_properties(document, generated_at: datetime, metadata: Optional[Dict[str, Any]]) -> None:
+    """Word's Dosya › Bilgi metadata. The template carries its own author/dates from the edition it
+    was made from, so every field is overwritten: defaults first, then whatever `metadata` sets."""
+    props = document.core_properties
+    values = {
+        "title": f"Bülten – {generated_at.strftime('%d.%m.%Y')}",
+        "subject": "Haber bülteni",
+        "keywords": "",
+        "comments": "",
+        "category": "Bülten",
+    }
+    values.update({k: v for k, v in (metadata or {}).items() if k in _CORE_PROPERTY_FIELDS and v is not None})
+    for field, value in values.items():
+        setattr(props, field, str(value))
+    props.author = METADATA_AUTHOR
+    props.last_modified_by = METADATA_AUTHOR
+    props.language = "tr-TR"
+    created = generated_at.replace(tzinfo=None)  # python-docx writes naive datetimes as UTC
+    props.created = created
+    props.modified = created
+    props.revision = 1
+
+
 def render_bulletin_docx(
     generated_at: datetime,
     sections: List[Dict[str, Any]],
     feed_titles: Optional[List[str]] = None,
+    metadata: Optional[Dict[str, Any]] = None,
 ) -> io.BytesIO:
     """Render the bulletin as an in-memory .docx (no temp file on disk).
 
     `sections` is the body in order: [{"title": "AVRUPA", "groups": [{"title": "AVRUPA GÖÇ
     GÜNDEMİ", "items": [{"header": "📌 Kaynak - Başlık", "bullets": ["🔹 ..."]}]}]}].
-    Sections/groups without items are left out.
+    Sections/groups without items are left out. `metadata` overrides the document properties
+    (title, subject, keywords, comments, category).
     """
     if not TEMPLATE_PATH.exists():
         raise BulletinGenerationError(f"Bulletin template not found at {TEMPLATE_PATH}")
@@ -368,6 +397,7 @@ def render_bulletin_docx(
         _rebuild_toc(body, toc_entries)
         _fix_toc_field_locale_independence(body)
         _drop_update_fields(document)
+        _set_core_properties(document, generated_at, metadata)
 
         buffer = io.BytesIO()
         document.save(buffer)

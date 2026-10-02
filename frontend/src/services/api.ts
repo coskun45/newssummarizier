@@ -27,6 +27,12 @@ import type {
     BulletinGenerateRequest,
     BulletinPreviewCountResponse,
     GeneratedBulletin,
+    NewsletterSubscription,
+    NewsletterSubscriptionInput,
+    NewsletterDelivery,
+    NewsletterStatusInfo,
+    NewsletterSendNowResponse,
+    AdminNewsletterSubscriptions,
     PlaygroundSettings,
     PlaygroundRunRequest,
     PlaygroundRunResult,
@@ -416,6 +422,68 @@ export const bulletinApi = {
 
     deleteGenerated: async (id: number): Promise<void> => {
         await api.delete(`/bulletin/generated/${id}`);
+    },
+};
+
+// Bulletin subscription (newsletter) endpoints
+const MAIL_TIMEOUT_MS = 60000;
+export const newsletterApi = {
+    status: async (): Promise<NewsletterStatusInfo> => {
+        const response = await api.get('/newsletter/status');
+        return response.data;
+    },
+
+    list: async (): Promise<NewsletterSubscription[]> => {
+        const response = await api.get('/newsletter/subscriptions');
+        return response.data;
+    },
+
+    listAll: async (): Promise<AdminNewsletterSubscriptions> => {
+        const response = await api.get('/newsletter/admin/subscriptions');
+        return response.data;
+    },
+
+    // create/update/resume/resend may send a confirmation mail over SMTP inside the request.
+    create: async (payload: NewsletterSubscriptionInput): Promise<NewsletterSubscription> => {
+        const response = await api.post('/newsletter/subscriptions', payload, { timeout: MAIL_TIMEOUT_MS });
+        return response.data;
+    },
+
+    update: async (id: number, payload: NewsletterSubscriptionInput): Promise<NewsletterSubscription> => {
+        const response = await api.put(`/newsletter/subscriptions/${id}`, payload, { timeout: MAIL_TIMEOUT_MS });
+        return response.data;
+    },
+
+    remove: async (id: number): Promise<void> => {
+        await api.delete(`/newsletter/subscriptions/${id}`);
+    },
+
+    pause: async (id: number): Promise<NewsletterSubscription> => {
+        const response = await api.post(`/newsletter/subscriptions/${id}/pause`);
+        return response.data;
+    },
+
+    resume: async (id: number): Promise<NewsletterSubscription> => {
+        const response = await api.post(`/newsletter/subscriptions/${id}/resume`, null, { timeout: MAIL_TIMEOUT_MS });
+        return response.data;
+    },
+
+    resendConfirmation: async (id: number): Promise<NewsletterSubscription> => {
+        const response = await api.post(`/newsletter/subscriptions/${id}/resend-confirmation`, null, {
+            timeout: MAIL_TIMEOUT_MS,
+        });
+        return response.data;
+    },
+
+    // Only queues the build + mail (202); the result appears in the delivery history.
+    sendNow: async (id: number): Promise<NewsletterSendNowResponse> => {
+        const response = await api.post(`/newsletter/subscriptions/${id}/send-now`);
+        return response.data;
+    },
+
+    deliveries: async (id: number): Promise<NewsletterDelivery[]> => {
+        const response = await api.get(`/newsletter/subscriptions/${id}/deliveries`);
+        return response.data;
     },
 };
 

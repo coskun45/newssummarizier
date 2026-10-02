@@ -1,0 +1,342 @@
+.newsletter-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.newsletter-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.newsletter-header .btn svg,
+.newsletter-card-actions .btn svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.newsletter-warning {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 1rem 0;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+  font-size: 0.85rem;
+}
+
+.newsletter-warning svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex-shrink: 0;
+}
+
+/* Form */
+.newsletter-form {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.newsletter-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem;
+}
+
+.newsletter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-width: 0;
+}
+
+.newsletter-field--wide {
+  grid-column: 1 / -1;
+}
+
+.newsletter-field label,
+.newsletter-field legend {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  padding: 0;
+  margin-bottom: 0.25rem;
+}
+
+.newsletter-field--inline {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+}
+
+.newsletter-field--inline > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 120px;
+}
+
+.newsletter-hint {
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+  font-weight: 400;
+}
+
+.newsletter-radio-row,
+.newsletter-check-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+}
+
+.newsletter-field .newsletter-choice {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-weight: 400;
+  font-size: 0.9rem;
+  cursor: pointer;
+  margin: 0;
+  padding: 0.3rem 0;
+}
+
+.newsletter-format-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.newsletter-field .newsletter-format-option {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 0.5rem;
+  row-gap: 0.15rem;
+  align-items: center;
+  padding: 0.75rem;
+  margin: 0;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-weight: 400;
+}
+
+.newsletter-format-option .newsletter-hint {
+  grid-column: 2;
+}
+
+.newsletter-format-option--active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+.newsletter-format-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.newsletter-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+
+/* Subscription cards */
+.newsletter-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.newsletter-card {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  padding: 0.9rem 1rem;
+  background: var(--color-surface-alt);
+  border-radius: var(--radius-md);
+}
+
+.newsletter-card-main {
+  flex: 1 1 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.newsletter-card-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.newsletter-card-title svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  color: var(--color-text-secondary);
+}
+
+.newsletter-card-email {
+  font-weight: 700;
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.newsletter-card-meta {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+
+.newsletter-card-meta--muted {
+  color: var(--color-text-muted);
+}
+
+.newsletter-card-note {
+  margin-top: 0.25rem;
+  font-size: 0.82rem;
+  color: var(--color-info);
+}
+
+.newsletter-card-note--danger {
+  color: var(--color-danger);
+}
+
+.newsletter-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.4rem;
+}
+
+.newsletter-card-history {
+  flex-basis: 100%;
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.75rem;
+}
+
+.newsletter-status--active {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+.newsletter-status--pending {
+  background: var(--color-info-soft);
+  color: var(--color-info);
+}
+
+.newsletter-status--paused,
+.newsletter-status--unsubscribed {
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+}
+
+.newsletter-status--disabled {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+/* Delivery history */
+.newsletter-history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.newsletter-history-item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  font-size: 0.82rem;
+  color: var(--color-text-secondary);
+}
+
+.newsletter-history-date {
+  min-width: 9rem;
+  color: var(--color-text-primary);
+}
+
+.newsletter-history-status {
+  font-weight: 600;
+}
+
+.newsletter-history-item--sent .newsletter-history-status {
+  color: var(--color-success);
+}
+
+.newsletter-history-item--failed .newsletter-history-status {
+  color: var(--color-danger);
+}
+
+.newsletter-history-error {
+  flex-basis: 100%;
+  color: var(--color-danger);
+  overflow-wrap: anywhere;
+}
+
+/* Admin table */
+.newsletter-table-wrap {
+  overflow-x: auto;
+}
+
+.newsletter-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.newsletter-table th,
+.newsletter-table td {
+  text-align: left;
+  padding: 0.55rem 0.6rem;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+.newsletter-table th {
+  color: var(--color-text-secondary);
+  font-weight: 600;
+}
+
+.newsletter-table-filter {
+  color: var(--color-text-secondary);
+  min-width: 220px;
+}
+
+.newsletter-table-actions {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.newsletter-table-actions .btn + .btn {
+  margin-left: 0.25rem;
+}
+
+@media (max-width: 768px) {
+  .newsletter-form-grid,
+  .newsletter-format-row {
+    grid-template-columns: 1fr;
+  }
+
+  .newsletter-header {
+    flex-direction: column;
+  }
+}

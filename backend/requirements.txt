@@ -39,6 +39,8 @@ aiolimiter==1.1.0
 
 # Scheduling
 apscheduler==3.10.4
+# IANA time zones for zoneinfo (NEWSLETTER_TIMEZONE) even where the OS has no tz database (slim images, Windows)
+tzdata==2024.1
 
 # Authentication
 python-jose[cryptography]==3.3.0

@@ -515,7 +515,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                 </>
               )}
 
-              {activeView === 'bulletin' && <BulletinPanel isAdmin={isAdmin} />}
+              {activeView === 'bulletin' && <BulletinPanel isAdmin={isAdmin} currentUserEmail={currentUser.email} />}
 
               {activeView === 'playground' && isAdmin && <Playground />}
 

@@ -17,7 +17,7 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          envs: OPENAI_API_KEY
+          envs: OPENAI_API_KEY,SMTP_HOST,SMTP_USERNAME,SMTP_PASSWORD,SMTP_FROM
           script: |
             set -e
             APP_DIR="$HOME/newssummarizier"
@@ -41,3 +41,8 @@ jobs:
             echo "[✓] Deploy tamamlandı → http://${{ secrets.SSH_HOST }}"
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          # Opsiyonel: bülten aboneliği maili. Secret tanımlı değilse boş gelir, .env'deki değer korunur.
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}

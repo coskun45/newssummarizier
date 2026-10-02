@@ -1,7 +1,7 @@
 """
 On-demand Word bulletin report generation.
 
-Steps (see `generate_bulletin_report`):
+Steps (see `build_bulletin_sections`; `generate_bulletin_report` renders them to .docx):
 1. every selected article gets a brief summary — the one the pipeline already stored, or a new
    one generated with the same summarizer and saved (`_ensure_brief_summaries`); its
    "📌 Kaynak / Yazar - Başlık" + "🔹 ..." lines are the article's block in the report;
@@ -329,7 +329,7 @@ def _article_block(article: models.Article, brief: Optional[str], article_type: 
 
     if article_type == "yorum":
         header = re.sub(r"^(📌|⭕️|⭕)", _YORUM_ICON, header)
-    return {"header": header, "bullets": bullets, "article_type": article_type}
+    return {"header": header, "bullets": bullets, "article_type": article_type, "url": article.url}
 
 
 def _prompt_line(article: models.Article, block: Dict[str, Any]) -> str:
@@ -593,23 +593,30 @@ def _render_groups(
     return rendered
 
 
-async def generate_bulletin_report(
+async def classify_for_bulletin(
     db: Session,
     articles: List[models.Article],
     categories: List[models.BulletinCategory],
-) -> io.BytesIO:
-    """Orchestrates: brief summaries -> classification (cached) -> highlights -> per-category
-    topic groups -> docx."""
+    briefs: Optional[Dict[int, str]] = None,
+) -> Dict[int, models.ArticleBulletinClassification]:
+    """{article_id: classification} for `articles` against the current category set: cached rows
+    are reused, the rest are classified by the LLM and stored. An article the model dropped is
+    simply missing from the result (callers place it under DİĞER). Without `briefs`, the brief
+    summaries are ensured first (generated where missing): the stored classification is reused by
+    every later bulletin, so it must not come from a title-only prompt."""
     category_names = [c.name for c in categories]
     category_set_hash = compute_category_set_hash(category_names)
     articles_by_id = {a.id: a for a in articles}
-
-    briefs = await _ensure_brief_summaries(db, articles)
-    # Classification needs a header to work from; the type (yorum → ⭕️) is applied below.
-    draft_blocks = {a.id: _article_block(a, briefs.get(a.id), "haber") for a in articles}
-
     cached = crud.get_bulletin_classifications(db, list(articles_by_id.keys()), category_set_hash)
     uncached_articles = [a for a in articles if a.id not in cached]
+    if not uncached_articles:
+        return cached
+    if briefs is None:
+        briefs = await _ensure_brief_summaries(db, uncached_articles)
+
+    # Classification needs a header to work from; the type (yorum → ⭕️) is applied by the caller.
+    draft_blocks = {a.id: _article_block(a, briefs.get(a.id), "haber") for a in uncached_articles}
+
     new_classifications = await classify_articles_for_bulletin(db, uncached_articles, category_names, draft_blocks)
     for entry in new_classifications:
         article = articles_by_id.get(_article_id(entry["article_id"]))
@@ -626,16 +633,37 @@ async def generate_bulletin_report(
             article_type=entry["type"],
             model_used=settings.default_model,
         )
+    return cached
+
+
+def placement_category(
+    classification: Optional[models.ArticleBulletinClassification], category_names: List[str]
+) -> str:
+    """The section an article lands in: its classified category, or DİĞER when unclassified."""
+    if classification is None:
+        return _DIGER_CATEGORY_NAME
+    return _resolve_category(classification.top_category, category_names)
+
+
+async def build_bulletin_sections(
+    db: Session,
+    articles: List[models.Article],
+    categories: List[models.BulletinCategory],
+) -> List[Dict[str, Any]]:
+    """Orchestrates: brief summaries -> classification (cached) -> highlights -> per-category
+    topic groups. Returns the body sections both the docx and the e-mail are rendered from."""
+    category_names = [c.name for c in categories]
+    articles_by_id = {a.id: a for a in articles}
+
+    briefs = await _ensure_brief_summaries(db, articles)
+    cached = await classify_for_bulletin(db, articles, categories, briefs)
 
     # An article the classifier dropped still belongs in the report — under DİĞER.
     placement: Dict[int, str] = {}
     blocks: Dict[int, Dict[str, Any]] = {}
     for article in articles:
         classification = cached.get(article.id)
-        placement[article.id] = (
-            _resolve_category(classification.top_category, category_names) if classification
-            else _DIGER_CATEGORY_NAME
-        )
+        placement[article.id] = placement_category(classification, category_names)
         article_type = classification.article_type if classification else "haber"
         blocks[article.id] = _article_block(article, briefs.get(article.id), article_type)
 
@@ -660,9 +688,30 @@ async def generate_bulletin_report(
     }]
     for name, groups in zip(ordered_categories, category_groups):
         sections.append({"title": name, "groups": _render_groups(groups, articles_by_id, blocks)})
+    return sections
 
+
+def render_bulletin_report(
+    db: Session,
+    sections: List[Dict[str, Any]],
+    generated_at: Optional[datetime] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> io.BytesIO:
+    """Render already built `sections` into the Word template."""
     return docx_service.render_bulletin_docx(
-        generated_at=datetime.now(timezone.utc),
+        generated_at=generated_at or datetime.now(timezone.utc),
         sections=sections,
         feed_titles=_feed_titles(crud.get_feeds(db, active_only=True)),
+        metadata=metadata,
     )
+
+
+async def generate_bulletin_report(
+    db: Session,
+    articles: List[models.Article],
+    categories: List[models.BulletinCategory],
+    metadata: Optional[Dict[str, Any]] = None,
+) -> io.BytesIO:
+    """Sections (see `build_bulletin_sections`) rendered into the Word template."""
+    sections = await build_bulletin_sections(db, articles, categories)
+    return render_bulletin_report(db, sections, metadata=metadata)

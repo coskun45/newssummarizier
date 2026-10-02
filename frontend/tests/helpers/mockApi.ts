@@ -9,6 +9,10 @@ import type {
   AppUser,
   BulletinCategory,
   GeneratedBulletin,
+  NewsletterSubscription,
+  NewsletterSubscriptionInput,
+  NewsletterDelivery,
+  NewsletterStatusInfo,
   PlaygroundSettings,
   PlaygroundRunRequest,
   PlaygroundRunResult,
@@ -151,6 +155,45 @@ export function makeGeneratedBulletin(overrides: Partial<GeneratedBulletin> = {}
   };
 }
 
+export function makeNewsletterSubscription(
+  overrides: Partial<NewsletterSubscription> = {},
+): NewsletterSubscription {
+  const id = overrides.id ?? nextId();
+  return {
+    id,
+    email: 'tester@example.com',
+    owner_email: 'tester@example.com',
+    frequency: 'daily',
+    send_hour: 8,
+    send_weekday: null,
+    max_articles: 10,
+    priorities: [],
+    include_favorites: false,
+    category_ids: [],
+    delivery_format: 'both',
+    status: 'active',
+    consecutive_failures: 0,
+    confirm_sent_at: null,
+    last_sent_at: null,
+    created_at: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+export function makeNewsletterDelivery(overrides: Partial<NewsletterDelivery> = {}): NewsletterDelivery {
+  return {
+    id: overrides.id ?? nextId(),
+    sent_at: new Date().toISOString(),
+    status: 'sent',
+    article_count: 5,
+    attempts: 1,
+    manual: false,
+    cost: 0.01,
+    error: null,
+    ...overrides,
+  };
+}
+
 export function makeUser(overrides: Partial<AppUser> = {}): AppUser {
   const id = overrides.id ?? nextId();
   return {
@@ -282,6 +325,12 @@ export interface MockState {
   users: AppUser[];
   bulletinCategories: BulletinCategory[];
   generatedBulletins: GeneratedBulletin[];
+  newsletterSubscriptions: NewsletterSubscription[];
+  /** Deliveries per subscription id (GET .../deliveries); "Şimdi gönder" appends to it. */
+  newsletterDeliveries: Map<number, NewsletterDelivery[]>;
+  newsletterStatus: NewsletterStatusInfo;
+  /** Every create/update body sent for a subscription, in order. */
+  newsletterRequests: NewsletterSubscriptionInput[];
   playgroundSettings: PlaygroundSettings;
   /** Every POST /playground/run body, in order — lets specs assert on what the UI sent. */
   playgroundRuns: PlaygroundRunRequest[];
@@ -298,6 +347,11 @@ export interface MockApiOverrides {
   users?: AppUser[];
   bulletinCategories?: BulletinCategory[];
   generatedBulletins?: GeneratedBulletin[];
+  newsletterSubscriptions?: NewsletterSubscription[];
+  newsletterDeliveries?: Map<number, NewsletterDelivery[]>;
+  newsletterStatus?: Partial<NewsletterStatusInfo>;
+  /** Address the mocked server treats as the logged-in user's own (no confirmation needed). */
+  newsletterOwnEmail?: string;
   playgroundSettings?: PlaygroundSettings;
   /** Version returned by GET /api/info (shown in the profile menu and on Ayarlar › Features). */
   appVersion?: string;
@@ -460,6 +514,16 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
     users: (overrides.users ?? []).map((u) => ({ ...u })),
     bulletinCategories: (overrides.bulletinCategories ?? []).map((c) => ({ ...c })),
     generatedBulletins: (overrides.generatedBulletins ?? []).map((b) => ({ ...b })),
+    newsletterSubscriptions: (overrides.newsletterSubscriptions ?? []).map((n) => ({ ...n })),
+    newsletterDeliveries: overrides.newsletterDeliveries ?? new Map(),
+    newsletterStatus: {
+      email_configured: true,
+      max_articles_limit: 50,
+      max_subscriptions: 10,
+      timezone: 'Europe/Berlin',
+      ...overrides.newsletterStatus,
+    },
+    newsletterRequests: [],
     playgroundSettings: overrides.playgroundSettings ?? makePlaygroundSettings(),
     playgroundRuns: [],
     dailyArticleStats: overrides.dailyArticleStats ?? makeDailyArticleStats(),
@@ -882,6 +946,70 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
         headers: { 'Content-Disposition': `attachment; filename="${generated.filename}"` },
         body: Buffer.from('mock docx content'),
       });
+    }
+
+    // ---- bulletin subscriptions (newsletter) ----
+    if (method === 'GET' && path === '/newsletter/status') {
+      return json(state.newsletterStatus);
+    }
+    if (method === 'GET' && path === '/newsletter/subscriptions') {
+      const own = overrides.newsletterOwnEmail ?? 'tester@example.com';
+      return json(state.newsletterSubscriptions.filter((s) => s.owner_email === own));
+    }
+    if (method === 'GET' && path === '/newsletter/admin/subscriptions') {
+      return json({ subscriptions: state.newsletterSubscriptions, cost_last_30_days: 1.25, categories_missing: false });
+    }
+    if (method === 'POST' && path === '/newsletter/subscriptions') {
+      const body = request.postDataJSON() as NewsletterSubscriptionInput;
+      state.newsletterRequests.push(body);
+      const own = overrides.newsletterOwnEmail ?? 'tester@example.com';
+      const isOwn = body.email.toLowerCase() === own.toLowerCase();
+      const sub = makeNewsletterSubscription({
+        ...body,
+        owner_email: own,
+        status: isOwn ? 'active' : 'pending',
+        confirm_sent_at: isOwn ? null : new Date().toISOString(),
+      });
+      state.newsletterSubscriptions.unshift(sub);
+      return json(sub, 201);
+    }
+    m = path.match(/^\/newsletter\/subscriptions\/(\d+)(?:\/([a-z-]+))?$/);
+    if (m) {
+      const sub = state.newsletterSubscriptions.find((s) => s.id === parseInt(m![1], 10));
+      if (!sub) return json({ detail: 'Abonelik bulunamadı' }, 404);
+      const action = m[2];
+      if (!action && method === 'PUT') {
+        const body = request.postDataJSON() as NewsletterSubscriptionInput;
+        state.newsletterRequests.push(body);
+        Object.assign(sub, body);
+        return json(sub);
+      }
+      if (!action && method === 'DELETE') {
+        state.newsletterSubscriptions = state.newsletterSubscriptions.filter((s) => s !== sub);
+        return json({ status: 'success' });
+      }
+      if (action === 'pause' && method === 'POST') {
+        sub.status = 'paused';
+        return json(sub);
+      }
+      if (action === 'resume' && method === 'POST') {
+        sub.status = 'active';
+        sub.consecutive_failures = 0;
+        return json(sub);
+      }
+      if (action === 'resend-confirmation' && method === 'POST') {
+        sub.confirm_sent_at = new Date().toISOString();
+        return json(sub);
+      }
+      if (action === 'send-now' && method === 'POST') {
+        // Like the backend: queued (202), the delivery shows up in the history afterwards.
+        const delivery = makeNewsletterDelivery({ manual: true, article_count: 3 });
+        state.newsletterDeliveries.set(sub.id, [delivery, ...(state.newsletterDeliveries.get(sub.id) ?? [])]);
+        return json({ status: 'queued' }, 202);
+      }
+      if (action === 'deliveries' && method === 'GET') {
+        return json(state.newsletterDeliveries.get(sub.id) ?? []);
+      }
     }
 
     // ---- generated bulletins (previously generated reports) ----
