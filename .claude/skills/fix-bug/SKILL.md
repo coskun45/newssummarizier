@@ -72,7 +72,8 @@ Report the failing-then-passing test output — don't just claim it.
 - **Docs**: a fix that removes a failure mode users/operators hit may deserve a `## 🐛 Sorun Giderme`
   entry in `README.md` — `/update-docs` handles that before the PR.
 - **Recurring gotcha?** If this class of bug can happen again (a trap in a convention), record it with
-  `/add-rule`.
+  `/add-rule`. **Did a rule or skill mislead you** (it described code that no longer exists, or the
+  wrong behavior)? Fix that rule in the same change — a stale rule causes the next bug.
 - Commit as `fix: <what was wrong>` — test and fix in the same commit.
 
 ## Common mistakes

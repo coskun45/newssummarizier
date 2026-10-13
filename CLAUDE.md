@@ -71,13 +71,17 @@ files). The essentials:
   test exists that would catch it coming back. Do this for every fix, however small; only skip it
   if the change is truly untestable (e.g. a comment/typo fix).
 - **Feature added/removed/changed** → update `frontend/src/data/features.json` (rendered by
-  Ayarlar › Features) in the same change, without being asked — no hook checks this, so it is on you.
-  See `.claude/rules/features.md`.
+  Ayarlar › Features) in the same change, without being asked. See `.claude/rules/features.md`.
 - **Learned a new recurring convention/gotcha** → record it with the `/add-rule` skill into
-  `.claude/rules/` (do not bloat this file).
+  `.claude/rules/` (do not bloat this file). **A rule/skill turned out wrong or stale** (the code
+  disagreed with it) → fix that file in the same change, don't just work around it.
 - **Before a PR** → run the `/update-docs` skill to sync `README.md` + `.env.example`.
 - **Don't commit** a real `.env` or `.claude/settings.local.json`.
 
 Hooks in `.claude/settings.json` (scripts in `.claude/hooks/`) enforce part of this automatically: ruff/eslint
 run on every edit under `backend/app/` / `frontend/src/` (fix what they report, same checks as CI); writing
-`.env*` (except `.env.example`) or `git add`-ing it is denied.
+`.env*` (except `.env.example`) or `git add`-ing it is denied. At the end of a turn, the Stop hook
+(`drift_check.py`) flags companions you changed code without: routes/agents/tasks/components →
+`features.json`, `config.py` → `.env.example`, `models.py` → `init_db()` — update it, or say in one line
+why it isn't needed. At session start, `session_context.py` flags rule `paths:` globs that match no file and
+asks you to promote new auto-memory notes into rules with `/add-rule`; act on both.

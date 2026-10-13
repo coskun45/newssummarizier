@@ -21,7 +21,9 @@ stays correct if it is updated in the same change that alters a feature.
 - **Feature removed → delete its entry**; **renamed/behavior changed → edit its `title`/`description`**.
   A stale entry misleads users more than a missing one.
 - Pure refactors, bug fixes and styling changes don't touch the file.
-- **Not enforced by any hook — keeping it current is Claude's job.** Whenever Claude adds, removes or changes a
+- **Keeping it current is Claude's job; the Stop hook (`.claude/hooks/drift_check.py`) only reminds.** If a
+  turn changed routes/agents/tasks/components but not this file, it asks once — answer by updating it or by
+  stating it was a pure refactor/fix. Whenever Claude adds, removes or changes a
   user-facing feature, it updates `features.json` in the same change, unprompted, and says so in its summary.
 - When following `/implement-requirement`, do this in the implement phase; before a PR, `/update-docs` should
   find `features.json` consistent with `README.md` (Özellikler) — see the frontend `components` rule (`frontend/.claude/rules/components.md`).

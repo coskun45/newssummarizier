@@ -111,6 +111,10 @@ paths:
 
 2. **Compare to sibling rules in the same directory.** If neighbors use anchored paths like `app/db/**` but yours uses `backend/**` or a leading `**/`, yours is wrong.
 
+   The SessionStart hook (`.claude/hooks/session_context.py`) and `backend/tests/test_claude_hooks.py`
+   flag any glob that matches no file, and `.claude/state/instructions.log` shows which rules actually
+   loaded for which file — check it after touching a matching file if in doubt.
+
 3. **Do not add the file to any index.** Individual rule files are auto-discovered; you don't register them anywhere.
 
 ## 5. When to update vs create

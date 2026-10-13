@@ -42,6 +42,45 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && python .claude/hooks/drift_check.py baseline",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && python .claude/hooks/session_context.py",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && python .claude/hooks/drift_check.py check",
+            "timeout": 30,
+            "statusMessage": "Eşlik eden dosyalar kontrol ediliyor..."
+          }
+        ]
+      }
+    ],
+    "InstructionsLoaded": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && python .claude/hooks/log_instructions.py",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }
