@@ -12,7 +12,11 @@ Standalone Python scripts run outside the app: `ensure_env.py` prepares the serv
 (called by `deploy.sh` and `.github/workflows/deploy.yml`); `next_version.py` computes the release
 version (called by `.github/workflows/ci-cd.yml`); `daily_health_report.py` redacts the server logs and has
 Claude classify them (called by `.github/workflows/daily-health.yml`, raw `urllib` because of the stdlib rule). `daily_health_gate.py` decides whether a scheduled run reports today (Berlin ≥ 08:00 and no
-successful report step yet today, via `gh`) — its `REPORT_STEP` must match the workflow's last step name. See [[config-and-deploy]] and [[features]].
+successful report step at/after 08:00 today, via `gh`) — its `REPORT_STEP` must match the workflow's issue step name.
+It also gets the `/api/health` code (`HEALTH_STATUS`) and an open `app-down` issue (`OUTAGE_LABEL`) and emits `alert`
+(app down, not yet notified → report runs regardless of time + mail) / `recover` (back up → "tekrar çalışıyor" mail).
+`send_health_mail.py` sends those mails over stdlib `smtplib` (same SMTP_* names as the backend, recipient
+`HEALTH_ALERT_EMAIL`) and exits 1 when it can't send, so a lost alert shows red. See [[config-and-deploy]] and [[features]].
 
 ## Constraints
 - **Standard library only, no `app.*` imports** — they run with the server's bare `python3` and in CI

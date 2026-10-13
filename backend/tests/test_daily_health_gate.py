@@ -63,11 +63,91 @@ def test_winter_second_cron_runs():
     assert run is True
 
 
-def test_berlin_day_boundary_uses_local_date():
-    # 22:30 UTC 26 Eylül = 00:30 Berlin 27 Eylül; ertesi sabahki rapor bunu "bugün" saymamalı mı?
-    # 00:30'daki çalışma Berlin'e göre 27 Eylül'dür → 27 Eylül için rapor yapılmış sayılır.
-    run, _ = gate.should_run("schedule", _utc("2026-09-27T07:17:00"), [_utc("2026-09-26T22:30:00")])
+def test_report_after_eight_counts_for_today():
+    # 06:21 UTC = 08:21 Berlin → bugünün raporu teslim edilmiş.
+    run, _ = gate.should_run("schedule", _utc("2026-09-27T07:17:00"), [_utc("2026-09-27T06:21:00")])
     assert run is False
+
+
+def test_night_outage_report_does_not_replace_daily_report():
+    # 22:30 UTC 26 Eylül = 00:30 Berlin 27 Eylül: gece kesinti için analiz çalıştı (alert).
+    # Bu, 08:00'den sonraki günlük raporun yerine geçmemeli.
+    run, _ = gate.should_run("schedule", _utc("2026-09-27T07:17:00"), [_utc("2026-09-26T22:30:00")])
+    assert run is True
+
+
+# --- kesinti bildirimi ---------------------------------------------------------------------------
+
+
+def test_app_down_without_open_outage_alerts():
+    assert gate.outage_action("502", outage_open=False) == "alert"
+    assert gate.outage_action("000", outage_open=False) == "alert"
+    assert gate.outage_action("", outage_open=False) == "alert"
+
+
+def test_app_down_with_open_outage_does_not_alert_again():
+    # Aynı kesinti için 10 dakikada bir mail gitmemeli.
+    assert gate.outage_action("502", outage_open=True) is None
+
+
+def test_app_back_up_recovers_open_outage():
+    assert gate.outage_action("200", outage_open=True) == "recover"
+
+
+def test_app_up_without_outage_does_nothing():
+    assert gate.outage_action("200", outage_open=False) is None
+
+
+def _run_main(monkeypatch, tmp_path, *, status, outage_issues, daily=False):
+    out = tmp_path / "out"
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "schedule")
+    monkeypatch.setenv("HEALTH_STATUS", status)
+    monkeypatch.setenv("GITHUB_OUTPUT", str(out))
+    # Saatten bağımsız olsun: günlük rapor kararı sabitlenir.
+    monkeypatch.setattr(gate, "should_run", lambda *a: (daily, "test"))
+    monkeypatch.setattr(gate, "reported_runs", lambda *a: [])
+
+    def gh(args):
+        assert args[:2] == ["issue", "list"] and gate.OUTAGE_LABEL in args, args
+        return json.dumps(outage_issues)
+
+    assert gate.main(gh) == 0
+    return dict(line.split("=", 1) for line in out.read_text(encoding="utf-8").split())
+
+
+def test_main_alert_runs_report_outside_daily_window(monkeypatch, tmp_path):
+    # Uygulama gece çöktü: saat kapısı kapalı olsa da analiz + mail çalışmalı.
+    out = _run_main(monkeypatch, tmp_path, status="502", outage_issues=[])
+    assert out == {"run": "true", "alert": "true", "recover": "false"}
+
+
+def test_main_open_outage_is_quiet(monkeypatch, tmp_path):
+    out = _run_main(monkeypatch, tmp_path, status="000", outage_issues=[{"number": 7}])
+    assert out == {"run": "false", "alert": "false", "recover": "false"}
+
+
+def test_main_recover(monkeypatch, tmp_path):
+    out = _run_main(monkeypatch, tmp_path, status="200", outage_issues=[{"number": 7}])
+    assert out == {"run": "false", "alert": "false", "recover": "true"}
+
+
+def test_main_daily_report_when_healthy(monkeypatch, tmp_path):
+    out = _run_main(monkeypatch, tmp_path, status="200", outage_issues=[], daily=True)
+    assert out == {"run": "true", "alert": "false", "recover": "false"}
+
+
+def test_main_outage_lookup_failure_still_alerts(monkeypatch, tmp_path):
+    out = tmp_path / "out"
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "schedule")
+    monkeypatch.setenv("HEALTH_STATUS", "000")
+    monkeypatch.setenv("GITHUB_OUTPUT", str(out))
+    monkeypatch.setattr(gate, "should_run", lambda *a: (False, "test"))
+
+    def gh(args):
+        raise OSError("gh yok")
+
+    assert gate.main(gh) == 0
+    assert "alert=true" in out.read_text(encoding="utf-8")
 
 
 # --- GitHub'dan bugünkü raporları bulma ----------------------------------------------------------
@@ -148,3 +228,14 @@ def test_report_job_is_skipped_by_gate_job():
     assert "if: needs.gate.outputs.run == 'true'" in text
     assert "steps.gate.outputs.run" in text  # gate job'unun çıktısı
     assert "if: steps.gate.outputs.run" not in text  # adım bazlı eski koşullar kalmadı
+
+
+def test_workflow_sends_mail_on_alert_and_recover():
+    text = _WORKFLOW.read_text(encoding="utf-8")
+    assert "HEALTH_STATUS: ${{ steps.http.outputs.status }}" in text  # kapı health kodunu görüyor
+    assert "if: needs.gate.outputs.alert == 'true'" in text
+    assert "if: needs.gate.outputs.recover == 'true'" in text
+    assert "scripts/send_health_mail.py --kind down" in text
+    assert "scripts/send_health_mail.py --kind recovered" in text
+    assert f"--add-label {gate.OUTAGE_LABEL}" in text
+    assert f"--remove-label {gate.OUTAGE_LABEL}" in text

@@ -10,6 +10,11 @@ name: Daily Health
 # `gate` job'u (scripts/daily_health_gate.py) garanti eder: Berlin'de 08:00 olmadıysa ya da bugünün
 # raporu zaten teslim edildiyse `health` job'u atlanır (Actions'ta gri "skipped" görünür).
 #
+# KESİNTİ BİLDİRİMİ: `gate` her çalışmada /api/health'i de dışarıdan kontrol eder. Uygulama çalışmıyorsa
+# saatten bağımsız olarak `health` job'u çalışır (log analizi) ve HEALTH_ALERT_EMAIL adresine mail gider;
+# issue `app-down` etiketiyle işaretlenir, böylece aynı kesinti için tekrar mail gitmez. Uygulama tekrar
+# 200 dönünce `recover` job'u etiketi kaldırır ve "tekrar çalışıyor" maili gönderir.
+#
 # DİKKAT: GitHub zamanlamayı cron satırını en son değiştiren commit'in yazarı adına çalıştırır. Yazma
 # yetkisi olmayan bir hesapla (ör. iş e-postası → coskunadesso) commit'lenirse zamanlama hiç tetiklenmez.
 on:
@@ -33,15 +38,28 @@ jobs:
     timeout-minutes: 5
     outputs:
       run: ${{ steps.gate.outputs.run }}
+      alert: ${{ steps.gate.outputs.alert }}
+      recover: ${{ steps.gate.outputs.recover }}
+      health_status: ${{ steps.http.outputs.status }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Saat kapısı (08:00 Europe/Berlin)
+      - name: Uygulama ayakta mı (/api/health)
+        id: http
+        env:
+          SSH_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' -m 15 --retry 2 --retry-delay 10 "http://$SSH_HOST/api/health" || true)
+          echo "status=${code:-000}" >> "$GITHUB_OUTPUT"
+          echo "/api/health → HTTP ${code:-000}"
+
+      - name: Saat kapısı (08:00 Europe/Berlin) + kesinti kontrolü
         id: gate
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          HEALTH_STATUS: ${{ steps.http.outputs.status }}
         run: python3 scripts/daily_health_gate.py
 
   health:
@@ -127,14 +145,16 @@ jobs:
           cat issue.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Issue aç / güncelle / kapat
+        id: issue
         env:
           GH_TOKEN: ${{ github.token }}
           SEVERITY: ${{ steps.report.outputs.severity }}
           TITLE: ${{ steps.report.outputs.title }}
+          ALERT: ${{ needs.gate.outputs.alert }}
         run: |
           gh label create daily-health --color D93F0B --description "Günlük sağlık raporu" --force >/dev/null
           open=$(gh issue list --label daily-health --state open --limit 1 --json number --jq '.[0].number // empty')
-          if [ "$SEVERITY" = "OK" ]; then
+          if [ "$SEVERITY" = "OK" ] && [ "$ALERT" != "true" ]; then
             if [ -n "$open" ]; then
               gh issue comment "$open" --body-file issue.md
               gh issue close "$open" --comment "✅ Bugünkü kontrolde sorun görülmedi, issue otomatik kapatıldı."
@@ -147,5 +167,63 @@ jobs:
             gh issue edit "$open" --title "$TITLE"
             echo "Açık issue #$open güncellendi ($SEVERITY)"
           else
-            gh issue create --title "$TITLE" --body-file issue.md --label daily-health
+            url=$(gh issue create --title "$TITLE" --body-file issue.md --label daily-health)
+            open="${url##*/}"
+            echo "Issue #$open açıldı ($SEVERITY)"
           fi
+          if [ "$ALERT" = "true" ] && [ -n "$open" ]; then
+            # Kesinti kaydı: bu etiket açık kaldıkça aynı kesinti için tekrar mail gönderilmez.
+            gh label create app-down --color B60205 --description "Uygulama çalışmıyor (bildirim gönderildi)" --force >/dev/null
+            gh issue edit "$open" --add-label app-down
+          fi
+          echo "url=${open:+${{ github.server_url }}/${{ github.repository }}/issues/$open}" >> "$GITHUB_OUTPUT"
+
+      - name: Uygulama çalışmıyor → e-posta bildirimi
+        if: needs.gate.outputs.alert == 'true'
+        env:
+          HEALTH_ALERT_EMAIL: ${{ secrets.HEALTH_ALERT_EMAIL }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ vars.SMTP_PORT }}
+          SMTP_USE_TLS: ${{ vars.SMTP_USE_TLS }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+        run: |
+          python3 scripts/send_health_mail.py --kind down --report report.json \
+            --link "${{ steps.issue.outputs.url || format('{0}/{1}/actions/runs/{2}', github.server_url, github.repository, github.run_id) }}"
+
+  recover:
+    name: Uygulama tekrar ayakta
+    needs: gate
+    if: needs.gate.outputs.recover == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Kesinti kaydını kapat
+        id: issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATUS: ${{ needs.gate.outputs.health_status }}
+        run: |
+          n=$(gh issue list --label app-down --state open --limit 1 --json number --jq '.[0].number // empty')
+          if [ -n "$n" ]; then
+            gh issue comment "$n" --body "✅ Uygulama tekrar çalışıyor (/api/health → HTTP $STATUS). Kesinti bildirimi sıfırlandı; günlük rapor bu issue'yu ayrıca değerlendirecek."
+            gh issue edit "$n" --remove-label app-down
+            echo "url=${{ github.server_url }}/${{ github.repository }}/issues/$n" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Uygulama tekrar çalışıyor → e-posta bildirimi
+        env:
+          HEALTH_ALERT_EMAIL: ${{ secrets.HEALTH_ALERT_EMAIL }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ vars.SMTP_PORT }}
+          SMTP_USE_TLS: ${{ vars.SMTP_USE_TLS }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+        run: |
+          python3 scripts/send_health_mail.py --kind recovered \
+            --health-status "${{ needs.gate.outputs.health_status }}" --link "${{ steps.issue.outputs.url }}"

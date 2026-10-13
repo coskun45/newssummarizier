@@ -268,8 +268,20 @@ ya da o günün raporu zaten gönderildiyse rapor job'unu atlar (Actions'ta gri 
    - **OK:** açık issue varsa otomatik kapatılır.
    - Claude'a ulaşılamazsa issue yine açılır, bu durumda ham bulgular kullanılır.
 
+**Uygulama çalışmıyorsa e-posta bildirimi:** `gate` job'u her çalışmada (yaklaşık 10 dakikada bir) `/api/health`'i
+dışarıdan kontrol eder. Yanıt 200 değilse saatten bağımsız olarak yukarıdaki log analizi hemen çalışır ve sonuç
+(özet, bulgular, öneriler, issue linki) `scripts/send_health_mail.py` ile **`HEALTH_ALERT_EMAIL`** adresine mail
+olarak gönderilir. Issue `app-down` etiketiyle işaretlenir; bu etiket açık kaldıkça aynı kesinti için tekrar mail
+gitmez. Uygulama yeniden 200 dönünce `recover` job'u etiketi kaldırır ve "Uygulama tekrar çalışıyor" maili gönderir.
+Mail gönderilemezse (ayar eksik / SMTP hatası) adım kırmızı olur.
+
+> GitHub zamanlanmış çalışmaları düzensiz tetiklediği için kesintinin fark edilmesi 10 dakikadan uzun sürebilir.
+
 **Kurulum:** repo → *Settings → Secrets and variables → Actions* altına `ANTHROPIC_API_KEY` ekleyin.
-`SERVER_HOST`, `SERVER_USER` ve `SSH_PRIVATE_KEY` deploy için tanımlı olanlardır. İsteğe bağlı olarak *Variables* sekmesindeki `CLAUDE_MODEL`
+`SERVER_HOST`, `SERVER_USER` ve `SSH_PRIVATE_KEY` deploy için tanımlı olanlardır. Kesinti maili için
+`HEALTH_ALERT_EMAIL` (alıcı; virgülle birden fazla adres yazılabilir) secret'ını ekleyin. SMTP ayarları bülten maili için
+tanımlanan `SMTP_HOST`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM` secret'larıdır. Port 587 değilse *Variables*
+altına `SMTP_PORT` (465 → SSL), STARTTLS kapatılacaksa `SMTP_USE_TLS=false` ekleyin. İsteğe bağlı olarak *Variables* sekmesindeki `CLAUDE_MODEL`
 ile model değiştirilebilir (varsayılan `claude-opus-5`). Elle denemek için: *Actions → Daily Health → Run workflow*.
 
 > Zamanlanmış workflow'lar yalnızca varsayılan dalda (`master`) çalışır. GitHub, 60 gün commit almayan public repolarda
