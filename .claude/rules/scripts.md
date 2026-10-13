@@ -9,7 +9,7 @@ paths:
 # Deploy / CI Scripts (`scripts/`)
 
 Standalone Python scripts run outside the app: `ensure_env.py` prepares the server's single `.env`
-(called by `deploy.sh` and `.github/workflows/deploy.yml`); `next_version.py` computes the release
+(called by `deploy.sh` and the deploy job in `.github/workflows/ci-cd.yml` — the real deploy, on push to `master`. `deploy.yml` only triggers on a `main` branch that does not exist, so a setting wired only there never reaches the server); `next_version.py` computes the release
 version (called by `.github/workflows/ci-cd.yml`); `daily_health_report.py` redacts the server logs and has
 Claude classify them (called by `.github/workflows/daily-health.yml`, raw `urllib` because of the stdlib rule). `daily_health_gate.py` decides whether a scheduled run reports today (Berlin ≥ 08:00 and no
 successful report step at/after 08:00 today, via `gh`) — its `REPORT_STEP` must match the workflow's issue step name.

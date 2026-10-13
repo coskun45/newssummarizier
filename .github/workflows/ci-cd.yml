@@ -112,11 +112,17 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         env:
           APP_VERSION: ${{ steps.version.outputs.version }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          # Bülten aboneliği maili: sunucu .env'inde boş olan SMTP alanlarını doldurur, dolu olanları ezmez.
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          envs: APP_VERSION
+          envs: APP_VERSION,SERVER_HOST,SMTP_HOST,SMTP_USERNAME,SMTP_PASSWORD,SMTP_FROM
           script: |
             cd /root/newssummarizier
             # One-time migration: move the legacy git-tracked db out of the working
@@ -125,6 +131,9 @@ jobs:
             [ -f backend/news_summary.db ] && [ ! -f data/news_summary.db ] && mv backend/news_summary.db data/news_summary.db
             git fetch origin
             git reset --hard origin/master
+            # Tek yapılandırma dosyası .env: eksik anahtarları .env.example'dan, boş SMTP_* alanlarını
+            # secret'lardan tamamlar; var olan değerleri ezmez, hiçbir değeri yazdırmaz.
+            python3 scripts/ensure_env.py --server-ip "$SERVER_HOST"
             # APP_VERSION runner'daki "Compute version" adımından gelir (docker-compose.yml container'a iletir).
             echo "Deploying version $APP_VERSION"
             APP_VERSION=$APP_VERSION docker compose build --no-cache

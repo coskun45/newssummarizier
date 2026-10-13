@@ -218,7 +218,7 @@ docker compose ps
 
 ### Sunucuya Bağlanma ve Canlı Loglar
 
-Uygulama `deploy.sh` ile bir sunucuya deploy edildiğinde (bkz. `.github/workflows/deploy.yml`), kod `~/newssummarizier` dizinine klonlanır ve Docker Compose ile ayağa kaldırılır. Canlı loglara bakmak için:
+Uygulama `master`a push edildiğinde `.github/workflows/ci-cd.yml` ile sunucuya deploy edilir, kod `~/newssummarizier` dizinine klonlanır ve Docker Compose ile ayağa kaldırılır. Canlı loglara bakmak için:
 
 ```bash
 # 1. Sunucuya SSH ile bağlan
@@ -242,7 +242,7 @@ docker compose logs --tail=200 -f backend
 docker compose ps
 ```
 
-> `<sunucu-ip>` ve SSH kullanıcı adı deploy'un yapıldığı ortama özeldir (bkz. `.github/workflows/deploy.yml` secrets). Loglar Docker'ın container log sürücüsünden okunur; ayrı bir log dosyasına yazılmaz.
+> `<sunucu-ip>` ve SSH kullanıcı adı deploy'un yapıldığı ortama özeldir (bkz. `.github/workflows/ci-cd.yml` secrets). Loglar Docker'ın container log sürücüsünden okunur; ayrı bir log dosyasına yazılmaz.
 
 ### Günlük Sağlık Raporu (Claude)
 

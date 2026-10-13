@@ -135,3 +135,17 @@ def test_smtp_secrets_and_public_url_are_filled_once(root):
     v = _values(env)
     assert v["APP_PUBLIC_URL"] == "https://bulten.example.com"
     assert v["SMTP_HOST"] == "smtp.example.com"
+
+
+def test_real_deploy_pipeline_fills_server_env_from_secrets():
+    # Sunucuya deploy eden workflow ci-cd.yml'dir (master push'u). deploy.yml yalnızca hiç var olmayan `main`
+    # dalında tetiklendiği için SMTP_* secret'ları sunucunun .env'ine hiç ulaşmıyordu → "E-posta gönderimi
+    # yapılandırılmamış". Gerçek deploy adımı ensure_env.py'yi çalıştırmalı ve SMTP secret'larını iletmeli.
+    workflows = Path(__file__).resolve().parents[2] / ".github" / "workflows"
+    text = (workflows / "ci-cd.yml").read_text(encoding="utf-8")
+    deploy = text[text.index("  deploy:"):]
+    assert "python3 scripts/ensure_env.py" in deploy
+    for key in ensure_env_mod.INITIAL_FROM_ENV:
+        if key.startswith("SMTP_"):
+            assert f"{key}: ${{{{ secrets.{key} }}}}" in deploy, key
+            assert key in deploy.split("envs:", 1)[1].splitlines()[0], key
