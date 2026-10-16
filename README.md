@@ -34,6 +34,11 @@ Deutsche Welle (DW) RSS beslemelerinden haber toplayan, kategorize eden ve yapay
   öncelik, kısa/standart/detaylı özet) sonucu görülebilir. Geçerli model ve prompt ayarları gösterilir; prompt'lar
   ve özet talimatları o çalıştırma için geçici olarak değiştirilebilir. Her aşama ayrıntılı incelenir (modele giden
   prompt, ham cevap, token, maliyet, süre). Hiçbir şey veritabanına yazılmaz.
+- **Analiz**: Header'daki "Analiz" sekmesi son 7/30/90 günün haberlerini önem seviyesine göre analiz eder:
+  Yüksek/Orta/Düşük sayıları, yüksek önemli haberlerin oranı olan "gündem gerginliği" (önceki eşit dönemle
+  karşılaştırmalı), günlük önem trendi grafiği, konu × önem ısı haritası ve kaynak (feed) profili. Etiketlenmiş
+  haberler sayılır (okunmuş/okunmamış fark etmez); Önemsiz ve hatalı haberler dahil edilmez. Tarih olarak
+  yayın tarihi, yoksa çekilme tarihi kullanılır. Ek OpenAI maliyeti yoktur.
 - **Kaynak ve Yazar**: Haber kartında RSS beslemesinin adı "Kaynak" olarak, yazarın üstünde gösterilir (besleme
   adı bu yüzden zorunludur). Özetin 📌 başlığında da aynı kaynak kullanılır; yazarı ise özetle birlikte yapay zeka
   belirler — yalnızca gerçek bir kişi adıysa yazılır ("Sputnik Türkiye" gibi kurum adları yazar sayılmaz), yoksa boş kalır
@@ -467,6 +472,8 @@ Bulten/
 
 - `GET /api/topics` - Makale sayısıyla birlikte tüm konular
 - `GET /api/stats/costs` - API maliyet istatistikleri
+- `GET /api/stats/analysis?days=30` - Analiz sekmesi verileri: günlük önem trendi, toplamlar, konu ve kaynak
+  bazında Yüksek/Orta/Düşük dağılımı (`days`: 7, 30 veya 90; diğer değerler 400)
 
 #### Ayarlar
 
