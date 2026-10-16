@@ -17,6 +17,8 @@ import type {
     UserSettings,
     CostStats,
     DailyArticleStats,
+    AnalysisRange,
+    AnalysisStats,
     AppInfo,
     SystemPrompt,
     LockedPrompt,
@@ -317,6 +319,10 @@ export const statsApi = {
     },
     getDailyArticleStats: async (): Promise<DailyArticleStats> => {
         const response = await api.get('/stats/daily-articles');
+        return response.data;
+    },
+    getAnalysisStats: async (days: AnalysisRange): Promise<AnalysisStats> => {
+        const response = await api.get('/stats/analysis', { params: { days } });
         return response.data;
     },
 };
