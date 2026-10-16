@@ -48,6 +48,50 @@ class DailyArticleStatsResponse(BaseModel):
     today: DailyArticleStatsDay
 
 
+ANALYSIS_RANGES = (7, 30, 90)
+
+
+class PriorityCounts(BaseModel):
+    """Article counts per severity label."""
+    high: int
+    med: int
+    low: int
+    total: int
+
+
+class AnalysisTrendDay(PriorityCounts):
+    """One UTC day's labelled article counts."""
+    date: str
+
+
+class AnalysisTotals(PriorityCounts):
+    """Range totals; high_ratio = high/total, prev_high_ratio = same for the preceding
+    period of equal length (None when it had no labelled articles)."""
+    high_ratio: float
+    prev_high_ratio: Optional[float] = None
+
+
+class AnalysisTopic(PriorityCounts):
+    topic_id: int
+    name: str
+    color: Optional[str] = None
+
+
+class AnalysisFeed(PriorityCounts):
+    feed_id: int
+    title: str
+    high_ratio: float
+
+
+class AnalysisStatsResponse(BaseModel):
+    """Severity analytics for the Analiz tab."""
+    days: int
+    trend: List[AnalysisTrendDay]
+    totals: AnalysisTotals
+    topics: List[AnalysisTopic]
+    feeds: List[AnalysisFeed]
+
+
 @router.get("/articles/{article_id}/summaries", response_model=List[SummaryResponse])
 def get_article_summaries(
     article_id: int,
@@ -120,3 +164,16 @@ def get_daily_article_stats(db: Session = Depends(get_db)):
     """
     days = crud.get_daily_article_stats(db, days=7)
     return DailyArticleStatsResponse(days=days, today=days[-1])
+
+
+@router.get("/stats/analysis", response_model=AnalysisStatsResponse)
+def get_analysis_stats(
+    days: int = Query(30, description="Range in UTC days: 7, 30 or 90"),
+    db: Session = Depends(get_db),
+):
+    """
+    Severity (high/med/low) analytics: daily trend, totals, per-topic and per-feed breakdowns.
+    """
+    if days not in ANALYSIS_RANGES:
+        raise HTTPException(status_code=400, detail="days must be one of 7, 30, 90")
+    return crud.get_analysis_stats(db, days=days)

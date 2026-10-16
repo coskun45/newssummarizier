@@ -138,7 +138,7 @@
         {
           "id": "analysis-tab",
           "title": "Analiz sekmesi",
-          "description": "Üst menüde Playground'un yanında yer alan Analiz sekmesi; içerik henüz hazırlanıyor ve şimdilik \"Yakında\" olarak gösterilir."
+          "description": "Üst menüde Playground'un yanındaki Analiz sekmesi, son 7/30/90 günün haberlerini önem seviyesine göre analiz eder: yüksek/orta/düşük sayıları, önceki döneme göre karşılaştırmalı \"gündem gerginliği\" oranı, günlük önem trendi grafiği, konu × önem ısı haritası ve kaynak (feed) profili. Önemsiz ve hatalı haberler sayılmaz; veriler birkaç dakikada bir kendiliğinden yenilenir, yenileme başarısız olursa son veriler ekranda kalır."
         },
         {
           "id": "dev-auto-login",

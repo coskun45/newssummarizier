@@ -18,6 +18,8 @@ import type {
   PlaygroundRunResult,
   PlaygroundStageCall,
   DailyArticleStats,
+  AnalysisRange,
+  AnalysisStats,
 } from '../../src/types';
 
 let idSeq = 1000;
@@ -136,6 +138,23 @@ export function makeDailyArticleStats(overrides: Partial<DailyArticleStats> = {}
   return {
     days,
     today: overrides.today ?? days[days.length - 1] ?? { date: today, incoming: 0, processed: 0 },
+    ...overrides,
+  };
+}
+
+/** Analiz payload for `days`: a zero-filled trend ending today, unless overridden. */
+export function makeAnalysisStats(days: AnalysisRange, overrides: Partial<AnalysisStats> = {}): AnalysisStats {
+  const trend = Array.from({ length: days }, (_, i) => {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() - (days - 1 - i));
+    return { date: d.toISOString().slice(0, 10), high: 0, med: 0, low: 0, total: 0 };
+  });
+  return {
+    days,
+    trend,
+    totals: { high: 0, med: 0, low: 0, total: 0, high_ratio: 0, prev_high_ratio: null },
+    topics: [],
+    feeds: [],
     ...overrides,
   };
 }
@@ -335,6 +354,8 @@ export interface MockState {
   /** Every POST /playground/run body, in order — lets specs assert on what the UI sent. */
   playgroundRuns: PlaygroundRunRequest[];
   dailyArticleStats: DailyArticleStats;
+  /** `days` of every GET /stats/analysis request, in order. */
+  analysisRequests: number[];
 }
 
 export interface MockApiOverrides {
@@ -356,6 +377,8 @@ export interface MockApiOverrides {
   /** Version returned by GET /api/info (shown in the profile menu and on Ayarlar › Features). */
   appVersion?: string;
   dailyArticleStats?: DailyArticleStats;
+  /** Fields merged over the zero-filled Analiz payload for every requested range. */
+  analysisStats?: Partial<AnalysisStats>;
 }
 
 /** Mirrors the backend's "Error" group: no severity label (not even Önemsiz) or status `failed`,
@@ -527,6 +550,7 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
     playgroundSettings: overrides.playgroundSettings ?? makePlaygroundSettings(),
     playgroundRuns: [],
     dailyArticleStats: overrides.dailyArticleStats ?? makeDailyArticleStats(),
+    analysisRequests: [],
   };
 
   await page.route('**/api/**', async (route: Route) => {
@@ -541,6 +565,11 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
     // ---- stats ----
     if (method === 'GET' && path === '/stats/daily-articles') {
       return json(state.dailyArticleStats);
+    }
+    if (method === 'GET' && path === '/stats/analysis') {
+      const days = Number(params.get('days') ?? 30) as AnalysisRange;
+      state.analysisRequests.push(days);
+      return json(makeAnalysisStats(days, overrides.analysisStats));
     }
 
     // ---- app info ----

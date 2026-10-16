@@ -5,6 +5,7 @@ import { useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { articlesApi, summariesApi, topicsApi, settingsApi, statsApi, appApi, feedsApi, authApi, bulletinApi, newsletterApi, playgroundApi, promptsApi } from '../services/api';
 import type {
+    AnalysisRange,
     ArticleFilters,
     UserSettings,
     BulletinGenerateRequest,
@@ -311,6 +312,15 @@ export const useDailyArticleStats = () => {
         queryKey: ['dailyArticleStats'],
         queryFn: statsApi.getDailyArticleStats,
         refetchInterval: 5 * 60 * 1000, // scheduler runs hourly; 5 min is plenty
+    });
+};
+
+export const useAnalysisStats = (days: AnalysisRange) => {
+    return useQuery({
+        queryKey: ['analysisStats', days],
+        queryFn: () => statsApi.getAnalysisStats(days),
+        placeholderData: keepPreviousData,
+        refetchInterval: 5 * 60 * 1000,
     });
 };
 

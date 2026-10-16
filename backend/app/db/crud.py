@@ -798,6 +798,121 @@ def get_daily_article_stats(db: Session, days: int = 7) -> List[Dict[str, Any]]:
     return result
 
 
+ANALYSIS_PRIORITIES = ("high", "med", "low")
+
+
+def _high_ratio(counts: Dict[str, int]) -> float:
+    return counts["high"] / counts["total"] if counts["total"] else 0.0
+
+
+def _pivot_priority(rows) -> Dict[Any, Dict[str, int]]:
+    """(key, priority, count) rows -> {key: {high, med, low, total}}."""
+    pivot: Dict[Any, Dict[str, int]] = {}
+    for key, priority, count in rows:
+        counts = pivot.setdefault(key, {**dict.fromkeys(ANALYSIS_PRIORITIES, 0), "total": 0})
+        if priority in ANALYSIS_PRIORITIES:
+            counts[priority] += count
+            counts["total"] += count
+    return pivot
+
+
+def get_analysis_stats(db: Session, days: int = 30) -> Dict[str, Any]:
+    """Severity analytics for the Analiz tab over the last `days` UTC days (incl. today).
+
+    Counts severity-labelled (high/med/low) articles that are neither Error nor Önemsiz —
+    read or unread — dated by `published_at`, falling back to `fetched_at`. Returns the
+    per-day priority trend (zero-filled, oldest first), totals with the high ratio vs. the
+    preceding period of the same length, and per-topic / per-feed priority breakdowns."""
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    range_start = today - timedelta(days=days - 1)
+    prev_start = range_start - timedelta(days=days)
+
+    article_date = func.coalesce(models.Article.published_at, models.Article.fetched_at)
+    labelled = (
+        models.Article.priority.in_(ANALYSIS_PRIORITIES),
+        # The classifier can return a priority next to "unimportant" and the pipeline stores it
+        # as-is; an Önemsiz article has no severity, so it must not count as high/med/low.
+        or_(models.Article.importance.is_(None), models.Article.importance != "unimportant"),
+        ~error_clause(),
+    )
+    base_filters = (
+        *labelled,
+        article_date >= range_start,
+        # Future-dated items would otherwise reach topics/feeds but not the trend/totals.
+        article_date < today + timedelta(days=1),
+    )
+
+    day_expr = func.date(article_date)
+    trend_rows = (
+        db.query(day_expr, models.Article.priority, func.count(models.Article.id))
+        .filter(*base_filters)
+        .group_by(day_expr, models.Article.priority)
+        .all()
+    )
+    by_day = _pivot_priority(
+        (d if isinstance(d, str) else d.isoformat(), p, c) for d, p, c in trend_rows
+    )
+    empty = {**dict.fromkeys(ANALYSIS_PRIORITIES, 0), "total": 0}
+    trend = []
+    for i in range(days):
+        key = (range_start + timedelta(days=i)).date().isoformat()
+        trend.append({"date": key, **by_day.get(key, empty)})
+
+    totals = {p: sum(d[p] for d in trend) for p in (*ANALYSIS_PRIORITIES, "total")}
+    totals["high_ratio"] = _high_ratio(totals)
+
+    prev_rows = (
+        db.query(models.Article.priority, func.count(models.Article.id))
+        .filter(*labelled, article_date >= prev_start, article_date < range_start)
+        .group_by(models.Article.priority)
+        .all()
+    )
+    prev = _pivot_priority(("prev", p, c) for p, c in prev_rows).get("prev")
+    totals["prev_high_ratio"] = _high_ratio(prev) if prev else None
+
+    topic_rows = (
+        db.query(models.Topic.id, models.Article.priority, func.count(models.Article.id))
+        .join(models.ArticleTopic, models.ArticleTopic.topic_id == models.Topic.id)
+        .join(models.Article, models.Article.id == models.ArticleTopic.article_id)
+        .filter(*base_filters)
+        .group_by(models.Topic.id, models.Article.priority)
+        .all()
+    )
+    topic_counts = _pivot_priority(topic_rows)
+    topic_meta = {
+        t.id: t for t in db.query(models.Topic).filter(models.Topic.id.in_(list(topic_counts))).all()
+    } if topic_counts else {}
+    topics = sorted(
+        (
+            {"topic_id": tid, "name": topic_meta[tid].name, "color": topic_meta[tid].color, **counts}
+            for tid, counts in topic_counts.items()
+            if tid in topic_meta
+        ),
+        key=lambda t: (-t["high"], -t["total"], t["name"]),
+    )
+
+    feed_rows = (
+        db.query(models.Article.feed_id, models.Article.priority, func.count(models.Article.id))
+        .filter(*base_filters)
+        .group_by(models.Article.feed_id, models.Article.priority)
+        .all()
+    )
+    feed_counts = _pivot_priority(feed_rows)
+    feed_titles = {
+        f.id: f.title or f.url
+        for f in db.query(models.Feed).filter(models.Feed.id.in_(list(feed_counts))).all()
+    } if feed_counts else {}
+    feeds = sorted(
+        (
+            {"feed_id": fid, "title": feed_titles.get(fid, ""), **counts, "high_ratio": _high_ratio(counts)}
+            for fid, counts in feed_counts.items()
+        ),
+        key=lambda f: (-f["total"], f["title"]),
+    )
+
+    return {"days": days, "trend": trend, "totals": totals, "topics": topics, "feeds": feeds}
+
+
 # ==================== Topic Operations ====================
 
 def create_topic(db: Session, name: str, description: str = None, color: str = None) -> models.Topic:

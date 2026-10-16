@@ -113,6 +113,44 @@ export interface DailyArticleStats {
     today: DailyArticleStatsDay;
 }
 
+export type AnalysisRange = 7 | 30 | 90;
+
+export interface PriorityCounts {
+    high: number;
+    med: number;
+    low: number;
+    total: number;
+}
+
+export interface AnalysisTrendDay extends PriorityCounts {
+    date: string;
+}
+
+export interface AnalysisTotals extends PriorityCounts {
+    high_ratio: number;
+    prev_high_ratio: number | null;
+}
+
+export interface AnalysisTopic extends PriorityCounts {
+    topic_id: number;
+    name: string;
+    color: string | null;
+}
+
+export interface AnalysisFeed extends PriorityCounts {
+    feed_id: number;
+    title: string;
+    high_ratio: number;
+}
+
+export interface AnalysisStats {
+    days: AnalysisRange;
+    trend: AnalysisTrendDay[];
+    totals: AnalysisTotals;
+    topics: AnalysisTopic[];
+    feeds: AnalysisFeed[];
+}
+
 export interface AppInfo {
     app: string;
     version: string;

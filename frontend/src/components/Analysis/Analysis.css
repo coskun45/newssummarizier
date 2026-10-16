@@ -1,31 +1,347 @@
-.analysis-placeholder {
+/* The dashboard grid is `auto 1fr` for the news sidebar; Analiz has no sidebar, so span both
+   columns instead of shrinking to the content's intrinsic width. */
+.dashboard-main:has(> .analysis) {
+  grid-column: 1 / -1;
+}
+
+.analysis {
   display: flex;
   flex-direction: column;
+  gap: 1.25rem;
+}
+
+.analysis-header {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.analysis-title {
+  display: flex;
+  align-items: center;
   gap: 0.5rem;
-  min-height: 320px;
-  padding: 3rem 1.5rem;
-  background: var(--color-surface);
-  border: 1px dashed var(--color-border-strong);
-  border-radius: 12px;
-  text-align: center;
-}
-
-.analysis-placeholder-icon {
-  width: 48px;
-  height: 48px;
-  color: var(--color-text-muted);
-}
-
-.analysis-placeholder-title {
   margin: 0;
   font-size: 1.25rem;
   color: var(--color-text-primary);
 }
 
-.analysis-placeholder-text {
-  margin: 0;
-  font-size: 0.95rem;
+.analysis-title-icon {
+  width: 24px;
+  height: 24px;
+  color: var(--color-primary);
+}
+
+.analysis-range {
+  display: inline-flex;
+  padding: 3px;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.analysis-range-btn {
+  padding: 0.35rem 0.85rem;
+  font: inherit;
+  font-size: 0.85rem;
   color: var(--color-text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.analysis-range-btn:hover {
+  color: var(--color-text-primary);
+}
+
+.analysis-range-btn--active {
+  color: var(--color-text-on-primary);
+  background: var(--color-primary);
+}
+
+.analysis-range-btn--active:hover {
+  color: var(--color-text-on-primary);
+}
+
+.analysis-state {
+  padding: 3rem 1.5rem;
+  text-align: center;
+  color: var(--color-text-secondary);
+  background: var(--color-surface);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-md);
+}
+
+.analysis-state--error {
+  color: var(--color-danger);
+}
+
+.analysis-stale {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  color: var(--color-text-primary);
+  background: var(--color-warning-soft);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+}
+
+/* ---- KPI tiles ---- */
+.analysis-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.75rem;
+}
+
+.analysis-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 1rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+}
+
+.analysis-kpi--high { border-left-color: var(--color-priority-high); }
+.analysis-kpi--med { border-left-color: var(--color-priority-med); }
+.analysis-kpi--low { border-left-color: var(--color-priority-low); }
+.analysis-kpi--tension { border-left-color: var(--color-primary); }
+
+.analysis-kpi-value {
+  font-size: 1.6rem;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--color-text-primary);
+}
+
+.analysis-kpi-label {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.analysis-kpi-delta {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+/* ---- Cards ---- */
+.analysis-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+  gap: 1.25rem;
+}
+
+.analysis-card {
+  min-width: 0;
+  padding: 1.25rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.analysis-card-title {
+  margin: 0 0 1rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-text-secondary);
+}
+
+.analysis-empty {
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+
+/* ---- Priority colors ---- */
+.analysis-swatch--high { background: var(--color-priority-high); }
+.analysis-swatch--med { background: var(--color-priority-med); }
+.analysis-swatch--low { background: var(--color-priority-low); }
+
+.analysis-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+}
+
+.analysis-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.analysis-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+/* ---- Trend chart ---- */
+.analysis-trend-bars {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  height: 200px;
+  padding: 0 1rem; /* room for the centered first/last date labels */
+}
+
+.analysis-trend-day {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.analysis-trend-plot {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 0;
+}
+
+.analysis-trend-stack {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 3px 3px 0 0;
+}
+
+.analysis-trend-seg {
+  min-height: 1px;
+}
+
+.analysis-trend-label {
+  height: 1.2rem;
+  margin-top: 0.3rem;
+  overflow: visible;
+  font-size: 0.7rem;
+  white-space: nowrap;
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+/* ---- Tables ---- */
+.analysis-table-wrap {
+  max-height: 420px;
+  overflow: auto;
+}
+
+.analysis-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  color: var(--color-text-primary);
+}
+
+.analysis-table th,
+.analysis-table td {
+  padding: 0.45rem 0.5rem;
+  text-align: left;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.analysis-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  background: var(--color-surface);
+}
+
+.analysis-table tbody th {
+  font-weight: 500;
+}
+
+.analysis-num {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.analysis-strong {
+  font-weight: 700;
+}
+
+.analysis-topic-name {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.analysis-topic-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.analysis-heat-cell {
+  position: relative;
+  min-width: 3.5rem;
+}
+
+.analysis-heat-bg {
+  position: absolute;
+  inset: 3px;
+  border-radius: 3px;
+}
+
+.analysis-heat-value {
+  position: relative;
+}
+
+.analysis-feed-name {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analysis-dist {
+  display: flex;
+  min-width: 90px;
+  height: 10px;
+  overflow: hidden;
+  background: var(--color-surface-alt);
+  border-radius: 999px;
+}
+
+@media (max-width: 600px) {
+  .analysis-trend-bars {
+    height: 150px;
+    gap: 1px;
+  }
+
+  .analysis-feed-name {
+    max-width: 130px;
+  }
+
+  .analysis-card {
+    padding: 1rem 0.75rem;
+  }
+
+  .analysis-table th,
+  .analysis-table td {
+    padding: 0.4rem 0.3rem;
+  }
+
+  .analysis-heat-cell {
+    min-width: 2.5rem;
+  }
+
+  .analysis-dist {
+    min-width: 60px;
+  }
 }
