@@ -69,7 +69,7 @@ def bulletin_llm(monkeypatch):
     Records how often the bulletin is built."""
     calls = {"build": 0, "classified": [], "blocks": {}}
 
-    async def fake_classify(db, articles, category_names, blocks=None):
+    async def fake_classify(db, articles, category_names, blocks=None, model=None):
         calls["classified"].extend(a.id for a in articles)
         calls["blocks"].update(blocks or {})
         result = []
@@ -80,10 +80,10 @@ def bulletin_llm(monkeypatch):
                            "subcategory": "", "type": "haber"})
         return result
 
-    async def no_highlights(articles, blocks, limit=bulletin_service.HIGHLIGHT_LIMIT):
+    async def no_highlights(articles, blocks, limit=bulletin_service.HIGHLIGHT_LIMIT, model=None):
         return []
 
-    async def single_group(category_name, articles, blocks):
+    async def single_group(category_name, articles, blocks, model=None):
         return [{"title": f"{category_name} GÜNDEMİ", "article_ids": [a.id for a in articles]}] if articles else []
 
     async def fake_summary(title, content, summary_type="standard", source=None, author_hint=None):

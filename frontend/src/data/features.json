@@ -149,6 +149,11 @@
           "id": "article-source-author",
           "title": "Kaynak ve yazar",
           "description": "Haber kartında RSS beslemesinin adı \"Kaynak\" olarak, yazarın üstünde gösterilir; besleme adı bu yüzden zorunludur. Özetin başlığında da aynı kaynak kullanılır, yazarı ise özetle birlikte yapay zekâ belirler: yalnızca gerçek bir kişi adıysa yazılır, yoksa boş kalır."
+        },
+        {
+          "id": "settings-ai-models",
+          "title": "Yapay zekâ modeli seçimi",
+          "description": "Ayarlar › Yapay Zekâ Modelleri'nden sınıflandırma ve özetler için ayrı OpenAI modelleri seçilir; modeller kart olarak listelenir, bir kartın üzerine gelince 1 milyon token başına giriş/çıkış fiyatı görünür. Seçim yapılmadıysa sunucu varsayılanı (gpt-6-luna) kullanılır; değişikliği yalnızca yöneticiler yapabilir."
         }
       ]
     }

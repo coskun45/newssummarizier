@@ -50,10 +50,29 @@ it). This rule covers the prompts it sends, the Playground dry-run, and cost tra
   `LOCKED_CLASSIFICATION_TEXT`, `lockedSummarizationText`).
 
 ## Models, tokens & cost
-- **Model names and token limits come from `settings`** (`default_model`, `detailed_model`,
-  `max_tokens_*`), via `_summary_type_config`. Temperatures are the module constants.
+- **Models are chosen in Ayarlar** (`classification_model` / `summary_model` DB settings) and read
+  ONLY via `get_classification_model(db)` / `get_summary_model(db, summary_type)` — never
+  `settings.default_model`/`detailed_model` directly. Those env values are the fallbacks while
+  nothing (or a no-longer-offered model) is saved, and keep each type's old model then: brief/standard
+  → `DEFAULT_MODEL`, detailed → `DETAILED_MODEL` (changing that silently moved installs onto gpt-4o).
+  Classification + bulletin use the classification model; the bulletin resolves it ONCE per bulletin
+  and passes `model=` down (no `SessionLocal()` in the request path). Token limits stay in `settings`
+  (`max_tokens_*`, via `_summary_type_config(db, type)`). Temperatures are the module constants.
+- **`PUT /api/settings` is partial** — each Ayarlar tab sends only its own fields. Never send the
+  whole settings object back: it saves other tabs' unsaved edits and freezes env fallbacks as choices.
+  For the models, `null`/missing = keep, `""` = clear the choice (back to the env fallbacks; the
+  "Sunucu varsayılanı" card). GET returns the saved choice (`null` if none) plus `default_models`.
+- **An empty answer is `is_empty_answer(content)`** (None or ""), never `content is None` — and with
+  `finish_reason == "length"` don't retry: the same budget runs out the same way, paid twice.
 - **A new model needs a `PRICING` entry** — unknown models silently fall back to `gpt-3.5-turbo`
-  prices, so cost limits and stats go wrong without any error.
+  prices, so cost limits and stats go wrong without any error. To offer it in Ayarlar, also add it
+  to `SELECTABLE_MODELS` (its price is shown from `PRICING`).
+- **Sampling/limit kwargs come only from `**completion_params(model, temperature, max_tokens)`** —
+  never `temperature=` / `max_completion_tokens=` directly. A reasoning model's `PRICING` entry has a
+  `reasoning_effort`; at `"none"` it still takes `temperature`, at any other effort it rejects a
+  non-default temperature and gets `REASONING_TOKEN_ALLOWANCE` (hidden reasoning tokens count towards
+  the budget; an exhausted budget returns `""`, which must be treated as an empty answer). Verified
+  live 2026-10-22. Report the params actually sent (Playground `temperature` is `null` then).
 - **Call `check_cost_limits()` before model calls, and book every call with `record_llm_usage(kind,
   ...)`** — classification, summary, bulletin and playground alike, failed/retried attempts
   included. The limits and `/stats/costs` sum the `llm_usage` table only (`crud.get_total_cost`), so

@@ -2,11 +2,12 @@ import { useState, useEffect } from 'react';
 import { useSettings, useUpdateSettings, useTopics, useCreateTopic, useUpdateTopic, useDeleteTopic, useUsers, useCreateUser, useDeleteUser, useFeeds, useCreateFeed, useUpdateFeed, useDeleteFeed, useTestFeedConnection } from '../../hooks/useApi';
 import PromptEditor from '../PromptEditor/PromptEditor';
 import Features from '../Features/Features';
-import { FolderIcon, DocumentTextIcon, SparklesIcon, PencilIcon, TrashIcon, CheckIcon, XMarkIcon, PlusIcon, UsersIcon, RssIcon, ExclamationTriangleIcon, SignalIcon } from '@heroicons/react/24/outline';
+import ModelPicker from '../ModelPicker/ModelPicker';
+import { FolderIcon, DocumentTextIcon, SparklesIcon, PencilIcon, TrashIcon, CheckIcon, XMarkIcon, PlusIcon, UsersIcon, RssIcon, ExclamationTriangleIcon, SignalIcon, CpuChipIcon } from '@heroicons/react/24/outline';
 import type { AuthUser } from '../../types';
 import './Settings.css';
 
-export type SettingsCategory = 'feeds' | 'topics' | 'summaryTypes' | 'prompts' | 'features' | 'users';
+export type SettingsCategory = 'feeds' | 'topics' | 'summaryTypes' | 'models' | 'prompts' | 'features' | 'users';
 
 interface SettingsProps {
   category: SettingsCategory;
@@ -47,6 +48,8 @@ function Settings({ category, currentUser }: SettingsProps) {
   const [enabledTopicIds, setEnabledTopicIds] = useState<number[]>([]);
   const [enabledSummaryTypes, setEnabledSummaryTypes] = useState<string[]>([]);
   const [refreshInterval, setRefreshInterval] = useState<number>(3600);
+  const [classificationModel, setClassificationModel] = useState<string | null>(null);
+  const [summaryModel, setSummaryModel] = useState<string | null>(null);
   const [showAddTopic, setShowAddTopic] = useState(false);
   const [newTopicName, setNewTopicName] = useState('');
   const [newTopicDescription, setNewTopicDescription] = useState('');
@@ -72,22 +75,40 @@ function Settings({ category, currentUser }: SettingsProps) {
   const [editFeedTested, setEditFeedTested] = useState(false);
 
   // Initialize form when settings load
-  useEffect(() => {
-    if (settings) {
-      // Parse enabled topics
-      const topicIds = settings.enabled_topics
-        ? settings.enabled_topics.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id))
-        : [];
-      setEnabledTopicIds(topicIds);
+  // Each tab's form syncs only when ITS server value changes (deps are the primitive values, not
+  // the settings object): tabs save separately, and the refetch after saving one tab must not
+  // wipe unsaved edits in another.
+  const serverTopics = settings?.enabled_topics;
+  const serverSummaryTypes = settings?.enabled_summary_types;
+  const serverRefreshInterval = settings?.feed_refresh_interval;
+  const serverClassificationModel = settings?.classification_model;
+  const serverSummaryModel = settings?.summary_model;
 
-      // Parse enabled summary types
-      const summaryTypes = settings.enabled_summary_types
-        ? settings.enabled_summary_types.split(',').map(t => t.trim())
-        : ['brief', 'standard', 'detailed'];
-      setEnabledSummaryTypes(summaryTypes);
-      setRefreshInterval(settings.feed_refresh_interval);
-    }
-  }, [settings]);
+  useEffect(() => {
+    if (serverTopics === undefined) return;
+    setEnabledTopicIds(serverTopics
+      ? serverTopics.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id))
+      : []);
+  }, [serverTopics]);
+
+  useEffect(() => {
+    if (serverSummaryTypes === undefined) return;
+    setEnabledSummaryTypes(serverSummaryTypes
+      ? serverSummaryTypes.split(',').map(t => t.trim())
+      : ['brief', 'standard', 'detailed']);
+  }, [serverSummaryTypes]);
+
+  useEffect(() => {
+    if (serverRefreshInterval !== undefined) setRefreshInterval(serverRefreshInterval);
+  }, [serverRefreshInterval]);
+
+  useEffect(() => {
+    if (serverClassificationModel !== undefined) setClassificationModel(serverClassificationModel);
+  }, [serverClassificationModel]);
+
+  useEffect(() => {
+    if (serverSummaryModel !== undefined) setSummaryModel(serverSummaryModel);
+  }, [serverSummaryModel]);
 
   // Empty = all topics. Unchecking the last checked topic would therefore silently re-enable
   // every topic, so the last one stays checked instead.
@@ -281,13 +302,20 @@ function Settings({ category, currentUser }: SettingsProps) {
     try { return new URL(feed.url).hostname.replace('www.', ''); } catch { return feed.url; }
   };
 
-  const handleSave = () => {
-    updateSettings({
-      enabled_topics: enabledTopicIds.join(','),
-      enabled_summary_types: enabledSummaryTypes.join(','),
-      feed_refresh_interval: refreshInterval
-    });
-  };
+  // Each tab saves only its own fields (PUT /settings is partial): saving one tab must never put
+  // an unsaved edit from another tab live — e.g. an expensive model picked but not saved.
+  const saveRefreshInterval = () => updateSettings({ feed_refresh_interval: refreshInterval });
+  const saveTopics = () => updateSettings({ enabled_topics: enabledTopicIds.join(',') });
+  const saveSummaryTypes = () => updateSettings({ enabled_summary_types: enabledSummaryTypes.join(',') });
+  const modelsChanged =
+    classificationModel !== (settings?.classification_model ?? null)
+    || summaryModel !== (settings?.summary_model ?? null);
+  // Only the changed model is sent; "" clears a choice (back to the server default).
+  const saveModels = () => updateSettings({
+    ...(classificationModel !== (settings?.classification_model ?? null)
+      ? { classification_model: classificationModel ?? '' } : {}),
+    ...(summaryModel !== (settings?.summary_model ?? null) ? { summary_model: summaryModel ?? '' } : {}),
+  });
 
   if (settingsLoading) {
     return <div className="loading">Ayarlar yükleniyor...</div>;
@@ -323,7 +351,7 @@ function Settings({ category, currentUser }: SettingsProps) {
                       {isAdmin ? (
                         <button
                           className="save-button"
-                          onClick={handleSave}
+                          onClick={saveRefreshInterval}
                           disabled={isSaving || refreshInterval === settings?.feed_refresh_interval}
                         >
                           {isSaving ? 'Kaydediliyor...' : 'Aralığı kaydet'}
@@ -625,8 +653,8 @@ function Settings({ category, currentUser }: SettingsProps) {
               {isAdmin ? (
                 <button
                   className="save-button"
-                  onClick={handleSave}
-                  disabled={isSaving || enabledSummaryTypes.length === 0}
+                  onClick={saveTopics}
+                  disabled={isSaving}
                 >
                   {isSaving ? 'Kaydediliyor...' : 'Ayarları kaydet'}
                 </button>
@@ -688,7 +716,7 @@ function Settings({ category, currentUser }: SettingsProps) {
               {isAdmin ? (
                 <button
                   className="save-button"
-                  onClick={handleSave}
+                  onClick={saveSummaryTypes}
                   disabled={isSaving || enabledSummaryTypes.length === 0}
                 >
                   {isSaving ? 'Kaydediliyor...' : 'Ayarları kaydet'}
@@ -698,6 +726,51 @@ function Settings({ category, currentUser }: SettingsProps) {
               )}
             </div>
           </div>
+      )}
+
+      {category === 'models' && (
+        <div className="settings-category">
+          <h2 className="settings-content-title"><CpuChipIcon className="section-icon" /> Yapay Zekâ Modelleri</h2>
+          <div className="section-content">
+            <p className="section-description">
+              Sınıflandırma ve özetler için kullanılacak OpenAI modelini seçin.
+              Fiyatı görmek için bir modelin üzerine gelin.
+            </p>
+            <ModelPicker
+              name="classification-model"
+              label="Sınıflandırma modeli"
+              hint="Her haber için önem, öncelik ve kategoriyi belirler; bülten de bu modelle hazırlanır."
+              models={settings?.available_models ?? []}
+              value={classificationModel}
+              defaultIds={settings ? [settings.default_models.classification] : []}
+              onChange={setClassificationModel}
+              disabled={!isAdmin || isSaving}
+            />
+            <ModelPicker
+              name="summary-model"
+              label="Özet modeli"
+              hint="Kısa, standart ve detaylı özetlerin hepsi bu modelle yazılır."
+              models={settings?.available_models ?? []}
+              value={summaryModel}
+              defaultIds={settings ? [settings.default_models.summary, settings.default_models.detailed_summary] : []}
+              onChange={setSummaryModel}
+              disabled={!isAdmin || isSaving}
+            />
+          </div>
+          <div className="settings-save-row">
+            {isAdmin ? (
+              <button
+                className="save-button"
+                onClick={saveModels}
+                disabled={isSaving || !modelsChanged}
+              >
+                {isSaving ? 'Kaydediliyor...' : 'Modelleri kaydet'}
+              </button>
+            ) : (
+              <p className="section-description">{ADMIN_ONLY_NOTE}</p>
+            )}
+          </div>
+        </div>
       )}
 
       {category === 'prompts' && (

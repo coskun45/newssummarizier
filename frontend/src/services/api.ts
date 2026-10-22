@@ -15,6 +15,7 @@ import type {
     Summary,
     Topic,
     UserSettings,
+    UserSettingsUpdate,
     CostStats,
     DailyArticleStats,
     AnalysisRange,
@@ -305,7 +306,7 @@ export const settingsApi = {
         return response.data;
     },
 
-    update: async (settings: UserSettings): Promise<UserSettings> => {
+    update: async (settings: UserSettingsUpdate): Promise<UserSettings> => {
         const response = await api.put('/settings/', settings);
         return response.data;
     },

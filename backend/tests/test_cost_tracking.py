@@ -79,7 +79,8 @@ def test_summary_cost_survives_its_article_being_deleted(llm, db_session):
 def test_bulletin_calls_count_towards_the_limits(llm, db_session):
     llm(json.dumps({"classifications": []}))
 
-    asyncio.run(bulletin_service._call_json_completion("system", "user", max_completion_tokens=100))
+    asyncio.run(bulletin_service._call_json_completion(
+        "system", "user", max_completion_tokens=100, model=settings.default_model))
 
     assert crud.get_daily_cost(db_session) == pytest.approx(_expected(settings.default_model))
 

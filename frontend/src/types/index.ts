@@ -89,10 +89,41 @@ export interface ArticleFilters {
     is_error?: boolean;
 }
 
+/** A model selectable in Ayarlar, with its OpenAI list price (USD per 1M tokens). */
+export interface ModelOption {
+    id: string;
+    input_per_1m: number;
+    output_per_1m: number;
+}
+
+/** The env models the server uses while nothing is chosen in Ayarlar. */
+export interface DefaultModels {
+    classification: string;
+    /** Kısa + standart özet. */
+    summary: string;
+    detailed_summary: string;
+}
+
 export interface UserSettings {
     enabled_topics: string;
     enabled_summary_types: string;
     feed_refresh_interval: number;
+    /** Saved choice; null = not chosen yet, `default_models` apply. */
+    classification_model: string | null;
+    /** Saved choice for every summary type (kısa, standart, detaylı); null = not chosen yet. */
+    summary_model: string | null;
+    default_models: DefaultModels;
+    available_models: ModelOption[];
+}
+
+/** PUT /settings is partial: only the fields sent change, so each Ayarlar tab saves its own. */
+export interface UserSettingsUpdate {
+    enabled_topics?: string;
+    enabled_summary_types?: string;
+    feed_refresh_interval?: number;
+    /** A SELECTABLE model, or "" to clear the choice (back to the server default). */
+    classification_model?: string;
+    summary_model?: string;
 }
 
 export interface CostStats {
@@ -366,7 +397,8 @@ export interface PlaygroundStageCall {
     model: string;
     system_prompt: string;
     prompt_source: 'override' | 'db' | 'default';
-    temperature: number;
+    /** null: a reasoning model that only runs at its default temperature (none was sent). */
+    temperature: number | null;
     max_completion_tokens: number;
     attempts: PlaygroundAttempt[];
     error: string | null;

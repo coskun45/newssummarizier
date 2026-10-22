@@ -33,18 +33,92 @@ def get_openai_client() -> AsyncOpenAI:
         )
     return _client
 
-# Pricing per 1K tokens (OpenAI list prices, checked 2026-09). Every model configurable via
-# DEFAULT_MODEL / DETAILED_MODEL needs an entry here, or its cost is only an approximation.
+# Pricing per 1K tokens (OpenAI list prices, checked 2026-10). Every model that can be selected
+# (Ayarlar, or the DEFAULT_MODEL / DETAILED_MODEL fallbacks) needs an entry here, or its cost is
+# only an approximation. Reasoning models get `reasoning_effort` — the lowest the model accepts,
+# these are short JSON answers and extra thinking is paid output; see `completion_params`.
 PRICING = {
+    "gpt-6-luna": {"input": 0.0001, "output": 0.0005, "reasoning_effort": "none"},
+    "gpt-6.1-sol": {"input": 0.002, "output": 0.01, "reasoning_effort": "low"},
+    "gpt-5.4-mini": {"input": 0.00075, "output": 0.0045, "reasoning_effort": "none"},
+    "gpt-5-mini": {"input": 0.00025, "output": 0.002, "reasoning_effort": "minimal"},
+    "gpt-4.1-mini": {"input": 0.0004, "output": 0.0016},
     "gpt-4o-mini": {"input": 0.00015, "output": 0.0006},
     "gpt-4o": {"input": 0.0025, "output": 0.01},
+    # Legacy: kept so old usage rows / env values still price correctly, not offered in Ayarlar.
     "gpt-3.5-turbo": {"input": 0.0005, "output": 0.0015},
     "gpt-4-turbo-preview": {"input": 0.01, "output": 0.03},
     "gpt-4": {"input": 0.03, "output": 0.06}
 }
 
+# Models offered in Ayarlar for classification and summaries, in display order.
+SELECTABLE_MODELS = ("gpt-6-luna", "gpt-6.1-sol", "gpt-5.4-mini", "gpt-5-mini", "gpt-4.1-mini", "gpt-4o-mini", "gpt-4o")
 
-def model_pricing(model: str) -> Optional[Dict[str, float]]:
+
+def available_models() -> List[Dict[str, Any]]:
+    """The selectable models with their price per 1M tokens (what Ayarlar shows)."""
+    return [
+        {
+            "id": model,
+            "input_per_1m": round(PRICING[model]["input"] * 1000, 4),
+            "output_per_1m": round(PRICING[model]["output"] * 1000, 4),
+        }
+        for model in SELECTABLE_MODELS
+    ]
+
+
+def saved_model(db, key: str) -> Optional[str]:
+    """The model saved in Ayarlar under `key` ("classification_model" / "summary_model"), or None
+    when nothing (or a model no longer offered) is saved — the env fallbacks apply then."""
+    stored = crud.get_setting(db, key)
+    return stored if stored in SELECTABLE_MODELS else None
+
+
+def get_classification_model(db) -> str:
+    """Model for article classification and the bulletin: Ayarlar's choice, else DEFAULT_MODEL."""
+    return saved_model(db, "classification_model") or settings.default_model
+
+
+def get_summary_model(db, summary_type: str) -> str:
+    """Model for a summary type: Ayarlar's choice (one for all types), else the env fallback the
+    type always had — DETAILED_MODEL for detailed, DEFAULT_MODEL for brief/standard."""
+    fallback = settings.detailed_model if summary_type == "detailed" else settings.default_model
+    return saved_model(db, "summary_model") or fallback
+
+
+def is_empty_answer(content: Optional[str]) -> bool:
+    """None (content filter) and "" (a reasoning model whose budget ran out on thinking —
+    finish_reason "length") are both no answer."""
+    return not (content or "").strip()
+
+
+def empty_answer_error(finish_reason: Optional[str]) -> str:
+    if finish_reason == "length":
+        return "OpenAI answer was empty: the token budget ran out (finish_reason=length)"
+    return "OpenAI response content was empty (possibly content-filtered)"
+
+
+# Extra output budget for models that think before answering: their hidden reasoning tokens count
+# towards max_completion_tokens, and a budget used up by thinking returns an empty answer.
+REASONING_TOKEN_ALLOWANCE = 2000
+
+
+def completion_params(model: str, temperature: float, max_tokens: int) -> Dict[str, Any]:
+    """Sampling/limit kwargs for a chat completion. Classic models and reasoning models at effort
+    "none" take `temperature`; models that really reason reject anything but the default
+    temperature, and get REASONING_TOKEN_ALLOWANCE on top of `max_tokens`."""
+    effort = (model_pricing(model) or {}).get("reasoning_effort")
+    params: Dict[str, Any] = {"max_completion_tokens": max_tokens}
+    if effort:
+        params["reasoning_effort"] = effort
+    if effort in (None, "none"):
+        params["temperature"] = temperature
+    else:
+        params["max_completion_tokens"] = max_tokens + REASONING_TOKEN_ALLOWANCE
+    return params
+
+
+def model_pricing(model: str) -> Optional[Dict[str, Any]]:
     """
     Price entry for a model, or None if unknown. A dated snapshot name
     ("gpt-4o-mini-2024-07-18") uses its base model's price; the longest base name wins so
@@ -70,7 +144,11 @@ def count_tokens(text: str, model: str = "gpt-3.5-turbo") -> int:
         Token count
     """
     try:
-        encoding = tiktoken.encoding_for_model(model)
+        try:
+            encoding = tiktoken.encoding_for_model(model)
+        except KeyError:
+            # Models newer than the installed tiktoken (gpt-6-luna, ...) use the current encoding.
+            encoding = tiktoken.get_encoding("o200k_base")
         return len(encoding.encode(text))
     except Exception as e:
         logger.warning(f"Failed to count tokens: {e}. Using approximation.")
@@ -428,15 +506,27 @@ SUMMARY_TEMPERATURE = 0.5
 SUMMARY_JSON_OVERHEAD_TOKENS = 60
 
 
-def _summary_type_config(summary_type: str) -> Tuple[str, int]:
-    """Return (model, max output tokens) for a summary type, from settings."""
+def summary_models(db) -> Dict[str, str]:
+    """{summary_type: model} for every type, from a single settings read."""
+    saved = saved_model(db, "summary_model")
+    return {
+        t: saved or (settings.detailed_model if t == "detailed" else settings.default_model)
+        for t in SUMMARY_TYPES
+    }
+
+
+def _summary_type_config(db, summary_type: str, model: Optional[str] = None) -> Tuple[str, int]:
+    """Return (model, max output tokens) for a summary type: the Ayarlar summary model (or the
+    already-resolved `model`), the type's token limit from settings."""
     if summary_type == "brief":
-        return settings.default_model, settings.max_tokens_output_brief
-    if summary_type == "standard":
-        return settings.default_model, settings.max_tokens_output_standard
-    if summary_type == "detailed":
-        return settings.detailed_model, settings.max_tokens_output_detailed
-    raise ValueError(f"Invalid summary type: {summary_type}")
+        max_tokens = settings.max_tokens_output_brief
+    elif summary_type == "standard":
+        max_tokens = settings.max_tokens_output_standard
+    elif summary_type == "detailed":
+        max_tokens = settings.max_tokens_output_detailed
+    else:
+        raise ValueError(f"Invalid summary type: {summary_type}")
+    return model or get_summary_model(db, summary_type), max_tokens
 
 
 def _resolve_system_prompt(db, prompt_type: str, default: str) -> Tuple[str, str]:
@@ -466,6 +556,7 @@ async def _run_classification(title: str, system_prompt: str, model: str) -> Dic
     (with their tokens and cost) are kept.
     """
     base_user_prompt = _CATEGORIZATION_USER_PROMPT_TEMPLATE.replace("{title}", title)
+    params = completion_params(model, CLASSIFICATION_TEMPERATURE, CLASSIFICATION_MAX_TOKENS)
 
     attempts: List[Dict[str, Any]] = []
     parsed: Optional[Any] = None
@@ -491,9 +582,8 @@ async def _run_classification(title: str, system_prompt: str, model: str) -> Dic
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
-                temperature=CLASSIFICATION_TEMPERATURE,
-                max_completion_tokens=CLASSIFICATION_MAX_TOKENS,
                 response_format={"type": "json_object"},
+                **params,
             )
         except Exception as e:
             # The SDK already retried transport errors, so don't retry again — but keep what the
@@ -531,9 +621,14 @@ async def _run_classification(title: str, system_prompt: str, model: str) -> Dic
         }
         attempts.append(record)
 
-        if content is None:
-            last_error = ValueError("OpenAI response content was empty (possibly content-filtered)")
+        if is_empty_answer(content):
+            finish_reason = response.choices[0].finish_reason
+            last_error = ValueError(empty_answer_error(finish_reason))
             record["error"] = str(last_error)
+            if finish_reason == "length":
+                # A retry runs with the same budget and runs out the same way — don't pay twice.
+                logger.warning(f"Categorization attempt {attempt + 1}: {last_error}")
+                break
             logger.warning(f"Categorization attempt {attempt + 1} returned no content, retrying: {last_error}")
             continue
 
@@ -563,8 +658,8 @@ async def _run_classification(title: str, system_prompt: str, model: str) -> Dic
     return {
         "model": model,
         "system_prompt": system_prompt,
-        "temperature": CLASSIFICATION_TEMPERATURE,
-        "max_completion_tokens": CLASSIFICATION_MAX_TOKENS,
+        "temperature": params.get("temperature"),
+        "max_completion_tokens": params["max_completion_tokens"],
         "attempts": attempts,
         "parsed": parsed,
         "error": str(last_error) if parsed is None and last_error else None,
@@ -594,13 +689,14 @@ async def categorize_and_prioritize_article(title: str) -> Dict[str, Any]:
         try:
             system_prompt, _ = _resolve_system_prompt(db, "classification", _CATEGORIZATION_SYSTEM_PROMPT)
             db_topics = crud.get_enabled_topics(db)
+            model = get_classification_model(db)
         finally:
             db.close()
 
         system_prompt = build_classification_system_prompt(system_prompt, db_topics)
 
-        detail = await _run_classification(title, system_prompt, settings.default_model)
-        record_llm_usage("classification", settings.default_model, detail.get("input_tokens", 0),
+        detail = await _run_classification(title, system_prompt, model)
+        record_llm_usage("classification", model, detail.get("input_tokens", 0),
                          detail.get("output_tokens", 0), detail.get("cost", 0.0))
         result = detail["parsed"]
         if result is None:
@@ -746,6 +842,7 @@ async def _run_summary(
     prompt = _build_summary_user_prompt(title, content, instructions, source, author_hint)
     # The system prompt is billed too (and is long), so it must count towards cost/limits.
     input_tokens = count_tokens(system_prompt + prompt, model)
+    params = completion_params(model, SUMMARY_TEMPERATURE, max_tokens + SUMMARY_JSON_OVERHEAD_TOKENS)
 
     started = time.perf_counter()
     response = await get_openai_client().chat.completions.create(
@@ -754,26 +851,27 @@ async def _run_summary(
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt}
         ],
-        temperature=SUMMARY_TEMPERATURE,
-        max_completion_tokens=max_tokens + SUMMARY_JSON_OVERHEAD_TOKENS,
         response_format={"type": "json_object"},
+        **params,
     )
     latency_ms = _elapsed_ms(started)
 
     raw_content = response.choices[0].message.content
     input_tokens = _input_tokens(response, input_tokens)
     output_tokens = response.usage.completion_tokens
-    error = "OpenAI response content was empty (possibly content-filtered)" if raw_content is None else None
-    summary_text, author, structured = (
-        _parse_summary_answer(raw_content, source) if raw_content is not None else (None, None, False)
-    )
+    if is_empty_answer(raw_content):
+        error = empty_answer_error(response.choices[0].finish_reason)
+        summary_text, author, structured = None, None, False
+    else:
+        error = None
+        summary_text, author, structured = _parse_summary_answer(raw_content, source)
 
     return {
         "summary_type": summary_type,
         "model": model,
         "system_prompt": system_prompt,
-        "temperature": SUMMARY_TEMPERATURE,
-        "max_completion_tokens": max_tokens + SUMMARY_JSON_OVERHEAD_TOKENS,
+        "temperature": params.get("temperature"),
+        "max_completion_tokens": params["max_completion_tokens"],
         "attempts": [{
             "attempt": 1,
             "user_prompt": prompt,
@@ -823,10 +921,9 @@ async def generate_summary(
     try:
         await check_cost_limits()
 
-        model, max_tokens = _summary_type_config(summary_type)
-
         db = SessionLocal()
         try:
+            model, max_tokens = _summary_type_config(db, summary_type)
             system_prompt, _ = _resolve_system_prompt(db, "summarization", _DEFAULT_SUMMARIZATION_SYSTEM_PROMPT)
         finally:
             db.close()
@@ -878,9 +975,10 @@ def get_pipeline_settings(db) -> Dict[str, Any]:
     enabled = get_enabled_summary_types(db)
     topics = crud.get_enabled_topics(db)
 
+    models_by_type = summary_models(db)
     summary_types = []
     for summary_type in SUMMARY_TYPES:
-        model, max_tokens = _summary_type_config(summary_type)
+        model, max_tokens = _summary_type_config(db, summary_type, models_by_type[summary_type])
         summary_types.append({
             "type": summary_type,
             "model": model,
@@ -890,7 +988,7 @@ def get_pipeline_settings(db) -> Dict[str, Any]:
         })
 
     return {
-        "classification_model": settings.default_model,
+        "classification_model": get_classification_model(db),
         "classification_prompt": {"text": classification_text, "source": classification_source},
         "classification_locked_text": build_classification_locked_text(topics),
         "summarization_prompt": {"text": summarization_text, "source": summarization_source},
@@ -905,12 +1003,12 @@ def get_pipeline_settings(db) -> Dict[str, Any]:
     }
 
 
-def _failed_stage(model: str, system_prompt: str, temperature: float, max_tokens: int, error: str) -> Dict[str, Any]:
+def _failed_stage(model: str, system_prompt: str, params: Dict[str, Any], error: str) -> Dict[str, Any]:
     return {
         "model": model,
         "system_prompt": system_prompt,
-        "temperature": temperature,
-        "max_completion_tokens": max_tokens,
+        "temperature": params.get("temperature"),
+        "max_completion_tokens": params["max_completion_tokens"],
         "attempts": [],
         "error": error,
         "input_tokens": 0,
@@ -997,12 +1095,12 @@ async def run_playground(
         else:
             template, source = _resolve_system_prompt(db, "classification", _CATEGORIZATION_SYSTEM_PROMPT)
         system_prompt = build_classification_system_prompt(template, crud.get_enabled_topics(db))
-        model = settings.default_model
+        model = get_classification_model(db)
         try:
             detail = await _run_classification(article.title, system_prompt, model)
         except Exception as e:
             logger.error(f"Playground classification failed: {e}")
-            detail = _failed_stage(model, system_prompt, CLASSIFICATION_TEMPERATURE, CLASSIFICATION_MAX_TOKENS, str(e))
+            detail = _failed_stage(model, system_prompt, completion_params(model, CLASSIFICATION_TEMPERATURE, CLASSIFICATION_MAX_TOKENS), str(e))
             detail["parsed"] = None
 
         outcome = (
@@ -1031,9 +1129,10 @@ async def run_playground(
             requested = summary_types or get_enabled_summary_types(db)
             article_source = article_source_name(article.feed.title if article.feed else None, article.url)
             author_hint = clean_author(article.feed_author or article.author, article_source)
+            models_by_type = summary_models(db)
 
             async def run_one(summary_type: str) -> Dict[str, Any]:
-                model, max_tokens = _summary_type_config(summary_type)
+                model, max_tokens = _summary_type_config(db, summary_type, models_by_type[summary_type])
                 instructions = (summary_instructions or {}).get(summary_type) or DEFAULT_SUMMARY_INSTRUCTIONS[summary_type]
                 try:
                     detail = await _run_summary(
@@ -1042,7 +1141,10 @@ async def run_playground(
                     )
                 except Exception as e:
                     logger.error(f"Playground {summary_type} summary failed: {e}")
-                    detail = _failed_stage(model, system_prompt, SUMMARY_TEMPERATURE, max_tokens + SUMMARY_JSON_OVERHEAD_TOKENS, str(e))
+                    detail = _failed_stage(
+                        model, system_prompt,
+                        completion_params(model, SUMMARY_TEMPERATURE, max_tokens + SUMMARY_JSON_OVERHEAD_TOKENS), str(e),
+                    )
                     detail.update({"summary_type": summary_type, "summary_text": None, "tokens_used": 0,
                                    "author": None, "structured": False})
                 detail["instructions"] = instructions

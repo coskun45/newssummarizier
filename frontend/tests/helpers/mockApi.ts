@@ -5,6 +5,7 @@ import type {
   Article,
   Summary,
   UserSettings,
+  UserSettingsUpdate,
   SystemPrompt,
   AppUser,
   BulletinCategory,
@@ -531,6 +532,15 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
       enabled_topics: '',
       enabled_summary_types: 'brief,standard,detailed',
       feed_refresh_interval: 3600, // backend default: hourly
+      classification_model: null, // nothing chosen in Ayarlar yet
+      summary_model: null,
+      default_models: { classification: 'gpt-6-luna', summary: 'gpt-6-luna', detailed_summary: 'gpt-6-luna' },
+      available_models: [
+        { id: 'gpt-6-luna', input_per_1m: 0.1, output_per_1m: 0.5 },
+        { id: 'gpt-6.1-sol', input_per_1m: 2, output_per_1m: 10 },
+        { id: 'gpt-4o-mini', input_per_1m: 0.15, output_per_1m: 0.6 },
+        { id: 'gpt-4o', input_per_1m: 2.5, output_per_1m: 10 },
+      ],
       ...overrides.settings,
     },
     prompts: overrides.prompts ?? new Map(),
@@ -813,7 +823,7 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
     // ---- settings ----
     if (path === '/settings/' && (method === 'GET' || method === 'PUT')) {
       if (method === 'PUT') {
-        const body = request.postDataJSON() as UserSettings;
+        const body = request.postDataJSON() as UserSettingsUpdate;
         state.settings = { ...state.settings, ...body };
       }
       return json(state.settings);

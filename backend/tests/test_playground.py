@@ -426,3 +426,20 @@ def test_run_uses_the_feed_author_as_hint_even_after_the_pipeline_cleared_it(cli
     }, headers=admin_headers)
 
     assert "<author_hint>\nMax Bird\n</author_hint>" in fake.summary_calls[0]["messages"][1]["content"]
+
+
+def test_run_reports_the_sampling_params_actually_sent(client, admin_headers, monkeypatch, db_session, article):
+    """Review: the stage results always showed temperature 0.1 / 0.5 — even for a thinking model
+    that was sent no temperature (and a larger token budget)."""
+    crud.set_setting(db_session, "classification_model", "gpt-6.1-sol")
+    crud.set_setting(db_session, "summary_model", "gpt-6-luna")
+    fake = _install(monkeypatch, db_session)
+
+    body = client.post("/api/playground/run", json={"article_id": article.id}, headers=admin_headers).json()
+
+    cls = body["classification"]
+    assert cls["model"] == "gpt-6.1-sol" and cls["temperature"] is None
+    assert cls["max_completion_tokens"] == fake.classification_calls[0]["max_completion_tokens"]
+    assert "temperature" not in fake.classification_calls[0]
+    brief = body["summaries"][0]
+    assert brief["model"] == "gpt-6-luna" and brief["temperature"] == summary_service.SUMMARY_TEMPERATURE

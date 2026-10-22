@@ -209,7 +209,7 @@ def test_generate_bulletin_rejects_invalid_priority(client, auth_headers, db_ses
     assert response.status_code == 400
 
 
-async def _fake_classify(db, articles, category_names, blocks=None):
+async def _fake_classify(db, articles, category_names, blocks=None, model=None):
     if not articles:
         return []
     return [
@@ -218,11 +218,11 @@ async def _fake_classify(db, articles, category_names, blocks=None):
     ]
 
 
-async def _no_highlights(articles, blocks, limit=bulletin_service.HIGHLIGHT_LIMIT):
+async def _no_highlights(articles, blocks, limit=bulletin_service.HIGHLIGHT_LIMIT, model=None):
     return []
 
 
-async def _single_group(category_name, articles, blocks):
+async def _single_group(category_name, articles, blocks, model=None):
     return [{"title": "TEST ALT BAŞLIK", "article_ids": [a.id for a in articles]}] if articles else []
 
 
@@ -345,7 +345,7 @@ def test_generate_bulletin_highlights_are_not_repeated_in_categories(
         for i in range(7)
     ]
 
-    async def highlights(candidates, blocks, limit=bulletin_service.HIGHLIGHT_LIMIT):
+    async def highlights(candidates, blocks, limit=bulletin_service.HIGHLIGHT_LIMIT, model=None):
         return [{"title": "BM GENEL KURULU", "article_ids": [articles[0].id, articles[1].id]}]
 
     monkeypatch.setattr(bulletin_service, "pick_bulletin_highlights", highlights)
@@ -379,7 +379,7 @@ def test_clean_groups_caps_highlights_at_limit_and_drops_unknown_ids():
 
 def test_group_category_articles_puts_leftovers_into_other_group(monkeypatch):
     """Articles the model forgot must still appear, under the catch-all group, which goes last."""
-    async def fake_completion(system_prompt, user_prompt, max_completion_tokens):
+    async def fake_completion(system_prompt, user_prompt, max_completion_tokens, model=None):
         return {"groups": [{"title": "UKRAYNA SAVAŞI", "article_ids": [1]}]}
 
     async def no_limits():
@@ -390,7 +390,7 @@ def test_group_category_articles_puts_leftovers_into_other_group(monkeypatch):
     articles = [models.Article(id=i, title=f"Haber {i}", url=f"https://x/{i}") for i in (1, 2, 3)]
     blocks = {a.id: {"header": f"📌 X - {a.title}", "bullets": []} for a in articles}
 
-    groups = asyncio.run(_real_group_category_articles("Avrupa", articles, blocks))
+    groups = asyncio.run(_real_group_category_articles("Avrupa", articles, blocks, model="gpt-6-luna"))
 
     assert groups == [
         {"title": "UKRAYNA SAVAŞI", "article_ids": [1]},
@@ -426,7 +426,7 @@ def test_generate_bulletin_creates_and_saves_missing_brief_summaries(
 
 
 def test_generate_bulletin_marks_opinion_pieces_with_yorum_icon(client, auth_headers, db_session, monkeypatch):
-    async def classify_as_yorum(db, articles, category_names, blocks=None):
+    async def classify_as_yorum(db, articles, category_names, blocks=None, model=None):
         return [{"article_id": a.id, "top_category": category_names[0], "type": "yorum"} for a in articles]
 
     monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", classify_as_yorum)
@@ -535,7 +535,7 @@ def test_pick_bulletin_highlights_sends_only_top_ranked_candidates(monkeypatch):
     """Only the 10 highest-priority, newest articles are offered to the highlights model."""
     prompts = []
 
-    async def fake_completion(system_prompt, user_prompt, max_completion_tokens):
+    async def fake_completion(system_prompt, user_prompt, max_completion_tokens, model=None):
         prompts.append(user_prompt)
         return {"highlights": []}
 
@@ -556,7 +556,7 @@ def test_pick_bulletin_highlights_sends_only_top_ranked_candidates(monkeypatch):
     ]
     blocks = {a.id: {"header": f"📌 X - {a.title}", "bullets": []} for a in articles}
 
-    asyncio.run(_real_pick_bulletin_highlights(articles, blocks))
+    asyncio.run(_real_pick_bulletin_highlights(articles, blocks, model="gpt-6-luna"))
 
     sent_ids = [int(line.split(" | ")[0]) for line in prompts[0].splitlines() if " | " in line]
     assert sent_ids == list(range(1, 11))
@@ -582,7 +582,7 @@ def test_generate_bulletin_uses_only_user_defined_categories(client, auth_header
     headings must fully replace them in the output — regression test for a
     reported issue where the generated report appeared to ignore
     user-created categories."""
-    async def classify_into_custom_categories(db, articles, category_names, blocks=None):
+    async def classify_into_custom_categories(db, articles, category_names, blocks=None, model=None):
         return [
             {"article_id": a.id, "top_category": category_names[0], "subcategory": "Alt Başlık", "type": "haber"}
             for a in articles
@@ -615,7 +615,7 @@ def test_generate_bulletin_respects_display_order(client, auth_headers, db_sessi
     order (AMERIKA before AVRUPA). Regression test for a reported issue where
     the generated report's index/table-of-contents always followed that
     fixed template order instead of the user-configured display_order."""
-    async def classify_by_display_order(db, articles, category_names, blocks=None):
+    async def classify_by_display_order(db, articles, category_names, blocks=None, model=None):
         return [
             {"article_id": a.id, "top_category": category_names[i], "subcategory": "Alt Başlık", "type": "haber"}
             for i, a in enumerate(articles)
@@ -654,7 +654,7 @@ def test_generate_bulletin_case_variant_categories_get_separate_headings(
     removed the entry) — the second category would relocate the first one's
     already-placed heading out from under its own content, stranding the
     first category's articles above an orphaned heading."""
-    async def classify_by_category_names(db, articles, category_names, blocks=None):
+    async def classify_by_category_names(db, articles, category_names, blocks=None, model=None):
         return [
             {"article_id": a.id, "top_category": category_names[i], "subcategory": "Alt Başlık", "type": "haber"}
             for i, a in enumerate(articles)
@@ -716,7 +716,7 @@ def test_bulletin_max_articles_defaults_to_50():
 def test_generate_bulletin_uses_classification_cache(client, auth_headers, db_session, monkeypatch):
     call_count = {"n": 0}
 
-    async def counting_classify(db, articles, category_names, blocks=None):
+    async def counting_classify(db, articles, category_names, blocks=None, model=None):
         if not articles:
             return []
         call_count["n"] += 1
@@ -1121,7 +1121,7 @@ def test_generate_bulletin_survives_duplicate_and_string_article_ids(client, aut
     article = _make_article(db_session, feed.id, title="Tekrarlanan Haber", priority="high",
                             published_at=now - timedelta(hours=1))
 
-    async def duplicate_classify(db, articles, category_names, blocks=None):
+    async def duplicate_classify(db, articles, category_names, blocks=None, model=None):
         return [
             {"article_id": str(article.id), "top_category": "AVRUPA", "subcategory": "İlk", "type": "haber"},
             {"article_id": article.id, "top_category": "AVRUPA", "subcategory": "İkinci", "type": "haber"},
@@ -1160,7 +1160,7 @@ def test_classification_matches_category_names_case_and_turkish_i_insensitively(
     answers in upper case ("UKRAYNA", "AMERİKA", "İRAN"). The exact-match check sent every such
     article to DİĞER, so the bulletin had Ukraine/America news under DİĞER next to empty-ish
     Ukrayna/Amerika sections."""
-    async def fake_completion(system_prompt, user_prompt, max_completion_tokens):
+    async def fake_completion(system_prompt, user_prompt, max_completion_tokens, model=None):
         return {"classifications": [
             {"article_id": 1, "top_category": "UKRAYNA", "type": "haber"},
             {"article_id": 2, "top_category": "AMERİKA", "type": "haber"},
@@ -1177,7 +1177,7 @@ def test_classification_matches_category_names_case_and_turkish_i_insensitively(
     articles = [models.Article(id=i, title=f"Haber {i}", url=f"https://x/{i}") for i in range(1, 6)]
 
     result = asyncio.run(_real_classify_articles_for_bulletin(
-        db_session, articles, ["Türkiye", "Amerika", "Avrupa", "Ukrayna", "Iran", "Nato"]
+        db_session, articles, ["Türkiye", "Amerika", "Avrupa", "Ukrayna", "Iran", "Nato"], model="gpt-6-luna",
     ))
 
     assert [r["top_category"] for r in result] == ["Ukrayna", "Amerika", "Iran", "Nato", "DİĞER"]
@@ -1204,3 +1204,46 @@ def test_generate_bulletin_places_cached_case_variant_category_under_its_section
     assert "📌 Test Feed - Brüksel Haberi" in texts
     assert texts.index("AVRUPA") < texts.index("📌 Test Feed - Brüksel Haberi")
     assert "DİĞER" not in texts
+
+
+def test_bulletin_runs_every_llm_step_on_the_ayarlar_classification_model(client, auth_headers, db_session, monkeypatch):
+    """The bulletin uses the classification model chosen in Ayarlar — resolved once per bulletin,
+    so every step runs on the same model and each stored row names the model that really ran."""
+    crud.set_setting(db_session, "classification_model", "gpt-4o-mini")
+    _make_bulletin_category(db_session, name="AVRUPA")
+    feed = _make_feed(db_session)
+    article = _make_article(db_session, feed.id, priority="high",
+                            published_at=datetime.now(timezone.utc) - timedelta(hours=1))
+    seen = []
+
+    async def classify(db, articles, category_names, blocks=None, model=None):
+        seen.append(("classify", model))
+        return [{"article_id": article.id, "top_category": "AVRUPA", "type": "haber"}]
+
+    async def highlights(articles, blocks, limit=bulletin_service.HIGHLIGHT_LIMIT, model=None):
+        seen.append(("highlights", model))
+        return []
+
+    async def group(category_name, articles, blocks, model=None):
+        seen.append(("group", model))
+        return [{"title": "GRUP", "article_ids": [a.id for a in articles]}] if articles else []
+
+    monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", classify)
+    monkeypatch.setattr(bulletin_service, "pick_bulletin_highlights", highlights)
+    monkeypatch.setattr(bulletin_service, "group_category_articles", group)
+    lookups = []
+    real_lookup = bulletin_service.get_classification_model
+
+    def counting_lookup(db):
+        lookups.append(1)
+        return real_lookup(db)
+
+    monkeypatch.setattr(bulletin_service, "get_classification_model", counting_lookup)
+
+    response = client.post("/api/bulletin/generate", json={}, headers=auth_headers)
+
+    assert response.status_code == 200
+    assert seen and all(model == "gpt-4o-mini" for _, model in seen)
+    assert len(lookups) == 1  # review: classification and grouping each read it, and could differ
+    rows = db_session.query(models.ArticleBulletinClassification).all()
+    assert [r.model_used for r in rows] == ["gpt-4o-mini"]

@@ -32,7 +32,7 @@ function Metrics({ call }: { call: PlaygroundStageCall }) {
       <div><dt>Token (giriş / çıkış)</dt><dd>{call.input_tokens} / {call.output_tokens}</dd></div>
       <div><dt>Maliyet</dt><dd>{formatCost(call.cost)}</dd></div>
       <div><dt>Süre</dt><dd>{formatLatency(call.latency_ms)}</dd></div>
-      <div><dt>Sıcaklık / max token</dt><dd>{call.temperature} / {call.max_completion_tokens}</dd></div>
+      <div><dt>Sıcaklık / max token</dt><dd>{call.temperature ?? 'varsayılan'} / {call.max_completion_tokens}</dd></div>
     </dl>
   );
 }

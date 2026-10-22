@@ -10,6 +10,9 @@ Deutsche Welle (DW) RSS beslemelerinden haber toplayan, kategorize eden ve yapay
 - **Web Scraping**: Web sitelerinden tam makale içeriğini çıkarır (robots.txt uyumlu)
 - **İnteraktif Dashboard**: Arama ve filtreleme ile React tabanlı kullanıcı arayüzü
 - **Maliyet Takibi**: Yapılandırılabilir limitlerle OpenAI API maliyetlerini izler
+- **Yapay Zekâ Modeli Seçimi**: Ayarlar › Yapay Zekâ Modelleri'nden sınıflandırma (bülten dahil) ve özetler için
+  ayrı OpenAI modelleri seçilir (yalnızca admin). Her modelin 1M token başına giriş/çıkış fiyatı, kartın üzerine
+  gelince görünür. Seçim yapılmadıysa `.env`'deki `DEFAULT_MODEL` / `DETAILED_MODEL` kullanılır (varsayılan `gpt-6-luna`)
 - **LangGraph Workflow**: Karmaşık işleme hatları için sağlam agent orkestrasyon
 - **Word Bülten Raporu**: Seçilen zaman aralığı ve önem seviyesindeki haberlerden, şablondaki örnek bülten
   yapısında bir Word (.docx) raporu üretir (en fazla `BULLETIN_MAX_ARTICLES` = 50 haber): en başta yapay
@@ -51,7 +54,7 @@ Deutsche Welle (DW) RSS beslemelerinden haber toplayan, kategorize eden ve yapay
 - **LangGraph**: Çok-ajanlı iş akışı orkestrasyon
 - **PostgreSQL** (Docker `db` servisi; yerel `uvicorn` geliştirmede de aynı DB kullanılır): Makaleler,
   özetler ve meta veriler için veritabanı — bkz. [Docker ile Çalıştırma](#-docker)
-- **OpenAI**: Kategorizasyon ve özetleme için GPT-3.5-turbo ve GPT-4
+- **OpenAI**: Sınıflandırma ve özetleme için Ayarlar'dan seçilen modeller (varsayılan `gpt-6-luna`)
 
 ### Frontend
 
@@ -314,7 +317,7 @@ Aşağıdaki tablo öne çıkanlardır; tam liste `.env.example`'dadır. Contain
 | `APP_VERSION` | `2.0.0` | Uygulama sürümü (`/api/info`, arayüzde profil menüsü) — deploy'da CI otomatik ayarlar, bkz. [Sürümleme](#sürümleme) |
 | `DEBUG` | `false` | Debug modu (container'da her zaman `false`) |
 | `CORS_ORIGINS` | `http://localhost:5173,...` | İzin verilen CORS origin'leri (deploy sunucu IP'sine ayarlar) |
-| `DEFAULT_MODEL` / `DETAILED_MODEL` | `gpt-4o-mini` / `gpt-4o` | Kategorizasyon/kısa özet ve detaylı özet modelleri |
+| `DEFAULT_MODEL` / `DETAILED_MODEL` | `gpt-6-luna` / `gpt-6-luna` | Sınıflandırma (+ bülten) ve özet modelleri için yedek değerler; Ayarlar › Yapay Zekâ Modelleri'nde seçilen model önceliklidir |
 | `MAX_TOKENS_OUTPUT_BRIEF` / `_STANDARD` / `_DETAILED` | `1500` / `3000` / `10000` | Özet tipine göre çıktı token limiti |
 | `DAILY_COST_LIMIT` / `MONTHLY_COST_LIMIT` | `10.0` / `100.0` | Maliyet limitleri (USD) — sınıflandırma, özet, bülten ve Playground dahil tüm OpenAI çağrılarının toplamı |
 | `FEED_REFRESH_INTERVAL` | `3600` | Otomatik feed yenileme aralığının varsayılanı (saniye); admin Ayarlar › RSS Beslemeleri'nden değiştirir |
@@ -477,8 +480,10 @@ Bulten/
 
 #### Ayarlar
 
-- `GET /api/settings` - Kullanıcı ayarlarını getir
-- `PUT /api/settings` - Kullanıcı ayarlarını güncelle
+- `GET /api/settings` - Pipeline ayarlarını getir (kategoriler, özet türleri, yenileme aralığı, seçili
+  `classification_model` / `summary_model` — seçilmediyse `null` —, `default_models` ve fiyatlarıyla `available_models`)
+- `PUT /api/settings` - Pipeline ayarlarını güncelle (admin). Kısmidir: yalnızca gönderilen alanlar değişir;
+  `classification_model` / `summary_model` için `""` seçimi temizler (sunucu varsayılanına döner)
 
 #### Bülten (Word Raporu)
 
@@ -521,8 +526,8 @@ Bulten/
 ```env
 # OpenAI
 OPENAI_API_KEY=your-key-here
-DEFAULT_MODEL=gpt-4o-mini
-DETAILED_MODEL=gpt-4o
+DEFAULT_MODEL=gpt-6-luna
+DETAILED_MODEL=gpt-6-luna
 OPENAI_TIMEOUT_SECONDS=60.0  # tek bir OpenAI isteği için üst sınır (saniye)
 
 # Veritabanı (Docker'daki Postgres: `docker compose up -d db`)
@@ -562,14 +567,13 @@ CORS_ORIGINS=http://localhost:5173,http://localhost:3000
 
 Sistem otomatik olarak OpenAI API maliyetlerini takip eder:
 
-- **Kısa Özet** (GPT-3.5): Makale başına ~$0.0007
-- **Standart Özet** (GPT-3.5): Makale başına ~$0.0007
-- **Detaylı Özet** (GPT-4): Makale başına ~$0.015
+- **Sınıflandırma** (her gelen haber): `gpt-6-luna` ile haber başına ~$0.00016 (`gpt-4o-mini` ~$0.00024)
+- **Özet** (yalnızca önemli haberler, tür başına): `gpt-6-luna` ile ~$0.0002, `gpt-4o` ile ~$0.005
 
-**Günde 1000 makale için tahmini maliyetler**:
-
-- Sadece standart özetler: Ayda ~$21
-- Üç tür özet birlikte: Ayda ~$50-70
+Model fiyatları Ayarlar › Yapay Zekâ Modelleri'nde (kartın üzerine gelince) görünür. Tüm çağrılar `llm_usage`
+tablosuna yazılır; `DAILY_COST_LIMIT` / `MONTHLY_COST_LIMIT` aşılınca yeni çağrı yapılmaz. Bu limitler
+uygulamanın kendi sayacıdır — OpenAI hesabındaki bakiye biterse API `429 insufficient_quota` döner ve haberler
+`failed` olur; bakiyeyi ayrıca takip edin (auto-recharge önerilir).
 
 Limitler `.env` dosyasında yapılandırılabilir.
 
@@ -714,7 +718,7 @@ npm install
 ### Yüksek OpenAI maliyetleri
 
 1. `.env` dosyasında `DAILY_COST_LIMIT` değerini düşürün
-2. GPT-4 yerine sadece `gpt-3.5-turbo` kullanın
+2. Ayarlar › Yapay Zekâ Modelleri'nde daha ucuz bir model seçin (ör. `gpt-6-luna`; fiyat kartın üzerinde)
 3. Ayarlar › RSS Beslemeleri'nde otomatik yenileme aralığını artırın
 
 ### Abonelik maili gelmiyor

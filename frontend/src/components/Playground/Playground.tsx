@@ -153,7 +153,7 @@ function Playground() {
                 <h2 className="playground-section-title">Mevcut pipeline ayarları</h2>
                 <p className="playground-section-description">
                   Sınıflandırma modeli <strong>{settings.classification_model}</strong>. Özet modelleri ve token limitleri
-                  aşağıda. Model sunucu yapılandırmasından gelir ve burada değiştirilemez; prompt değişiklikleri yalnızca
+                  aşağıda. Modeller Ayarlar › Yapay Zekâ Modelleri'nden değiştirilir; prompt değişiklikleri yalnızca
                   bu çalıştırma için geçerlidir, kaydedilmez.
                 </p>
               </div>

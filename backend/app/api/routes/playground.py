@@ -80,7 +80,7 @@ class StageCall(BaseModel):
     model: str
     system_prompt: str
     prompt_source: str  # "override" | "db" | "default"
-    temperature: float
+    temperature: Optional[float]  # None: a reasoning model that only runs at its default temperature
     max_completion_tokens: int
     attempts: List[Attempt]
     error: Optional[str] = None

@@ -28,10 +28,19 @@ def test_get_settings_returns_defaults_when_empty(client, auth_headers):
     response = client.get("/api/settings/", headers=auth_headers)
 
     assert response.status_code == 200
-    assert response.json() == {
+    body = response.json()
+    assert {k: body[k] for k in ("enabled_topics", "enabled_summary_types", "feed_refresh_interval")} == {
         "enabled_topics": "",
         "enabled_summary_types": "brief,standard,detailed",
         "feed_refresh_interval": settings.feed_refresh_interval,
+    }
+    # Nothing chosen in Ayarlar yet: no choice, the env models are reported as the defaults.
+    assert body["classification_model"] is None
+    assert body["summary_model"] is None
+    assert body["default_models"] == {
+        "classification": settings.default_model,
+        "summary": settings.default_model,
+        "detailed_summary": settings.detailed_model,
     }
 
 
@@ -49,7 +58,8 @@ def test_put_settings_persists_and_is_read_back(client, admin_headers, db_sessio
     get_response = client.get("/api/settings/", headers=admin_headers)
 
     assert put_response.status_code == 200
-    assert get_response.json() == {
+    body = get_response.json()
+    assert {k: body[k] for k in ("enabled_topics", "enabled_summary_types", "feed_refresh_interval")} == {
         "enabled_topics": f"{t1.id},{t2.id}",
         "enabled_summary_types": "brief",
         "feed_refresh_interval": 600,
@@ -146,3 +156,128 @@ def test_scheduler_uses_the_stored_refresh_interval(monkeypatch, db_session):
         return first, second
 
     assert asyncio.run(run()) == (900, 1800)
+
+
+# ---------------------------------------------------------------------------
+# Partial updates: each Ayarlar tab saves only its own fields
+# ---------------------------------------------------------------------------
+
+def test_put_settings_only_changes_the_fields_sent(client, admin_headers, db_session):
+    """Review: one shared save sent every tab's local state, so saving Kategoriler also put an
+    unsaved (possibly expensive) model choice live."""
+    _put(client, admin_headers, enabled_topics="", enabled_summary_types="brief,detailed",
+         feed_refresh_interval=900, classification_model="gpt-4o-mini", summary_model="gpt-4o")
+
+    response = client.put("/api/settings/", json={"enabled_summary_types": "standard"}, headers=admin_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["enabled_summary_types"] == "standard"
+    assert body["feed_refresh_interval"] == 900
+    assert body["classification_model"] == "gpt-4o-mini"
+    assert body["summary_model"] == "gpt-4o"
+
+
+def test_put_settings_without_models_does_not_freeze_the_env_fallbacks(client, admin_headers, db_session):
+    """Saving another tab must not store the env models as an explicit choice (later .env edits
+    would then silently do nothing)."""
+    _put(client, admin_headers)
+
+    assert crud.get_setting(db_session, "classification_model") is None
+    assert crud.get_setting(db_session, "summary_model") is None
+
+
+def test_settings_save_works_when_the_env_model_is_not_selectable(client, admin_headers, monkeypatch):
+    """Review: with DEFAULT_MODEL=gpt-3.5-turbo (not offered in Ayarlar) GET reported it as the
+    current model, the UI sent it back and every save of every tab failed with 422."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "default_model", "gpt-3.5-turbo")
+    body = client.get("/api/settings/", headers=admin_headers).json()
+    assert body["classification_model"] is None
+    assert body["default_models"]["classification"] == "gpt-3.5-turbo"
+
+    response = client.put("/api/settings/", json={"enabled_summary_types": "brief"}, headers=admin_headers)
+    assert response.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Classification / summary model selection
+# ---------------------------------------------------------------------------
+
+def test_model_code_default_is_gpt_6_luna():
+    from app.core.config import Settings
+
+    assert Settings.model_fields["default_model"].default == "gpt-6-luna"
+    assert Settings.model_fields["detailed_model"].default == "gpt-6-luna"
+
+
+def test_get_settings_lists_selectable_models_with_prices(client, auth_headers):
+    response = client.get("/api/settings/", headers=auth_headers)
+
+    options = {m["id"]: m for m in response.json()["available_models"]}
+    assert list(options) == list(summary_service.SELECTABLE_MODELS)
+    assert options["gpt-6-luna"] == {"id": "gpt-6-luna", "input_per_1m": 0.10, "output_per_1m": 0.50}
+    assert options["gpt-4o"] == {"id": "gpt-4o", "input_per_1m": 2.50, "output_per_1m": 10.00}
+
+
+def test_put_settings_saves_the_models(client, admin_headers, db_session):
+    response = client.put("/api/settings/", json={"classification_model": "gpt-4o-mini", "summary_model": "gpt-6.1-sol"},
+                          headers=admin_headers)
+
+    assert response.status_code == 200
+    assert response.json()["classification_model"] == "gpt-4o-mini"
+    assert response.json()["summary_model"] == "gpt-6.1-sol"
+    assert summary_service.get_classification_model(db_session) == "gpt-4o-mini"
+    assert all(summary_service.get_summary_model(db_session, t) == "gpt-6.1-sol" for t in summary_service.SUMMARY_TYPES)
+
+
+@pytest.mark.parametrize("field", ["classification_model", "summary_model"])
+def test_put_settings_rejects_unknown_model(client, admin_headers, field):
+    response = client.put("/api/settings/", json={field: "gpt-made-up"}, headers=admin_headers)
+    assert response.status_code == 422
+
+
+def test_put_models_requires_admin(client, auth_headers):
+    response = client.put("/api/settings/", json={"summary_model": "gpt-4o"}, headers=auth_headers)
+    assert response.status_code == 403
+
+
+def test_unchosen_summary_model_keeps_each_types_old_env_model(db_session, monkeypatch):
+    """Review: an unset summary model fell back to DETAILED_MODEL for every type, so an install
+    with DEFAULT_MODEL=gpt-4o-mini / DETAILED_MODEL=gpt-4o silently moved brief and standard
+    summaries to gpt-4o (~17x the cost) on deploy."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "default_model", "gpt-4o-mini")
+    monkeypatch.setattr(settings, "detailed_model", "gpt-4o")
+
+    assert summary_service.get_summary_model(db_session, "brief") == "gpt-4o-mini"
+    assert summary_service.get_summary_model(db_session, "standard") == "gpt-4o-mini"
+    assert summary_service.get_summary_model(db_session, "detailed") == "gpt-4o"
+    assert summary_service.get_classification_model(db_session) == "gpt-4o-mini"
+
+
+def test_stored_model_no_longer_offered_falls_back_to_env(db_session):
+    """A model removed from the catalog must not break the pipeline."""
+    from app.core.config import settings
+
+    crud.set_setting(db_session, "classification_model", "gpt-3.5-turbo")
+    crud.set_setting(db_session, "summary_model", "")
+
+    assert summary_service.saved_model(db_session, "classification_model") is None
+    assert summary_service.get_classification_model(db_session) == settings.default_model
+    assert summary_service.get_summary_model(db_session, "detailed") == settings.detailed_model
+
+
+def test_put_empty_model_clears_the_choice_back_to_the_env_fallbacks(client, admin_headers, db_session):
+    """Review: once a model was saved there was no way back to DEFAULT_MODEL / DETAILED_MODEL."""
+    from app.core.config import settings
+
+    client.put("/api/settings/", json={"classification_model": "gpt-4o", "summary_model": "gpt-4o"}, headers=admin_headers)
+    response = client.put("/api/settings/", json={"classification_model": "", "summary_model": ""}, headers=admin_headers)
+
+    assert response.status_code == 200
+    assert response.json()["classification_model"] is None and response.json()["summary_model"] is None
+    assert summary_service.get_classification_model(db_session) == settings.default_model
+    assert summary_service.get_summary_model(db_session, "detailed") == settings.detailed_model

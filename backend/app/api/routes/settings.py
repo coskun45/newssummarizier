@@ -2,13 +2,21 @@
 Settings endpoints — global pipeline settings. Readable by every signed-in user; only admins can
 change them, since they steer the pipeline (and its OpenAI cost) for everyone.
 """
+from typing import List, Optional
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field, field_validator
 from app.db.database import get_db
 from app.db import crud, models
 from app.api.deps import require_admin
-from app.services.summary_service import SUMMARY_TYPES, get_enabled_summary_types
+from app.core.config import settings as app_settings
+from app.services.summary_service import (
+    SELECTABLE_MODELS,
+    SUMMARY_TYPES,
+    available_models,
+    get_enabled_summary_types,
+    saved_model,
+)
 from app.tasks import scheduler
 
 router = APIRouter()
@@ -18,14 +26,20 @@ MAX_REFRESH_INTERVAL = 24 * 3600
 
 
 class UserSettings(BaseModel):
-    """Settings update request."""
-    enabled_topics: str = ""  # Comma-separated topic IDs. Empty = all topics
-    enabled_summary_types: str = ",".join(SUMMARY_TYPES)  # Comma-separated, at least one of SUMMARY_TYPES
-    feed_refresh_interval: int = Field(3600, ge=MIN_REFRESH_INTERVAL, le=MAX_REFRESH_INTERVAL)  # seconds
+    """Settings update request. Partial: a field left out (None) keeps its stored value, so each
+    Ayarlar tab saves only its own fields and never an unsaved edit from another tab."""
+    enabled_topics: Optional[str] = None  # Comma-separated topic IDs. Empty = all topics
+    enabled_summary_types: Optional[str] = None  # Comma-separated, at least one of SUMMARY_TYPES
+    feed_refresh_interval: Optional[int] = Field(None, ge=MIN_REFRESH_INTERVAL, le=MAX_REFRESH_INTERVAL)  # seconds
+    # One of SELECTABLE_MODELS; "" clears the choice (back to DEFAULT_MODEL / DETAILED_MODEL).
+    classification_model: Optional[str] = None
+    summary_model: Optional[str] = None  # used by every summary type
 
     @field_validator("enabled_topics")
     @classmethod
-    def _topic_ids(cls, value: str) -> str:
+    def _topic_ids(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
         parts = [p.strip() for p in value.split(",") if p.strip()]
         if not all(p.isdigit() for p in parts):
             raise ValueError("enabled_topics virgülle ayrılmış kategori id'leri olmalı")
@@ -33,7 +47,9 @@ class UserSettings(BaseModel):
 
     @field_validator("enabled_summary_types")
     @classmethod
-    def _summary_types(cls, value: str) -> str:
+    def _summary_types(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
         requested = {p.strip() for p in value.split(",") if p.strip()}
         unknown = requested - set(SUMMARY_TYPES)
         if unknown:
@@ -42,12 +58,38 @@ class UserSettings(BaseModel):
             raise ValueError("En az bir özet türü seçilmelidir")
         return ",".join(t for t in SUMMARY_TYPES if t in requested)
 
+    @field_validator("classification_model", "summary_model")
+    @classmethod
+    def _model(cls, value: Optional[str]) -> Optional[str]:
+        if value not in (None, "") and value not in SELECTABLE_MODELS:
+            raise ValueError(f"Bilinmeyen model: {value}")
+        return value
+
+
+class ModelOption(BaseModel):
+    """A selectable OpenAI model and its list price (USD per 1M tokens)."""
+    id: str
+    input_per_1m: float
+    output_per_1m: float
+
+
+class DefaultModels(BaseModel):
+    """The env models (DEFAULT_MODEL / DETAILED_MODEL) used while nothing is chosen in Ayarlar."""
+    classification: str
+    summary: str  # brief + standard
+    detailed_summary: str
+
 
 class SettingsResponse(BaseModel):
     """Settings response model."""
     enabled_topics: str
     enabled_summary_types: str
     feed_refresh_interval: int
+    # The choice saved in Ayarlar; None = not chosen yet, `default_models` apply.
+    classification_model: Optional[str]
+    summary_model: Optional[str]
+    default_models: DefaultModels
+    available_models: List[ModelOption]
 
 
 def _current_settings(db: Session) -> SettingsResponse:
@@ -55,6 +97,14 @@ def _current_settings(db: Session) -> SettingsResponse:
         enabled_topics=crud.get_setting(db, "enabled_topics") or "",
         enabled_summary_types=",".join(get_enabled_summary_types(db)),
         feed_refresh_interval=crud.get_feed_refresh_interval(db),
+        classification_model=saved_model(db, "classification_model"),
+        summary_model=saved_model(db, "summary_model"),
+        default_models=DefaultModels(
+            classification=app_settings.default_model,
+            summary=app_settings.default_model,
+            detailed_summary=app_settings.detailed_model,
+        ),
+        available_models=available_models(),
     )
 
 
@@ -68,21 +118,25 @@ def get_settings(db: Session = Depends(get_db)):
 
 @router.put("/", response_model=SettingsResponse)
 def update_settings(
-    settings: UserSettings,
+    update: UserSettings,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_admin),
 ):
     """
-    Update the pipeline settings (admin only). A new refresh interval applies to the running
-    scheduler right away.
+    Update the pipeline settings (admin only). Only the fields sent are changed. A new refresh
+    interval applies to the running scheduler right away.
     """
-    interval_changed = settings.feed_refresh_interval != crud.get_feed_refresh_interval(db)
-    crud.set_setting(db, "enabled_topics", settings.enabled_topics)
-    crud.set_setting(db, "enabled_summary_types", settings.enabled_summary_types)
-    crud.set_setting(db, "feed_refresh_interval", str(settings.feed_refresh_interval))
+    interval = update.feed_refresh_interval
     # Rescheduling restarts the countdown (next run = now + interval), so only do it when the
     # interval really changed — saving other settings must not postpone the next refresh.
+    interval_changed = interval is not None and interval != crud.get_feed_refresh_interval(db)
+    if interval is not None:
+        crud.set_setting(db, "feed_refresh_interval", str(interval))
+    for key in ("enabled_topics", "enabled_summary_types", "classification_model", "summary_model"):
+        value = getattr(update, key)
+        if value is not None:
+            crud.set_setting(db, key, value)
     if interval_changed:
-        scheduler.reschedule_feed_processing(settings.feed_refresh_interval)
+        scheduler.reschedule_feed_processing(interval)
 
     return _current_settings(db)

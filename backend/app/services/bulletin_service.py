@@ -41,8 +41,12 @@ from app.services.summary_service import (
     calculate_cost,
     check_cost_limits,
     clean_author,
+    completion_params,
     count_tokens,
+    empty_answer_error,
+    get_classification_model,
     get_openai_client,
+    is_empty_answer,
     record_llm_usage,
     resolve_summary_author,
 )
@@ -358,10 +362,12 @@ def _build_category_list(category_names: List[str]) -> str:
     return "\n".join(f"- {name}" for name in category_names)
 
 
-async def _call_json_completion(system_prompt: str, user_prompt: str, max_completion_tokens: int) -> Dict[str, Any]:
+async def _call_json_completion(
+    system_prompt: str, user_prompt: str, max_completion_tokens: int, model: str,
+) -> Dict[str, Any]:
     """Shared OpenAI JSON-mode call: JSON-fence stripping + one retry on a bad
-    parse, mirroring summary_service.categorize_and_prioritize_article."""
-    model = settings.default_model
+    parse, mirroring summary_service.categorize_and_prioritize_article. `model` is the
+    classification model, resolved once per bulletin by the caller."""
     result: Optional[Dict[str, Any]] = None
     last_error: Optional[Exception] = None
 
@@ -376,9 +382,8 @@ async def _call_json_completion(system_prompt: str, user_prompt: str, max_comple
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt},
             ],
-            temperature=0.1,
-            max_completion_tokens=max_completion_tokens,
             response_format={"type": "json_object"},
+            **completion_params(model, 0.1, max_completion_tokens),
         )
         usage = getattr(response, "usage", None)
         input_tokens = getattr(usage, "prompt_tokens", None)
@@ -388,8 +393,13 @@ async def _call_json_completion(system_prompt: str, user_prompt: str, max_comple
         record_llm_usage("bulletin", model, input_tokens, output_tokens,
                          calculate_cost(model, input_tokens, output_tokens))
         content = response.choices[0].message.content
-        if content is None:
-            last_error = ValueError("OpenAI response content was empty (possibly content-filtered)")
+        if is_empty_answer(content):
+            finish_reason = response.choices[0].finish_reason
+            last_error = ValueError(empty_answer_error(finish_reason))
+            if finish_reason == "length":
+                # A retry runs with the same budget and runs out the same way — don't pay twice.
+                logger.warning(f"Bulletin LLM call attempt {attempt + 1}: {last_error}")
+                break
             logger.warning(f"Bulletin LLM call attempt {attempt + 1} returned no content, retrying: {last_error}")
             continue
 
@@ -417,6 +427,8 @@ async def classify_articles_for_bulletin(
     articles: List[models.Article],
     category_names: List[str],
     blocks: Optional[Dict[int, Dict[str, Any]]] = None,
+    *,
+    model: str,
 ) -> List[Dict[str, Any]]:
     """Batches `articles` and classifies each into (top_category, type). Entries whose
     top_category isn't in `category_names` are bucketed into the "DİĞER" fallback rather than
@@ -442,7 +454,7 @@ async def classify_articles_for_bulletin(
         ]
         user_prompt = "Aşağıdaki haberleri sınıflandır:\n\n" + "\n".join(lines)
 
-        payload = await _call_json_completion(system_prompt, user_prompt, max_completion_tokens=1500)
+        payload = await _call_json_completion(system_prompt, user_prompt, max_completion_tokens=1500, model=model)
         for entry in payload.get("classifications", []):
             article_id = _article_id(entry.get("article_id"))
             article_type = entry.get("type")
@@ -498,6 +510,8 @@ async def pick_bulletin_highlights(
     articles: List[models.Article],
     blocks: Dict[int, Dict[str, Any]],
     limit: int = HIGHLIGHT_LIMIT,
+    *,
+    model: str,
 ) -> List[Dict[str, Any]]:
     """One call picking at most `limit` of the most striking articles for "ÖNE ÇIKAN
     BAŞLIKLAR", grouped under short topic headings: [{"title", "article_ids"}]."""
@@ -512,7 +526,7 @@ async def pick_bulletin_highlights(
         "Aşağıdaki haberlerden ÖNE ÇIKAN BAŞLIKLAR bölümüne girecekleri seç:\n\n"
         + "\n".join(_prompt_line(a, blocks[a.id]) for a in candidates)
     )
-    payload = await _call_json_completion(system_prompt, user_prompt, max_completion_tokens=800)
+    payload = await _call_json_completion(system_prompt, user_prompt, max_completion_tokens=800, model=model)
     return _clean_groups(payload.get("highlights"), [a.id for a in candidates], limit=limit)
 
 
@@ -520,6 +534,8 @@ async def group_category_articles(
     category_name: str,
     articles: List[models.Article],
     blocks: Dict[int, Dict[str, Any]],
+    *,
+    model: str,
 ) -> List[Dict[str, Any]]:
     """Group one category's articles under meaningful topic subheadings:
     [{"title", "article_ids"}]. Articles the model left out land in the "<KATEGORİ>: DİĞER
@@ -538,7 +554,7 @@ async def group_category_articles(
         "Aşağıdaki haberleri alt başlıklar altında grupla:\n\n"
         + "\n".join(_prompt_line(a, blocks[a.id]) for a in ordered)
     )
-    payload = await _call_json_completion(system_prompt, user_prompt, max_completion_tokens=2000)
+    payload = await _call_json_completion(system_prompt, user_prompt, max_completion_tokens=2000, model=model)
     groups = _clean_groups(payload.get("groups"), [a.id for a in ordered])
 
     grouped = {i for g in groups for i in g["article_ids"]}
@@ -598,6 +614,7 @@ async def classify_for_bulletin(
     articles: List[models.Article],
     categories: List[models.BulletinCategory],
     briefs: Optional[Dict[int, str]] = None,
+    model: Optional[str] = None,
 ) -> Dict[int, models.ArticleBulletinClassification]:
     """{article_id: classification} for `articles` against the current category set: cached rows
     are reused, the rest are classified by the LLM and stored. An article the model dropped is
@@ -617,7 +634,11 @@ async def classify_for_bulletin(
     # Classification needs a header to work from; the type (yorum → ⭕️) is applied by the caller.
     draft_blocks = {a.id: _article_block(a, briefs.get(a.id), "haber") for a in uncached_articles}
 
-    new_classifications = await classify_articles_for_bulletin(db, uncached_articles, category_names, draft_blocks)
+    # Resolved once (or handed down by build_bulletin_sections): every row records the model that ran.
+    model = model or get_classification_model(db)
+    new_classifications = await classify_articles_for_bulletin(
+        db, uncached_articles, category_names, draft_blocks, model=model,
+    )
     for entry in new_classifications:
         article = articles_by_id.get(_article_id(entry["article_id"]))
         # Unknown id, or one the model listed twice: the first answer wins — a second insert
@@ -631,7 +652,7 @@ async def classify_for_bulletin(
             top_category=entry["top_category"],
             subcategory=entry.get("subcategory") or "",
             article_type=entry["type"],
-            model_used=settings.default_model,
+            model_used=model,
         )
     return cached
 
@@ -656,7 +677,8 @@ async def build_bulletin_sections(
     articles_by_id = {a.id: a for a in articles}
 
     briefs = await _ensure_brief_summaries(db, articles)
-    cached = await classify_for_bulletin(db, articles, categories, briefs)
+    model = get_classification_model(db)  # once per bulletin: every LLM step runs on the same model
+    cached = await classify_for_bulletin(db, articles, categories, briefs, model=model)
 
     # An article the classifier dropped still belongs in the report — under DİĞER.
     placement: Dict[int, str] = {}
@@ -667,7 +689,7 @@ async def build_bulletin_sections(
         article_type = classification.article_type if classification else "haber"
         blocks[article.id] = _article_block(article, briefs.get(article.id), article_type)
 
-    highlight_groups = await pick_bulletin_highlights(articles, blocks)
+    highlight_groups = await pick_bulletin_highlights(articles, blocks, model=model)
     highlighted = {i for g in highlight_groups for i in g["article_ids"]}
 
     ordered_categories = list(category_names)
@@ -679,7 +701,7 @@ async def build_bulletin_sections(
             by_category[placement[article.id]].append(article)
 
     category_groups = await asyncio.gather(*(
-        group_category_articles(name, by_category[name], blocks) for name in ordered_categories
+        group_category_articles(name, by_category[name], blocks, model=model) for name in ordered_categories
     ))
 
     sections = [{

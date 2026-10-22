@@ -7,7 +7,7 @@ import { articlesApi, summariesApi, topicsApi, settingsApi, statsApi, appApi, fe
 import type {
     AnalysisRange,
     ArticleFilters,
-    UserSettings,
+    UserSettingsUpdate,
     BulletinGenerateRequest,
     ReprocessRequest,
     PlaygroundRunRequest,
@@ -287,7 +287,7 @@ export const useUpdateSettings = () => {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: (settings: UserSettings) => settingsApi.update(settings),
+        mutationFn: (settings: UserSettingsUpdate) => settingsApi.update(settings),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['settings'] });
             queryClient.invalidateQueries({ queryKey: ['topics'] });

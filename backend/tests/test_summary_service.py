@@ -50,6 +50,37 @@ def test_configured_models_have_a_price():
         assert summary_service.model_pricing(model) is not None, f"{model} has no PRICING entry"
 
 
+def test_selectable_models_all_have_a_price():
+    for model in summary_service.SELECTABLE_MODELS:
+        assert summary_service.model_pricing(model) is not None, f"{model} has no PRICING entry"
+
+
+def test_gpt_6_luna_cost():
+    assert summary_service.calculate_cost("gpt-6-luna", 1_000_000, 1_000_000) == pytest.approx(0.10 + 0.50)
+
+
+def test_completion_params_per_model_kind():
+    # Classic model: temperature, the plain budget.
+    assert summary_service.completion_params("gpt-4o-mini", 0.1, 300) == {
+        "max_completion_tokens": 300, "temperature": 0.1}
+    # Effort "none" doesn't think and accepts a temperature (checked live 2026-10-22) — dropping it
+    # ran classification at the API default of 1.0.
+    assert summary_service.completion_params("gpt-6-luna", 0.1, 300) == {
+        "max_completion_tokens": 300, "reasoning_effort": "none", "temperature": 0.1}
+    # A thinking model rejects any non-default temperature, and its hidden reasoning tokens count
+    # towards the budget — without the allowance a 300-token classification can come back empty.
+    assert summary_service.completion_params("gpt-6.1-sol", 0.5, 300) == {
+        "max_completion_tokens": 300 + summary_service.REASONING_TOKEN_ALLOWANCE, "reasoning_effort": "low"}
+
+
+def test_count_tokens_uses_the_current_encoding_for_models_tiktoken_does_not_know(caplog):
+    # tiktoken has no mapping for gpt-6-luna: every call logged a warning and fell back to len/4.
+    with caplog.at_level("WARNING", logger=summary_service.logger.name):
+        tokens = summary_service.count_tokens("Merhaba dünya, bu bir test.", "gpt-6-luna")
+    assert tokens == summary_service.count_tokens("Merhaba dünya, bu bir test.", "gpt-4o")
+    assert "Failed to count tokens" not in caplog.text
+
+
 def test_unknown_model_cost_logs_a_warning(caplog):
     with caplog.at_level("WARNING", logger=summary_service.logger.name):
         summary_service.calculate_cost("some-future-model", 1000, 1000)
@@ -405,7 +436,7 @@ def test_reprocess_recovers_labelled_failed_article(reprocess_env, monkeypatch, 
 # (the Playground shares their _run_* helpers, so the public return shape must not drift).
 # ---------------------------------------------------------------------------
 
-def _fake_openai(monkeypatch, db_session, content):
+def _fake_openai(monkeypatch, db_session, content, finish_reason="stop"):
     from types import SimpleNamespace
     from sqlalchemy.orm import sessionmaker
 
@@ -414,7 +445,7 @@ def _fake_openai(monkeypatch, db_session, content):
     async def create(**kwargs):
         calls.append(kwargs)
         return SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content=content), finish_reason="stop")],
+            choices=[SimpleNamespace(message=SimpleNamespace(content=content), finish_reason=finish_reason)],
             usage=SimpleNamespace(completion_tokens=5),
         )
 
@@ -436,6 +467,43 @@ def test_categorize_returns_only_importance_priority_topics(monkeypatch, db_sess
                       "topics": [{"name": "NATO", "confidence": 0.8}]}
     assert calls[0]["model"] == settings.default_model
     assert "- NATO: Bündnis" in calls[0]["messages"][0]["content"]
+
+
+def test_pipeline_uses_the_models_chosen_in_ayarlar(monkeypatch, db_session):
+    crud.set_setting(db_session, "classification_model", "gpt-6-luna")
+    crud.set_setting(db_session, "summary_model", "gpt-4o")
+    calls = _fake_openai(monkeypatch, db_session, '{"importance": "unimportant", "priority": null, "topics": []}')
+
+    asyncio.run(summary_service.categorize_and_prioritize_article("Titel"))
+    result = asyncio.run(summary_service.generate_summary("Titel", "Inhalt", "brief"))
+
+    assert calls[0]["model"] == "gpt-6-luna"
+    assert calls[0]["reasoning_effort"] == "none"
+    assert calls[0]["temperature"] == summary_service.CLASSIFICATION_TEMPERATURE
+    assert calls[1]["model"] == "gpt-4o" and calls[1]["temperature"] == summary_service.SUMMARY_TEMPERATURE
+    assert result["model_used"] == "gpt-4o"
+
+
+def test_generate_summary_empty_string_is_an_error(monkeypatch, db_session):
+    """Review: a reasoning model that used its whole budget on thinking answers "" — that was
+    stored as an empty summary and the article marked summarized."""
+    from app.core.exceptions import SummarizationError
+
+    _fake_openai(monkeypatch, db_session, "")
+    with pytest.raises(SummarizationError):
+        asyncio.run(summary_service.generate_summary("Titel", "Inhalt", "brief"))
+
+
+def test_categorize_exhausted_reasoning_budget_is_not_retried(monkeypatch, db_session):
+    """Review: "" with finish_reason=length was parsed as bad JSON and retried with the same
+    budget — a second paid call that runs out the same way."""
+    from app.core.exceptions import TopicCategorizationError
+
+    calls = _fake_openai(monkeypatch, db_session, "", finish_reason="length")
+
+    with pytest.raises(TopicCategorizationError, match="token budget ran out"):
+        asyncio.run(summary_service.categorize_and_prioritize_article("Titel"))
+    assert len(calls) == 1
 
 
 def test_categorize_invalid_json_twice_raises(monkeypatch, db_session):

@@ -50,8 +50,9 @@ class Settings(BaseSettings):
     max_retries: int = 3
     
     # OpenAI Configuration
-    default_model: str = "gpt-4o-mini"
-    detailed_model: str = "gpt-4o"
+    # Fallbacks only: the classification / summary models chosen in Ayarlar take precedence.
+    default_model: str = "gpt-6-luna"  # classification, bulletin, brief + standard summaries
+    detailed_model: str = "gpt-6-luna"  # detailed summaries
     openai_timeout_seconds: float = 60.0  # per-request cap; SDK default (~10min) is otherwise unbounded
     # Output caps per summary type (article input is truncated by truncate_content).
     # Keep in sync with .env.example and the README env table (tests/test_config.py checks).

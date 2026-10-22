@@ -21,7 +21,7 @@ The pipeline is a `StateGraph` defined in `app/agents/graph.py`: `rss_fetcher` �
 ## LLM / summaries
 - **All OpenAI calls go through `app/services/summary_service.py`** (`categorize_and_prioritize_article`, `generate_summary`) — nodes never call the OpenAI SDK directly.
 - **Summary functions MUST return `cost`, `tokens_used`, and `model_used`**, which are persisted on the `Summary` row and accumulated into `total_cost`. Preserve cost tracking — it feeds the cost-limit settings and stats endpoints.
-- **Models and token limits come from `settings`** (`default_model`, `detailed_model`, `max_tokens_*` in `app/core/config.py`), not hardcoded strings.
+- **Models come from Ayarlar via `summary_service.get_classification_model(db)` / `get_summary_model(db)`** (env `DEFAULT_MODEL`/`DETAILED_MODEL` only as fallback); token limits from `settings.max_tokens_*`. Never hardcoded strings — see [[llm-prompts]].
 - **Respect runtime settings stored in DB** — enabled summary types only via `summary_service.get_enabled_summary_types(db)`, enabled topics only via `crud.get_enabled_topics(db)` (never re-parse the raw setting). Truncate content with `truncate_content` before summarizing.
 
 ## Scheduling
