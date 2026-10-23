@@ -1176,8 +1176,8 @@ async def process_article_by_id(article_id: int) -> dict:
 
 async def process_article(db, article_id: int) -> dict:
     """
-    Process a stored article: extract content (if needed), categorize + prioritize, then replace
-    any previous topics/summaries and generate new summaries. The single processing path for both
+    Process a stored article: categorize + prioritize (from the title), then — only if important —
+    extract content (if needed), replace any previous topics/summaries and generate new summaries. The single processing path for both
     the feed pipeline (new articles) and the "Error" group re-process.
 
     Returns a dict with `article_id`, `status`, `cost` and `success`. `success` is False when
@@ -1191,26 +1191,6 @@ async def process_article(db, article_id: int) -> dict:
     # Read into locals: release_connection() expires `article`, and touching it right
     # before an await would re-open the transaction we just ended.
     title, url = article.title, article.url
-
-    # Extract content if missing
-    content = article.cleaned_content or article.raw_content or ""
-    if not article.cleaned_content:
-        try:
-            release_connection(db)  # don't hold a pooled connection while scraping
-            extracted, page_author, page_image_url = await extract_article_content(url)
-            if page_author and not article.author:
-                crud.update_article_author(db=db, article_id=article.id, author=page_author)
-            if page_image_url and not article.image_url:
-                crud.update_article_image(db=db, article_id=article.id, image_url=page_image_url)
-            if extracted:
-                content = extracted
-                crud.update_article_content(db=db, article_id=article.id, cleaned_content=content)
-                crud.update_article_status(db=db, article_id=article.id, status="scraped")
-                crud.create_log(db=db, article_id=article.id, agent_name="web_scraper", status="success", message=f"Extracted {len(content)} characters")
-            else:
-                crud.create_log(db=db, article_id=article.id, agent_name="web_scraper", status="skipped", message="Using RSS content as fallback")
-        except Exception as e:
-            crud.create_log(db=db, article_id=article.id, agent_name="web_scraper", status="error", message="Extraction failed, using RSS fallback", error_details=str(e))
 
     total_cost = 0.0
 
@@ -1267,6 +1247,29 @@ async def process_article(db, article_id: int) -> dict:
 
     summaries_created = 0
 
+    # Extract content if missing — only now: classification sees the title alone, so pages of
+    # articles that end up filtered (or unlabelled) are never fetched.
+    content = article.cleaned_content or article.raw_content or ""
+    if is_important and not article.cleaned_content:
+        try:
+            release_connection(db)  # don't hold a pooled connection while scraping
+            extracted, page_author, page_image_url = await extract_article_content(url)
+            if page_author and not article.author:
+                crud.update_article_author(db=db, article_id=article.id, author=page_author)
+            if page_image_url and not article.image_url:
+                crud.update_article_image(db=db, article_id=article.id, image_url=page_image_url)
+            if extracted:
+                content = extracted
+                crud.update_article_content(db=db, article_id=article.id, cleaned_content=content)
+                crud.update_article_status(db=db, article_id=article.id, status="scraped")
+                crud.create_log(db=db, article_id=article.id, agent_name="web_scraper", status="success", message=f"Extracted {len(content)} characters")
+            else:
+                crud.create_log(db=db, article_id=article.id, agent_name="web_scraper", status="skipped", message="Using RSS content as fallback")
+        except Exception as e:
+            # A failed DB write above leaves the session unusable until it is rolled back.
+            db.rollback()
+            crud.create_log(db=db, article_id=article.id, agent_name="web_scraper", status="error", message="Extraction failed, using RSS fallback", error_details=str(e))
+
     # Generate summaries (only for important articles)
     if is_important:
         try:
@@ -1283,6 +1286,7 @@ async def process_article(db, article_id: int) -> dict:
                     crud.create_summary(db=db, article_id=article.id, summary_text=result["summary_text"], summary_type=summary_type, model_used=result.get("model_used"), tokens_used=result.get("tokens_used", 0), cost=result.get("cost", 0.0))
                     summaries_created += 1
                 except Exception as e:
+                    db.rollback()  # a failed create_summary write would poison the session
                     crud.create_log(db=db, article_id=article.id, agent_name="summarizer", status="error", message=f"Failed to generate {summary_type} summary", error_details=str(e))
 
             if results:

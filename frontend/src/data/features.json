@@ -27,7 +27,7 @@
         {
           "id": "agent-pipeline",
           "title": "LangGraph haber işleme hattı",
-          "description": "RSS çekme, tam içerik scraping, sınıflandırma + önceliklendirme ve özet üretimi adımlarından oluşan agent iş akışı."
+          "description": "RSS çekme, başlığa göre sınıflandırma + önceliklendirme, yalnızca önemli haberler için tam içerik scraping ve özet üretimi adımlarından oluşan agent iş akışı."
         },
         {
           "id": "openai-summaries",

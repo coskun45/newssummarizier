@@ -83,7 +83,7 @@ async def rss_fetcher_node(state: NewsProcessingState) -> Dict[str, Any]:
 
 async def _process_new_article(feed_id: int, article: Dict[str, Any]) -> Dict[str, Any]:
     """Store one new RSS entry and run it through the shared processing path
-    (`summary_service.process_article`: scrape → classify → summarize).
+    (`summary_service.process_article`: classify → if important: scrape → summarize).
 
     Never raises: returns {"url", "title", "status", "created", "cost", "error"} so one bad
     article can't stop the run.

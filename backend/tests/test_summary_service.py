@@ -182,6 +182,154 @@ def test_reprocess_unimportant_leaves_error_group_as_filtered(reprocess_env, mon
     assert crud.get_error_article_ids(db_session) == []
 
 
+def _track_extract(monkeypatch, summary_service, body="scraped body"):
+    calls = []
+
+    async def fake_extract(url):
+        calls.append(url)
+        return body, None, None
+
+    monkeypatch.setattr(summary_service, "extract_article_content", fake_extract)
+    return calls
+
+
+@pytest.mark.parametrize("categorization", [
+    {"result": {"importance": "unimportant", "priority": None, "topics": []}},
+    {"error": RuntimeError("openai down")},
+])
+def test_article_is_not_scraped_unless_classified_important(reprocess_env, monkeypatch, db_session, categorization):
+    """Classification runs on the title alone, so scraping an article that ends up filtered
+    (or unlabelled) is wasted work — the page is only fetched once it is known to be important."""
+    feed = _make_feed(db_session)
+    article = _make_article(db_session, feed.id, status="pending", cleaned_content=None)
+    extract_calls = _track_extract(monkeypatch, reprocess_env)
+    _set_categorization(monkeypatch, reprocess_env, **categorization)
+
+    asyncio.run(reprocess_env.process_article_by_id(article.id))
+
+    assert extract_calls == []
+    db_session.expire_all()
+    assert article.cleaned_content is None
+
+
+def test_important_article_is_scraped_after_classification_and_summarized_from_it(reprocess_env, monkeypatch, db_session):
+    feed = _make_feed(db_session)
+    article = _make_article(db_session, feed.id, status="pending", cleaned_content=None)
+    events = []
+
+    async def fake_extract(url):
+        events.append("scrape")
+        return "scraped body", None, None
+
+    async def fake_categorize(title):
+        events.append("classify")
+        return {"importance": "important", "priority": "high", "topics": []}
+
+    contents = []
+
+    async def fake_summary(title, content, summary_type="standard", source=None, author_hint=None):
+        contents.append(content)
+        return {"summary_text": "s", "model_used": "m", "tokens_used": 1, "cost": 0.0}
+
+    monkeypatch.setattr(reprocess_env, "extract_article_content", fake_extract)
+    monkeypatch.setattr(reprocess_env, "categorize_and_prioritize_article", fake_categorize)
+    monkeypatch.setattr(reprocess_env, "generate_summary", fake_summary)
+
+    result = asyncio.run(reprocess_env.process_article_by_id(article.id))
+
+    assert result["success"] is True
+    assert events == ["classify", "scrape"]
+    assert contents and all(c == "scraped body" for c in contents)
+    db_session.expire_all()
+    assert (article.cleaned_content, article.status) == ("scraped body", "summarized")
+
+
+def test_important_article_with_stored_content_is_not_scraped_again(reprocess_env, monkeypatch, db_session):
+    feed = _make_feed(db_session)
+    article = _make_article(db_session, feed.id, status="failed", cleaned_content="stored body")
+    extract_calls = _track_extract(monkeypatch, reprocess_env)
+    _set_categorization(monkeypatch, reprocess_env, {"importance": "important", "priority": "med", "topics": []})
+
+    result = asyncio.run(reprocess_env.process_article_by_id(article.id))
+
+    assert result["success"] is True
+    assert extract_calls == []
+
+
+def test_important_article_falls_back_to_rss_content_when_scraping_fails(reprocess_env, monkeypatch, db_session):
+    feed = _make_feed(db_session)
+    article = _make_article(db_session, feed.id, status="pending", raw_content="rss body", cleaned_content=None)
+    _set_categorization(monkeypatch, reprocess_env, {"importance": "important", "priority": "low", "topics": []})
+    contents = []
+
+    async def failing_extract(url):
+        raise RuntimeError("page down")
+
+    async def fake_summary(title, content, summary_type="standard", source=None, author_hint=None):
+        contents.append(content)
+        return {"summary_text": "s", "model_used": "m", "tokens_used": 1, "cost": 0.0}
+
+    monkeypatch.setattr(reprocess_env, "extract_article_content", failing_extract)
+    monkeypatch.setattr(reprocess_env, "generate_summary", fake_summary)
+
+    result = asyncio.run(reprocess_env.process_article_by_id(article.id))
+
+    assert result["success"] is True
+    assert contents and all(c == "rss body" for c in contents)
+    db_session.expire_all()
+    assert (article.cleaned_content, article.status) == (None, "summarized")
+
+
+def _poison_session(db):
+    """Make the session need a rollback, the way a failed flush (e.g. a DB constraint or a NUL
+    byte PostgreSQL rejects) does — every later use raises PendingRollbackError until rolled back."""
+    from app.db import models
+    db.add(models.Article(feed_id=None, url=None, title=None))
+    db.flush()
+
+
+def test_failed_content_write_after_scraping_does_not_poison_the_session(reprocess_env, monkeypatch, db_session):
+    """Regression: the scraper's except branch logged without a rollback, so a failed DB write of
+    the scraped content raised PendingRollbackError out of process_article."""
+    feed = _make_feed(db_session)
+    article = _make_article(db_session, feed.id, status="pending", raw_content="rss body", cleaned_content=None)
+    _track_extract(monkeypatch, reprocess_env)
+    _set_categorization(monkeypatch, reprocess_env, {"importance": "important", "priority": "high", "topics": []})
+    monkeypatch.setattr(crud, "update_article_content", lambda db, **kw: _poison_session(db))
+
+    result = asyncio.run(reprocess_env.process_article_by_id(article.id))
+
+    assert result["success"] is True
+    db_session.expire_all()
+    assert article.status == "summarized"
+
+
+def test_failed_summary_write_does_not_poison_the_session(reprocess_env, monkeypatch, db_session):
+    """Regression: a failed create_summary write left the session unusable, so the error log and
+    the final status update raised PendingRollbackError instead of saving the other summaries."""
+    feed = _make_feed(db_session)
+    article = _make_article(db_session, feed.id, status="pending", cleaned_content="body")
+    _set_categorization(monkeypatch, reprocess_env, {"importance": "important", "priority": "high", "topics": []})
+    real_create_summary = crud.create_summary
+    calls = []
+
+    def flaky_create_summary(db, **kwargs):
+        calls.append(kwargs["summary_type"])
+        if len(calls) == 1:
+            _poison_session(db)
+        return real_create_summary(db, **kwargs)
+
+    monkeypatch.setattr(crud, "create_summary", flaky_create_summary)
+
+    result = asyncio.run(reprocess_env.process_article_by_id(article.id))
+
+    assert len(calls) > 1, "needs at least two enabled summary types"
+    assert result["success"] is True
+    db_session.expire_all()
+    assert article.status == "summarized"
+    assert len(article.summaries) == len(calls) - 1
+
+
 def test_reprocess_task_tracks_progress_and_failures(monkeypatch):
     from app.tasks import background
     from app.services import summary_service
