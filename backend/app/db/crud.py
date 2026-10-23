@@ -2,7 +2,7 @@
 CRUD (Create, Read, Update, Delete) operations for database models.
 """
 from sqlalchemy.orm import Session, selectinload
-from sqlalchemy import desc, func, or_, case
+from sqlalchemy import desc, func, inspect, or_, case, select
 from typing import List, Optional, Dict, Any, Set
 from datetime import datetime, timezone, timedelta
 import re
@@ -91,9 +91,14 @@ def update_feed(
 
 
 def delete_feed(db: Session, feed_id: int) -> bool:
-    """Delete a feed."""
+    """Delete a feed and its articles. Articles go through the set-based bulk delete — the ORM
+    cascade loaded every article and its children one by one and timed out on large feeds.
+    No tombstones: the feed is gone, so nothing re-ingests them, and re-adding it should."""
     feed = get_feed(db, feed_id)
     if feed:
+        _bulk_delete_articles(
+            db, db.query(models.Article).filter(models.Article.feed_id == feed_id), tombstone=False
+        )
         db.delete(feed)
         db.commit()
         return True
@@ -155,6 +160,43 @@ def _tombstone_url(db: Session, url: str) -> None:
     ).first()
     if not exists:
         db.add(models.DeletedArticleUrl(url=url))
+
+
+_BULK_DELETE_CHUNK = 500  # keeps every IN (...) well under SQLite/PostgreSQL bind-parameter limits
+
+
+def _article_child_models() -> list:
+    """Models of Article's cascade-delete children (summaries, topics, logs, bulletin
+    classifications, ...). Read from the mapper so a new cascade relationship is picked up by
+    bulk deletes automatically instead of hitting a foreign-key error."""
+    return [rel.mapper.class_ for rel in inspect(models.Article).relationships if rel.cascade.delete]
+
+
+def _bulk_delete_articles(db: Session, query, tombstone: bool = True) -> int:
+    """Delete every article matched by `query` (an Article query) and its child rows,
+    tombstoning the URLs unless `tombstone` is False. Set-based: a constant number of
+    statements per chunk instead of a per-row ORM delete, which lazy-loaded every cascade and
+    timed out the "Tümünü Sil" request on large groups. Commits; returns the number deleted."""
+    rows = query.with_entities(models.Article.id, models.Article.url).all()
+    deleted = 0
+    for start in range(0, len(rows), _BULK_DELETE_CHUNK):
+        chunk = rows[start:start + _BULK_DELETE_CHUNK]
+        # Re-apply the caller's filter: a row archived or reclassified since the read above
+        # must keep its article and its children.
+        still_matching = query.filter(models.Article.id.in_([row.id for row in chunk]))
+        matching_ids = select(still_matching.with_entities(models.Article.id).subquery().c.id)
+        if tombstone:
+            urls = {row.url for row in chunk}
+            tombstoned = {r[0] for r in db.query(models.DeletedArticleUrl.url).filter(
+                models.DeletedArticleUrl.url.in_(urls)
+            ).all()}
+            db.add_all(models.DeletedArticleUrl(url=url) for url in urls - tombstoned)
+        # "fetch" evicts already-loaded objects from the session, like db.delete() did.
+        for child in _article_child_models():
+            db.query(child).filter(child.article_id.in_(matching_ids)).delete(synchronize_session="fetch")
+        deleted += still_matching.delete(synchronize_session="fetch")
+    db.commit()
+    return deleted
 
 
 def get_deleted_urls(db: Session) -> Set[str]:
@@ -515,25 +557,14 @@ def get_article_ids_by_topic(db: Session, topic_id: int) -> List[int]:
 
 def delete_articles_by_priority(db: Session, priority: str, feed_ids: List[int] = None) -> int:
     """Delete every unread article with this priority, optionally scoped to a
-    set of feeds. Returns the number deleted.
-
-    Uses a per-row ORM delete (not bulk Query.delete()) so the
-    cascade="all, delete-orphan" relationships on Article (summaries, topics,
-    logs) actually fire.
-    """
+    set of feeds. Returns the number deleted."""
     query = db.query(models.Article).filter(
         models.Article.priority == priority,
         models.Article.is_read.is_(False),
     )
     if feed_ids:
         query = query.filter(models.Article.feed_id.in_(feed_ids))
-    articles = query.all()
-    count = len(articles)
-    for article in articles:
-        _tombstone_url(db, article.url)
-        db.delete(article)
-    db.commit()
-    return count
+    return _bulk_delete_articles(db, query)
 
 
 def mark_articles_read_by_priority(db: Session, priority: str, feed_ids: List[int] = None) -> int:
@@ -555,8 +586,7 @@ def delete_articles_unimportant(db: Session, feed_ids: List[int] = None) -> int:
     set of feeds. Returns the number deleted.
 
     Mirrors delete_articles_by_priority but filters on importance == "unimportant"
-    instead of a priority level. Uses a per-row ORM delete so the cascade
-    relationships on Article (summaries, topics, logs) fire correctly.
+    instead of a priority level.
     """
     query = db.query(models.Article).filter(
         models.Article.importance == "unimportant",
@@ -564,13 +594,7 @@ def delete_articles_unimportant(db: Session, feed_ids: List[int] = None) -> int:
     )
     if feed_ids:
         query = query.filter(models.Article.feed_id.in_(feed_ids))
-    articles = query.all()
-    count = len(articles)
-    for article in articles:
-        _tombstone_url(db, article.url)
-        db.delete(article)
-    db.commit()
-    return count
+    return _bulk_delete_articles(db, query)
 
 
 def mark_articles_read_unimportant(db: Session, feed_ids: List[int] = None) -> int:

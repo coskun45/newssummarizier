@@ -6,6 +6,7 @@ bulk routes, listing/filtering, read/star toggles, counts, and detail views.
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy import event
 
 from app.db import models, crud
 from tests.conftest import (
@@ -35,16 +36,17 @@ def test_delete_all_by_priority_deletes_only_matching_unread_articles(client, ad
     to_delete_2 = _make_article(db_session, feed.id, priority="high", is_read=False)
     other_priority = _make_article(db_session, feed.id, priority="low", is_read=False)
     already_read = _make_article(db_session, feed.id, priority="high", is_read=True)
+    # Bulk delete never loads the rows, so read ids before the request expires these instances.
+    deleted_ids = {to_delete_1.id, to_delete_2.id}
+    kept_ids = {other_priority.id, already_read.id}
 
     response = client.post("/api/articles/priority/high/delete-all", headers=admin_headers)
 
     assert response.status_code == 200
     assert response.json() == {"deleted_count": 2}
     remaining_ids = {a.id for a in db_session.query(models.Article).all()}
-    assert to_delete_1.id not in remaining_ids
-    assert to_delete_2.id not in remaining_ids
-    assert other_priority.id in remaining_ids
-    assert already_read.id in remaining_ids
+    assert not deleted_ids & remaining_ids
+    assert kept_ids <= remaining_ids
 
 
 def test_archive_all_by_priority_marks_matching_unread_as_read(client, auth_headers, db_session):
@@ -70,6 +72,7 @@ def test_delete_all_by_priority_scopes_to_feed_ids(client, admin_headers, db_ses
     feed_b = _make_feed(db_session, url="https://example.com/feed-b")
     in_scope = _make_article(db_session, feed_a.id, priority="high", is_read=False)
     out_of_scope = _make_article(db_session, feed_b.id, priority="high", is_read=False)
+    in_scope_id, out_of_scope_id = in_scope.id, out_of_scope.id
 
     response = client.post(
         "/api/articles/priority/high/delete-all",
@@ -80,8 +83,8 @@ def test_delete_all_by_priority_scopes_to_feed_ids(client, admin_headers, db_ses
     assert response.status_code == 200
     assert response.json() == {"deleted_count": 1}
     remaining_ids = {a.id for a in db_session.query(models.Article).all()}
-    assert in_scope.id not in remaining_ids
-    assert out_of_scope.id in remaining_ids
+    assert in_scope_id not in remaining_ids
+    assert out_of_scope_id in remaining_ids
 
 
 # ==================== DELETE /{article_id} ====================
@@ -506,14 +509,17 @@ def test_delete_unimportant_scopes_to_importance_and_unread(client, admin_header
                                importance="important", is_read=False)
     unset = _make_article(db_session, feed.id, url="https://example.com/d4",
                            importance=None, is_read=False)
+    # Bulk delete never loads the rows, so read ids before the request expires these instances.
+    to_delete_id = to_delete.id
+    kept_ids = {read_unimportant.id, important.id, unset.id}
 
     response = client.post("/api/articles/unimportant/delete-all", headers=admin_headers)
 
     assert response.status_code == 200
     assert response.json() == {"deleted_count": 1}
     remaining_ids = {a.id for a in db_session.query(models.Article).all()}
-    assert to_delete.id not in remaining_ids
-    assert {read_unimportant.id, important.id, unset.id}.issubset(remaining_ids)
+    assert to_delete_id not in remaining_ids
+    assert kept_ids.issubset(remaining_ids)
 
 
 def test_delete_unimportant_scopes_to_feed_ids(client, admin_headers, db_session):
@@ -523,6 +529,7 @@ def test_delete_unimportant_scopes_to_feed_ids(client, admin_headers, db_session
                               importance="unimportant", is_read=False)
     out_of_scope = _make_article(db_session, feed_b.id, url="https://example.com/e2",
                                   importance="unimportant", is_read=False)
+    in_scope_id, out_of_scope_id = in_scope.id, out_of_scope.id
 
     response = client.post(
         "/api/articles/unimportant/delete-all",
@@ -533,8 +540,8 @@ def test_delete_unimportant_scopes_to_feed_ids(client, admin_headers, db_session
     assert response.status_code == 200
     assert response.json() == {"deleted_count": 1}
     remaining_ids = {a.id for a in db_session.query(models.Article).all()}
-    assert in_scope.id not in remaining_ids
-    assert out_of_scope.id in remaining_ids
+    assert in_scope_id not in remaining_ids
+    assert out_of_scope_id in remaining_ids
 
 
 def test_archive_unimportant_marks_matching_read_only(client, auth_headers, db_session):
@@ -553,6 +560,142 @@ def test_archive_unimportant_marks_matching_read_only(client, auth_headers, db_s
     assert to_archive.is_read is True
     assert important.is_read is False
     assert db_session.query(models.Article).filter(models.Article.id == to_archive.id).first() is not None
+
+
+# ==================== bulk delete cost (Önemsiz/priority "Tümünü Sil" timeout) ====================
+
+def _make_full_article(db_session, feed_id, topic_id, **kwargs):
+    """An article with every child row a real pipeline run leaves behind."""
+    article = _make_article(db_session, feed_id, **kwargs)
+    _make_summary(db_session, article.id)
+    _make_article_topic(db_session, article.id, topic_id)
+    _make_bulletin_classification(db_session, article.id)
+    db_session.add(models.ProcessingLog(article_id=article.id, agent_name="classifier", status="success"))
+    db_session.commit()
+    return article
+
+
+def _count_statements(db_session, fn):
+    """Run fn() and return how many SQL statements it sent to the database."""
+    engine = db_session.get_bind()
+    statements = []
+
+    def _on_execute(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", _on_execute)
+    try:
+        fn()
+    finally:
+        event.remove(engine, "before_cursor_execute", _on_execute)
+    return len(statements)
+
+
+@pytest.mark.parametrize("delete_all, article_kwargs", [
+    (lambda db: crud.delete_articles_unimportant(db), {"importance": "unimportant"}),
+    (lambda db: crud.delete_articles_by_priority(db, "low"), {"priority": "low"}),
+])
+def test_bulk_delete_query_count_does_not_grow_with_article_count(db_session, delete_all, article_kwargs):
+    """Deleting every Önemsiz/priority article used to cost ~10 queries per article (per-row
+    ORM delete + lazy-loaded cascades), so a few thousand rows ran past the 20s client timeout."""
+    feed = _make_feed(db_session)
+    topic = _make_topic(db_session)
+
+    def statements_to_delete(n):
+        for _ in range(n):
+            _make_full_article(db_session, feed.id, topic.id, **article_kwargs)
+        return _count_statements(db_session, lambda: delete_all(db_session))
+
+    assert statements_to_delete(3) == statements_to_delete(30)
+
+
+def test_bulk_delete_removes_children_and_tombstones_urls(db_session):
+    feed = _make_feed(db_session)
+    topic = _make_topic(db_session)
+    doomed = [_make_full_article(db_session, feed.id, topic.id, importance="unimportant") for _ in range(3)]
+    kept_read = _make_full_article(db_session, feed.id, topic.id, importance="unimportant", is_read=True)
+    kept_important = _make_full_article(db_session, feed.id, topic.id, importance="important")
+    doomed_urls = {a.url for a in doomed}
+    doomed_ids = [a.id for a in doomed]
+    kept_ids = {kept_read.id, kept_important.id}
+    # A URL that is already tombstoned must not trip the deleted_article_urls primary key.
+    db_session.add(models.DeletedArticleUrl(url=doomed[0].url))
+    db_session.commit()
+
+    assert crud.delete_articles_unimportant(db_session) == 3
+
+    db_session.expire_all()
+    assert {a.id for a in db_session.query(models.Article).all()} == kept_ids
+    for child in (models.Summary, models.ArticleTopic, models.ProcessingLog,
+                  models.ArticleBulletinClassification):
+        assert db_session.query(child).filter(child.article_id.in_(doomed_ids)).count() == 0
+        assert {row.article_id for row in db_session.query(child).all()} == kept_ids
+    assert doomed_urls <= crud.get_deleted_urls(db_session)
+
+
+def test_bulk_delete_spans_chunks(db_session, monkeypatch):
+    """Groups bigger than one chunk (500 in prod) are deleted completely across chunk boundaries."""
+    monkeypatch.setattr(crud, "_BULK_DELETE_CHUNK", 2)
+    feed = _make_feed(db_session)
+    topic = _make_topic(db_session)
+    doomed = [_make_full_article(db_session, feed.id, topic.id, importance="unimportant") for _ in range(5)]
+    doomed_urls = {a.url for a in doomed}
+
+    assert crud.delete_articles_unimportant(db_session) == 5
+
+    assert db_session.query(models.Article).count() == 0
+    for child in crud._article_child_models():
+        assert db_session.query(child).count() == 0
+    assert doomed_urls <= crud.get_deleted_urls(db_session)
+
+
+def test_bulk_delete_keeps_a_row_that_stopped_matching_mid_delete(db_session):
+    """An article archived between reading the ids and deleting them keeps its row and children."""
+    feed = _make_feed(db_session)
+    topic = _make_topic(db_session)
+    doomed = _make_full_article(db_session, feed.id, topic.id, importance="unimportant")
+    archived_meanwhile = _make_full_article(db_session, feed.id, topic.id, importance="unimportant")
+    doomed_id, archived_id = doomed.id, archived_meanwhile.id
+    calls = []
+
+    @event.listens_for(db_session, "do_orm_execute")
+    def _archive_after_the_read(state):
+        calls.append(state)
+        if len(calls) == 2:  # the id/url read has run; the deletes haven't
+            db_session.execute(models.Article.__table__.update()
+                               .where(models.Article.id == archived_id).values(is_read=True))
+
+    try:
+        assert crud.delete_articles_unimportant(db_session) == 1
+    finally:
+        event.remove(db_session, "do_orm_execute", _archive_after_the_read)
+
+    assert {a.id for a in db_session.query(models.Article).all()} == {archived_id}
+    for child in crud._article_child_models():
+        assert {row.article_id for row in db_session.query(child).all()} == {archived_id}
+    assert doomed_id not in {row.article_id for row in db_session.query(models.Summary).all()}
+
+
+def test_article_child_models_cover_every_cascade_child():
+    assert set(crud._article_child_models()) == {
+        models.Summary, models.ArticleTopic, models.ProcessingLog, models.ArticleBulletinClassification,
+    }
+
+
+def test_delete_feed_query_count_does_not_grow_with_article_count(db_session):
+    """Feed deletion cascaded per article like "Tümünü Sil" did, so large feeds timed out too."""
+    topic = _make_topic(db_session)
+
+    def statements_to_delete_feed(n):
+        feed = _make_feed(db_session, url=f"https://example.com/feed-{n}")
+        for _ in range(n):
+            _make_full_article(db_session, feed.id, topic.id)
+        return _count_statements(db_session, lambda: crud.delete_feed(db_session, feed.id))
+
+    assert statements_to_delete_feed(3) == statements_to_delete_feed(30)
+    assert db_session.query(models.Article).count() == 0
+    # The feed itself is gone, so its articles are not tombstoned: re-adding the feed re-ingests them.
+    assert crud.get_deleted_urls(db_session) == set()
 
 
 # ==================== GET /counts ====================
