@@ -20,8 +20,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 STATE_MAX_AGE = 7 * 24 * 3600
 
-# (trigger path prefixes, companion file, what to do). A companion counts as updated when it changed
-# during this session.
+# (trigger path prefixes, companion file or directory prefix, what to do). A companion counts as
+# updated when it (or, for a directory, any file under it) changed during this session.
 RULES = [
     (("backend/app/api/routes/", "backend/app/agents/", "backend/app/tasks/", "frontend/src/components/"),
      "frontend/src/data/features.json",
@@ -37,6 +37,16 @@ RULES = [
      ("backend/app/db/models.py changed but backend/app/db/database.py did not. A new column must also "
       "be appended to `article_columns` in init_db() or existing PostgreSQL DBs never get it — or say "
       "why no column was added.")),
+    (("backend/app/",),
+     "backend/tests/",
+     ("Backend code changed but nothing under backend/tests/ did (see backend/.claude/rules/testing.md). "
+      "Add or extend a pytest test that fails if this behavior regresses — or, if no behavior changed "
+      "(pure refactor/comment), say so in one line and stop.")),
+    (("frontend/src/components/", "frontend/src/hooks/", "frontend/src/services/", "frontend/src/App.tsx"),
+     "frontend/tests/",
+     ("Frontend code changed but nothing under frontend/tests/ did. Add or extend a Playwright spec that "
+      "fails if this behavior regresses — or, if no behavior changed (pure refactor/styling), say so in "
+      "one line and stop.")),
 ]
 
 
@@ -104,7 +114,7 @@ def check(root, session_id):
     reasons, fingerprint = [], []
     for prefixes, companion, message in RULES:
         triggers = sorted(p for p in touched if p.startswith(prefixes))
-        if triggers and companion not in touched:
+        if triggers and not any(p.startswith(companion) for p in touched):
             reasons.append(f"- {message} (changed: {', '.join(triggers)})")
             fingerprint.append([companion] + [f"{p}:{now.get(p)}" for p in triggers])
     if not reasons:

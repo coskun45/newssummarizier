@@ -77,6 +77,39 @@ def test_companion_updated_in_session_is_fine(repo):
     drift.baseline(repo, "s1")
     _write(repo, "backend/app/api/routes/articles.py", "v2")
     _write(repo, "frontend/src/data/features.json", '{"versions": []}')
+    _write(repo, "backend/tests/test_articles.py", "def test_x(): pass")
+
+    assert drift.check(repo, "s1") is None
+
+
+def test_backend_change_without_test_asks_for_pytest(repo):
+    drift.baseline(repo, "s1")
+    _write(repo, "backend/app/api/routes/articles.py", "v2")
+    _write(repo, "frontend/src/data/features.json", '{"versions": []}')
+
+    reason = drift.check(repo, "s1")
+
+    assert "backend/tests/" in reason
+    assert "features.json" not in reason.split("(changed")[0]
+
+
+def test_frontend_change_without_spec_asks_for_playwright(repo):
+    drift.baseline(repo, "s1")
+    _write(repo, "frontend/src/hooks/useApi.ts", "v2")
+
+    reason = drift.check(repo, "s1")
+
+    assert "frontend/tests/" in reason
+    assert "backend/tests/" not in reason
+
+
+def test_any_new_test_file_satisfies_the_test_rules(repo):
+    drift.baseline(repo, "s1")
+    _write(repo, "backend/app/db/crud.py", "v2")
+    _write(repo, "backend/tests/test_new.py", "def test_x(): pass")
+    _write(repo, "frontend/src/components/Foo/Foo.tsx", "v1")
+    _write(repo, "frontend/tests/foo.spec.ts", "test")
+    _write(repo, "frontend/src/data/features.json", '{"versions": []}')
 
     assert drift.check(repo, "s1") is None
 

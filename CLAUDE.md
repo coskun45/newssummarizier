@@ -82,6 +82,7 @@ Hooks in `.claude/settings.json` (scripts in `.claude/hooks/`) enforce part of t
 run on every edit under `backend/app/` / `frontend/src/` (fix what they report, same checks as CI); writing
 `.env*` (except `.env.example`) or `git add`-ing it is denied. At the end of a turn, the Stop hook
 (`drift_check.py`) flags companions you changed code without: routes/agents/tasks/components →
-`features.json`, `config.py` → `.env.example`, `models.py` → `init_db()` — update it, or say in one line
+`features.json`, `config.py` → `.env.example`, `models.py` → `init_db()`, `backend/app/` → `backend/tests/`,
+frontend components/hooks/services → `frontend/tests/` — update it, or say in one line
 why it isn't needed. At session start, `session_context.py` flags rule `paths:` globs that match no file and
 asks you to promote new auto-memory notes into rules with `/add-rule`; act on both.
