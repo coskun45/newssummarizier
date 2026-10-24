@@ -321,6 +321,7 @@ Aşağıdaki tablo öne çıkanlardır; tam liste `.env.example`'dadır. Contain
 | `MAX_TOKENS_OUTPUT_BRIEF` / `_STANDARD` / `_DETAILED` | `1500` / `3000` / `10000` | Özet tipine göre çıktı token limiti |
 | `DAILY_COST_LIMIT` / `MONTHLY_COST_LIMIT` | `10.0` / `100.0` | Maliyet limitleri (USD) — sınıflandırma, özet, bülten ve Playground dahil tüm OpenAI çağrılarının toplamı |
 | `FEED_REFRESH_INTERVAL` | `3600` | Otomatik feed yenileme aralığının varsayılanı (saniye); admin Ayarlar › RSS Beslemeleri'nden değiştirir |
+| `MAX_ARTICLE_AGE_HOURS` | `72` | Bu kadar saatten eski RSS kayıtları alınmaz (`0` = sınır yok); varsayılan değer, admin Ayarlar › RSS Beslemeleri'nden değiştirir |
 | `SMTP_HOST` / `SMTP_PORT` | – / `587` | Bülten aboneliği maillerinin gönderildiği SMTP sunucusu. `SMTP_HOST` boşken mail gönderilmez, Bülten › Abonelikler'de uyarı görünür |
 | `SMTP_USERNAME` / `SMTP_PASSWORD` | – | SMTP kimlik bilgileri (boşsa kimlik doğrulama yapılmaz) |
 | `SMTP_FROM` | – (boşsa `SMTP_USERNAME`) | Gönderen adres, ör. `Bülten <bulten@example.com>` — teslim edilebilirlik için alan adının SPF/DKIM kayıtları bu sunucuya izin vermeli |
@@ -536,6 +537,7 @@ DATABASE_URL=postgresql+psycopg2://bulten:changeme@localhost:5432/bulten
 # RSS Feed
 DEFAULT_FEED_URL=https://rss.dw.com/atom/rss-de-all
 FEED_REFRESH_INTERVAL=3600  # 1 saat (Ayarlar'dan değiştirilebilir)
+MAX_ARTICLE_AGE_HOURS=72   # daha eski RSS kayıtları alınmaz, 0 = sınır yok
 
 # Scraping
 SCRAPING_ENABLED=True

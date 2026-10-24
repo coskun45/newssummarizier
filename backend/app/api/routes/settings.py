@@ -23,6 +23,7 @@ router = APIRouter()
 
 MIN_REFRESH_INTERVAL = 5 * 60  # seconds
 MAX_REFRESH_INTERVAL = 24 * 3600
+MAX_ARTICLE_AGE_HOURS = 365 * 24  # 0 = no limit
 
 
 class UserSettings(BaseModel):
@@ -31,6 +32,7 @@ class UserSettings(BaseModel):
     enabled_topics: Optional[str] = None  # Comma-separated topic IDs. Empty = all topics
     enabled_summary_types: Optional[str] = None  # Comma-separated, at least one of SUMMARY_TYPES
     feed_refresh_interval: Optional[int] = Field(None, ge=MIN_REFRESH_INTERVAL, le=MAX_REFRESH_INTERVAL)  # seconds
+    max_article_age_hours: Optional[int] = Field(None, ge=0, le=MAX_ARTICLE_AGE_HOURS)  # 0 = no limit
     # One of SELECTABLE_MODELS; "" clears the choice (back to DEFAULT_MODEL / DETAILED_MODEL).
     classification_model: Optional[str] = None
     summary_model: Optional[str] = None  # used by every summary type
@@ -85,6 +87,7 @@ class SettingsResponse(BaseModel):
     enabled_topics: str
     enabled_summary_types: str
     feed_refresh_interval: int
+    max_article_age_hours: int  # RSS entries older than this are skipped; 0 = no limit
     # The choice saved in Ayarlar; None = not chosen yet, `default_models` apply.
     classification_model: Optional[str]
     summary_model: Optional[str]
@@ -97,6 +100,7 @@ def _current_settings(db: Session) -> SettingsResponse:
         enabled_topics=crud.get_setting(db, "enabled_topics") or "",
         enabled_summary_types=",".join(get_enabled_summary_types(db)),
         feed_refresh_interval=crud.get_feed_refresh_interval(db),
+        max_article_age_hours=crud.get_max_article_age_hours(db),
         classification_model=saved_model(db, "classification_model"),
         summary_model=saved_model(db, "summary_model"),
         default_models=DefaultModels(
@@ -132,6 +136,8 @@ def update_settings(
     interval_changed = interval is not None and interval != crud.get_feed_refresh_interval(db)
     if interval is not None:
         crud.set_setting(db, "feed_refresh_interval", str(interval))
+    if update.max_article_age_hours is not None:
+        crud.set_setting(db, "max_article_age_hours", str(update.max_article_age_hours))
     for key in ("enabled_topics", "enabled_summary_types", "classification_model", "summary_model"):
         value = getattr(update, key)
         if value is not None:

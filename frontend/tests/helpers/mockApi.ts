@@ -536,6 +536,7 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
       enabled_topics: '',
       enabled_summary_types: 'brief,standard,detailed',
       feed_refresh_interval: 3600, // backend default: hourly
+      max_article_age_hours: 72, // backend default
       classification_model: null, // nothing chosen in Ayarlar yet
       summary_model: null,
       default_models: { classification: 'gpt-6-luna', summary: 'gpt-6-luna', detailed_summary: 'gpt-6-luna' },

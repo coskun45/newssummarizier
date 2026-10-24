@@ -25,6 +25,15 @@ const REFRESH_INTERVAL_OPTIONS: { value: number; label: string }[] = [
   { value: 86400, label: '24 saat' },
 ];
 
+// RSS entries published longer ago than this are not ingested (hours; 0 = no limit).
+const MAX_ARTICLE_AGE_OPTIONS: { value: number; label: string }[] = [
+  { value: 24, label: '24 saat' },
+  { value: 48, label: '48 saat' },
+  { value: 72, label: '72 saat' },
+  { value: 168, label: '1 hafta' },
+  { value: 0, label: 'Sınır yok' },
+];
+
 const ADMIN_ONLY_NOTE = 'Bu ayarları yalnızca yöneticiler değiştirebilir.';
 
 function Settings({ category, currentUser }: SettingsProps) {
@@ -48,6 +57,7 @@ function Settings({ category, currentUser }: SettingsProps) {
   const [enabledTopicIds, setEnabledTopicIds] = useState<number[]>([]);
   const [enabledSummaryTypes, setEnabledSummaryTypes] = useState<string[]>([]);
   const [refreshInterval, setRefreshInterval] = useState<number>(3600);
+  const [maxArticleAge, setMaxArticleAge] = useState<number>(72);
   const [classificationModel, setClassificationModel] = useState<string | null>(null);
   const [summaryModel, setSummaryModel] = useState<string | null>(null);
   const [showAddTopic, setShowAddTopic] = useState(false);
@@ -81,6 +91,7 @@ function Settings({ category, currentUser }: SettingsProps) {
   const serverTopics = settings?.enabled_topics;
   const serverSummaryTypes = settings?.enabled_summary_types;
   const serverRefreshInterval = settings?.feed_refresh_interval;
+  const serverMaxArticleAge = settings?.max_article_age_hours;
   const serverClassificationModel = settings?.classification_model;
   const serverSummaryModel = settings?.summary_model;
 
@@ -101,6 +112,10 @@ function Settings({ category, currentUser }: SettingsProps) {
   useEffect(() => {
     if (serverRefreshInterval !== undefined) setRefreshInterval(serverRefreshInterval);
   }, [serverRefreshInterval]);
+
+  useEffect(() => {
+    if (serverMaxArticleAge !== undefined) setMaxArticleAge(serverMaxArticleAge);
+  }, [serverMaxArticleAge]);
 
   useEffect(() => {
     if (serverClassificationModel !== undefined) setClassificationModel(serverClassificationModel);
@@ -305,6 +320,7 @@ function Settings({ category, currentUser }: SettingsProps) {
   // Each tab saves only its own fields (PUT /settings is partial): saving one tab must never put
   // an unsaved edit from another tab live — e.g. an expensive model picked but not saved.
   const saveRefreshInterval = () => updateSettings({ feed_refresh_interval: refreshInterval });
+  const saveMaxArticleAge = () => updateSettings({ max_article_age_hours: maxArticleAge });
   const saveTopics = () => updateSettings({ enabled_topics: enabledTopicIds.join(',') });
   const saveSummaryTypes = () => updateSettings({ enabled_summary_types: enabledSummaryTypes.join(',') });
   const modelsChanged =
@@ -359,6 +375,37 @@ function Settings({ category, currentUser }: SettingsProps) {
                       ) : (
                         <p className="section-description">{ADMIN_ONLY_NOTE}</p>
                       )}
+                    </div>
+                    <div className="refresh-interval-row">
+                      <label htmlFor="max-article-age" className="checkbox-text">
+                        En fazla haber yaşı
+                      </label>
+                      <select
+                        id="max-article-age"
+                        className="topic-input"
+                        value={maxArticleAge}
+                        onChange={(e) => setMaxArticleAge(Number(e.target.value))}
+                        disabled={!isAdmin || isSaving}
+                      >
+                        {!MAX_ARTICLE_AGE_OPTIONS.some(o => o.value === maxArticleAge) && (
+                          <option value={maxArticleAge}>{maxArticleAge} saat</option>
+                        )}
+                        {MAX_ARTICLE_AGE_OPTIONS.map(o => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </select>
+                      {isAdmin && (
+                        <button
+                          className="save-button"
+                          onClick={saveMaxArticleAge}
+                          disabled={isSaving || maxArticleAge === settings?.max_article_age_hours}
+                        >
+                          {isSaving ? 'Kaydediliyor...' : 'Yaş sınırını kaydet'}
+                        </button>
+                      )}
+                      <p className="section-description">
+                        Bundan eski yayın tarihli RSS kayıtları alınmaz.
+                      </p>
                     </div>
                     <div className="user-list">
                       {feeds?.map(feed => (

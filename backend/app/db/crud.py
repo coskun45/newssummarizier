@@ -1129,6 +1129,15 @@ def get_feed_refresh_interval(db: Session) -> int:
         return settings.feed_refresh_interval
 
 
+def get_max_article_age_hours(db: Session) -> int:
+    """Hours after which an RSS entry is too old to ingest (`max_article_age_hours` setting); 0 = no limit."""
+    raw = get_setting(db, "max_article_age_hours")
+    try:
+        return int(raw) if raw else settings.max_article_age_hours
+    except ValueError:
+        return settings.max_article_age_hours
+
+
 def set_setting(db: Session, key: str, value: str) -> models.Settings:
     """Set a setting value."""
     setting = db.query(models.Settings).filter(models.Settings.key == key).first()

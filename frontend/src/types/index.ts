@@ -108,6 +108,8 @@ export interface UserSettings {
     enabled_topics: string;
     enabled_summary_types: string;
     feed_refresh_interval: number;
+    /** RSS entries older than this (hours) are not ingested; 0 = no limit. */
+    max_article_age_hours: number;
     /** Saved choice; null = not chosen yet, `default_models` apply. */
     classification_model: string | null;
     /** Saved choice for every summary type (kısa, standart, detaylı); null = not chosen yet. */
@@ -121,6 +123,7 @@ export interface UserSettingsUpdate {
     enabled_topics?: string;
     enabled_summary_types?: string;
     feed_refresh_interval?: number;
+    max_article_age_hours?: number;
     /** A SELECTABLE model, or "" to clear the choice (back to the server default). */
     classification_model?: string;
     summary_model?: string;

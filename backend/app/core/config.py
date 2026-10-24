@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     # RSS Feed Configuration
     default_feed_url: str = "https://rss.dw.com/atom/rss-de-all"
     feed_refresh_interval: int = 3600  # seconds between scheduled refreshes; default until changed in Ayarlar
+    # RSS entries published longer ago are skipped (feeds like DW's also list months-old background
+    # pieces). 0 = no limit. Default until changed in Ayarlar.
+    max_article_age_hours: int = 72
 
     # LangGraph workflow recursion limit. The graph takes a fixed number of steps
     # (rss_fetcher -> article_processor, which loops over all new articles itself),

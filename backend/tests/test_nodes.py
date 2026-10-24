@@ -2,6 +2,7 @@
 Tests for app/agents/nodes.py (LangGraph pipeline nodes).
 """
 import asyncio
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -38,6 +39,53 @@ def test_rss_fetcher_node_dedupes_same_url_within_one_poll(monkeypatch, db_sessi
     assert out["total_articles"] == 1
     urls = [a["url"] for a in out["rss_articles"]]
     assert urls == ["https://example.com/dup-article"]
+
+
+def _run_fetcher_with(monkeypatch, db_session, entries):
+    """URLs rss_fetcher_node passes on for a feed listing `entries` (runs against the test DB)."""
+    monkeypatch.setattr(nodes, "SessionLocal", sessionmaker(bind=db_session.get_bind(), expire_on_commit=False))
+
+    async def fake_fetch_rss_feed(feed_url):
+        return [dict(e) for e in entries]
+
+    monkeypatch.setattr(nodes, "fetch_rss_feed", fake_fetch_rss_feed)
+    state = {"feed_id": 1, "feed_url": "https://example.com/feed", "errors": []}
+    out = asyncio.run(nodes.rss_fetcher_node(state))
+    return [a["url"] for a in out["rss_articles"]]
+
+
+def _dated_entry(url, published_at):
+    return {"url": url, "title": url, "author": None, "published_at": published_at,
+            "raw_content": None, "image_url": None}
+
+
+def test_rss_fetcher_node_skips_entries_older_than_max_age(monkeypatch, db_session):
+    """Regression: DW's rss-de-all feed also lists months-old background pieces next to the
+    current story they relate to (e.g. a 25.01.2026 article on 24.10.2026). The node only
+    deduped by URL, so each one was ingested as a "new" article, classified, scraped and
+    summarized, and showed up as "9 ay önce"."""
+    now = datetime.now(timezone.utc)
+    urls = _run_fetcher_with(monkeypatch, db_session, [
+        _dated_entry("https://example.com/fresh", now - timedelta(hours=2)),
+        _dated_entry("https://example.com/background", now - timedelta(days=272)),
+        _dated_entry("https://example.com/undated", None),
+    ])
+    # Default limit is 72h; an entry without a date can't be judged and is kept.
+    assert urls == ["https://example.com/fresh", "https://example.com/undated"]
+
+
+def test_rss_fetcher_node_max_age_follows_setting(monkeypatch, db_session):
+    now = datetime.now(timezone.utc)
+    entries = [_dated_entry("https://example.com/five-days", now - timedelta(days=5))]
+
+    crud.set_setting(db_session, "max_article_age_hours", "168")
+    assert _run_fetcher_with(monkeypatch, db_session, entries) == ["https://example.com/five-days"]
+
+    crud.set_setting(db_session, "max_article_age_hours", "24")
+    assert _run_fetcher_with(monkeypatch, db_session, entries) == []
+
+    crud.set_setting(db_session, "max_article_age_hours", "0")  # 0 = no limit
+    assert _run_fetcher_with(monkeypatch, db_session, entries) == ["https://example.com/five-days"]
 
 
 # ---------------------------------------------------------------------------

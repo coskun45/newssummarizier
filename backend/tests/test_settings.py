@@ -104,6 +104,31 @@ def test_put_settings_rejects_out_of_range_refresh_interval(client, admin_header
     assert response.status_code == 422
 
 
+def test_max_article_age_defaults_to_72h_and_is_saved(client, admin_headers):
+    from app.core.config import Settings, settings
+
+    assert Settings.model_fields["max_article_age_hours"].default == 72
+    body = client.get("/api/settings/", headers=admin_headers).json()
+    assert body["max_article_age_hours"] == settings.max_article_age_hours
+
+    response = client.put("/api/settings/", json={"max_article_age_hours": 0}, headers=admin_headers)
+
+    assert response.status_code == 200
+    assert response.json()["max_article_age_hours"] == 0  # 0 = no limit
+    assert response.json()["feed_refresh_interval"] == body["feed_refresh_interval"]  # untouched
+
+
+@pytest.mark.parametrize("hours", [-1, 365 * 24 + 1])
+def test_put_settings_rejects_out_of_range_max_article_age(client, admin_headers, hours):
+    response = client.put("/api/settings/", json={"max_article_age_hours": hours}, headers=admin_headers)
+    assert response.status_code == 422
+
+
+def test_put_settings_max_article_age_requires_admin(client, auth_headers):
+    response = client.put("/api/settings/", json={"max_article_age_hours": 24}, headers=auth_headers)
+    assert response.status_code == 403
+
+
 def test_put_settings_rejects_malformed_topic_ids(client, admin_headers):
     response = _put(client, admin_headers, enabled_topics="1,abc")
     assert response.status_code == 422

@@ -82,7 +82,7 @@
         {
           "id": "settings-feeds",
           "title": "RSS Beslemeleri",
-          "description": "RSS beslemesi ekleme, düzenleme, silme ve bağlantı testi; tüm beslemelerin otomatik yenileme aralığı da buradan seçilir. Besleme adı zorunludur; haberlerde \"Kaynak\" olarak görünür."
+          "description": "RSS beslemesi ekleme, düzenleme, silme ve bağlantı testi; tüm beslemelerin otomatik yenileme aralığı ve en fazla haber yaşı (varsayılan 72 saat; daha eski RSS kayıtları alınmaz) da buradan seçilir. Besleme adı zorunludur; haberlerde \"Kaynak\" olarak görünür."
         },
         {
           "id": "settings-topics",

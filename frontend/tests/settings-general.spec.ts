@@ -114,6 +114,26 @@ test('the automatic refresh interval is saved from RSS Beslemeleri', async ({ pa
   await expect(page.getByRole('button', { name: 'Aralığı kaydet' })).toBeDisabled();
 });
 
+test('the max article age is saved from RSS Beslemeleri', async ({ page }) => {
+  // DW's feed also lists months-old background pieces; the cutoff that skips them is set here
+  await loginAs(page, ADMIN_USER);
+  await mockApi(page, { articles: [] });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Ayarlar' }).click();
+  await page.getByRole('button', { name: 'RSS Beslemeleri' }).click();
+
+  const select = page.getByLabel('En fazla haber yaşı');
+  await expect(select).toHaveValue('72');
+  await select.selectOption({ label: 'Sınır yok' });
+
+  const req = page.waitForRequest(
+    (r) => r.url().endsWith('/api/settings/') && r.method() === 'PUT' && r.postDataJSON().max_article_age_hours === 0
+  );
+  await page.getByRole('button', { name: 'Yaş sınırını kaydet' }).click();
+  expect(Object.keys((await req).postDataJSON())).toEqual(['max_article_age_hours']);
+  await expect(page.getByRole('button', { name: 'Yaş sınırını kaydet' })).toBeDisabled();
+});
+
 async function openModelsCategory(page: import('@playwright/test').Page) {
   await page.getByRole('button', { name: 'Ayarlar' }).click();
   await page.getByRole('button', { name: 'Yapay Zekâ Modelleri' }).click();

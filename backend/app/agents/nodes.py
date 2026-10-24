@@ -8,7 +8,7 @@ from app.agents.tools import fetch_rss_feed
 from app.services.summary_service import process_article
 from app.db.database import SessionLocal
 from app.db import crud
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +29,20 @@ async def rss_fetcher_node(state: NewsProcessingState) -> Dict[str, Any]:
         db = SessionLocal()
         try:
             deleted_urls = crud.get_deleted_urls(db)
+            # Feeds like DW's rss-de-all also list months-old background pieces next to the
+            # current story; without a cutoff each one is ingested (and paid for) as "new".
+            # Undated entries can't be judged and are kept.
+            max_age_hours = crud.get_max_article_age_hours(db)
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours) if max_age_hours > 0 else None
             seen_urls = set()
             new_articles = []
             for article in articles:
                 if article["url"] in deleted_urls:
                     logger.info(f"Article was deleted by user, skipping: {article['url']}")
+                    continue
+                published_at = article.get("published_at")
+                if cutoff and published_at and published_at < cutoff:
+                    logger.info(f"Article older than {max_age_hours}h, skipping: {article['url']}")
                     continue
                 if article["url"] in seen_urls:
                     # Some feeds (e.g. multi-category aggregates) list the same
