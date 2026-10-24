@@ -936,3 +936,28 @@ def test_reprocess_keeps_the_feed_author_as_hint_after_a_run_cleared_it(reproces
 
     assert reprocess_env._summary_calls
     assert all(c["author_hint"] == "Max Bird" for c in reprocess_env._summary_calls)
+
+
+def test_failed_image_write_keeps_the_scraped_content(reprocess_env, monkeypatch, db_session, fake_pages):
+    """Regression: the og:image/author writes ran before the scraped text was kept, so a failed
+    image write rolled back and the article was summarized from the RSS teaser instead."""
+    feed = _make_feed(db_session)
+    article = _make_article(db_session, feed.id, status="pending", raw_content="rss teaser", cleaned_content=None)
+    fake_pages.pages[article.url] = ("full page body", None, "https://img.example.com/x.jpg")
+    _set_categorization(monkeypatch, reprocess_env, {"importance": "important", "priority": "high", "topics": []})
+    monkeypatch.setattr(crud, "update_article_image", lambda db, **kw: _poison_session(db))
+    contents = []
+    real_generate = reprocess_env.generate_summary
+
+    async def tracking_summary(title, content, **kwargs):
+        contents.append(content)
+        return await real_generate(title, content, **kwargs)
+
+    monkeypatch.setattr(reprocess_env, "generate_summary", tracking_summary)
+
+    result = asyncio.run(reprocess_env.process_article_by_id(article.id))
+
+    assert result["success"] is True
+    assert contents and all(c == "full page body" for c in contents)
+    db_session.expire_all()
+    assert article.cleaned_content == "full page body"

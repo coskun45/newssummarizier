@@ -43,6 +43,29 @@ def fake_dns(monkeypatch):
     monkeypatch.setattr(url_safety, "_resolve_host", resolve, raising=False)
 
 
+class FakePages:
+    """Stand-in for the page scraper: `pages[url] = (content, author, image_url)`; any other URL
+    yields nothing, as a page without extractable text does. `calls` lists the fetched URLs."""
+
+    def __init__(self):
+        self.pages = {}
+        self.calls = []
+
+    async def extract(self, url):
+        self.calls.append(url)
+        return self.pages.get(url, (None, None, None))
+
+
+@pytest.fixture(autouse=True)
+def fake_pages(monkeypatch):
+    """Tests never fetch real article pages: every on-demand fetch goes through this fake."""
+    from app.services import summary_service
+
+    pages = FakePages()
+    monkeypatch.setattr(summary_service, "extract_article_content", pages.extract)
+    return pages
+
+
 @pytest.fixture()
 def db_session():
     engine = create_engine(

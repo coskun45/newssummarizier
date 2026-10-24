@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import CostLimitExceededError
+from app.core.exceptions import CostLimitExceededError, SummarizationError
 from app.api.deps import require_admin
 from app.db import crud, models
 from app.db.database import get_db
@@ -112,7 +112,7 @@ class SummaryResult(StageCall):
 
 
 class ContentUsed(BaseModel):
-    source: str  # "cleaned" | "raw" | "none"
+    source: str  # "cleaned" | "scraped" | "raw" | "none"
     chars: int
     used_chars: int
     truncated: bool
@@ -160,9 +160,6 @@ async def run_playground(
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
 
-    if "summarization" in body.stages and not (article.cleaned_content or article.raw_content):
-        raise HTTPException(status_code=400, detail="Article has no content to summarize")
-
     try:
         result = await summary_service.run_playground(
             db,
@@ -176,5 +173,7 @@ async def run_playground(
         )
     except CostLimitExceededError as e:
         raise HTTPException(status_code=429, detail=str(e))
+    except SummarizationError as e:  # no content to summarize, not even on the page
+        raise HTTPException(status_code=400, detail=str(e))
 
     return {"article": {"id": article.id, "title": article.title, "url": article.url}, **result}

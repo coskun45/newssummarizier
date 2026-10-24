@@ -1149,3 +1149,57 @@ def test_counts_endpoint_values(client, auth_headers, db_session):
         "starred_count": 1,
         "error_count": 1,
     }
+
+
+# ==================== GET /{article_id}/content (on-demand page fetch) ====================
+
+def test_get_article_content_requires_auth(client):
+    assert client.get("/api/articles/1/content").status_code == 401
+
+
+def test_get_article_content_404_when_missing(client, auth_headers):
+    response = client.get("/api/articles/999999/content", headers=auth_headers)
+    assert response.status_code == 404
+
+
+def test_get_article_content_fetches_and_stores_the_page_of_an_unscraped_article(client, auth_headers, db_session, fake_pages):
+    """Filtered articles are never scraped by the pipeline, so 'Orijinal İçerik' showed only the
+    RSS teaser. Opening it now fetches the page once and keeps it (plus a missing image/author)."""
+    feed = _make_feed(db_session)
+    article = _make_article(db_session, feed.id, status="filtered", raw_content="rss teaser")
+    fake_pages.pages[article.url] = ("full page body", "Max Bird", "https://img.example.com/x.jpg")
+
+    response = client.get(f"/api/articles/{article.id}/content", headers=auth_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["cleaned_content"] == "full page body"
+    assert body["raw_content"] == "rss teaser"
+    assert body["status"] == "filtered"
+    db_session.expire_all()
+    assert (article.cleaned_content, article.image_url, article.author) == (
+        "full page body", "https://img.example.com/x.jpg", "Max Bird")
+
+    # Stored: the next open doesn't fetch again.
+    client.get(f"/api/articles/{article.id}/content", headers=auth_headers)
+    assert fake_pages.calls == [article.url]
+
+
+def test_get_article_content_does_not_refetch_a_scraped_article(client, auth_headers, db_session, fake_pages):
+    feed = _make_feed(db_session)
+    article = _make_article(db_session, feed.id, cleaned_content="already here")
+
+    response = client.get(f"/api/articles/{article.id}/content", headers=auth_headers)
+
+    assert response.json()["cleaned_content"] == "already here"
+    assert fake_pages.calls == []
+
+
+def test_get_article_content_falls_back_to_rss_when_the_page_has_no_text(client, auth_headers, db_session, fake_pages):
+    feed = _make_feed(db_session)
+    article = _make_article(db_session, feed.id, status="filtered", raw_content="rss teaser")
+
+    response = client.get(f"/api/articles/{article.id}/content", headers=auth_headers)
+
+    assert response.status_code == 200
+    assert (response.json()["cleaned_content"], response.json()["raw_content"]) == (None, "rss teaser")

@@ -27,7 +27,7 @@
         {
           "id": "agent-pipeline",
           "title": "LangGraph haber işleme hattı",
-          "description": "RSS çekme, başlığa göre sınıflandırma + önceliklendirme, yalnızca önemli haberler için tam içerik scraping ve özet üretimi adımlarından oluşan agent iş akışı."
+          "description": "RSS çekme, başlığa göre sınıflandırma + önceliklendirme, yalnızca önemli haberler için tam içerik scraping ve özet üretimi adımlarından oluşan agent iş akışı. Diğer haberlerin sayfası ihtiyaç anında (tam içerik açılınca, bültende, Playground'da) çekilir."
         },
         {
           "id": "openai-summaries",
@@ -52,7 +52,7 @@
         {
           "id": "article-actions",
           "title": "Haber işlemleri",
-          "description": "Haberi favorilere ekleme, okundu işaretleme, silme (onay ister; silinen haber bir daha getirilmez), orijinal sayfayı açma ve tam içeriği modalda görüntüleme."
+          "description": "Haberi favorilere ekleme, okundu işaretleme, silme (onay ister; silinen haber bir daha getirilmez), orijinal sayfayı açma ve tam içeriği modalda görüntüleme (henüz çekilmemişse sayfa o an çekilir)."
         },
         {
           "id": "article-filters",

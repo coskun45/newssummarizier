@@ -74,3 +74,25 @@ test('Escape key does NOT close the modal', async ({ page }) => {
 
   await expect(page.locator('.modal-overlay')).toBeVisible();
 });
+
+test('shows the fetched page, not the RSS teaser, for an article the pipeline never scraped', async ({ page }) => {
+  await loginAs(page);
+  await mockApi(page, {
+    articles: [
+      makeArticle({
+        title: 'Unscraped',
+        is_read: false,
+        cleaned_content: null,
+        raw_content: 'Short RSS teaser.',
+        pageContent: 'The full article body from the page.',
+      }),
+    ],
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
+
+  await page.getByRole('button', { name: 'Orijinal İçerik' }).click();
+
+  await expect(page.getByText('The full article body from the page.')).toBeVisible();
+  await expect(page.getByText('Short RSS teaser.')).not.toBeVisible();
+});

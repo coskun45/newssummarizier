@@ -10,6 +10,7 @@ from datetime import datetime
 from app.db.database import get_db
 from app.db import crud, models
 from app.api.deps import require_admin
+from app.services import summary_service
 from app.services.summary_service import article_source_name
 
 
@@ -403,6 +404,18 @@ def get_article(article_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Article not found")
     
     return _to_article_response(article, detail=True)
+
+
+@router.get("/{article_id}/content", response_model=ArticleDetailResponse)
+async def get_article_content(article_id: int, db: Session = Depends(get_db)):
+    """
+    Article detail with its full page text ("Orijinal İçerik"). The pipeline only scrapes
+    important articles, so a filtered/Error article's page is fetched and stored on first open.
+    """
+    if not crud.get_article(db, article_id):
+        raise HTTPException(status_code=404, detail="Article not found")
+    await summary_service.fetch_article_content(db, article_id)
+    return _to_article_response(crud.get_article(db, article_id), detail=True)
 
 
 @router.get("/topic/{topic_name}")

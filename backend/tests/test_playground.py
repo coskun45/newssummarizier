@@ -443,3 +443,40 @@ def test_run_reports_the_sampling_params_actually_sent(client, admin_headers, mo
     assert "temperature" not in fake.classification_calls[0]
     brief = body["summaries"][0]
     assert brief["model"] == "gpt-6-luna" and brief["temperature"] == summary_service.SUMMARY_TEMPERATURE
+
+
+def test_run_summarizes_an_unscraped_article_from_its_page_without_storing_it(
+    client, admin_headers, monkeypatch, db_session, fake_pages
+):
+    """Filtered articles are never scraped by the pipeline, so the Playground summarized them from
+    the RSS teaser — not what the pipeline would use once the article is important. It now
+    fetches the page for the run, but as a dry run it doesn't keep it."""
+    fake = _install(monkeypatch, db_session)
+    art = _make_article(db_session, _make_feed(db_session, url="https://e.com/f4").id, title="Önemsiz",
+                        status="filtered", raw_content="rss teaser")
+    fake_pages.pages[art.url] = ("full page body", None, None)
+    before = _row_counts(db_session)
+
+    body = client.post("/api/playground/run",
+                       json={"article_id": art.id, "stages": ["summarization"], "summary_types": ["brief"]},
+                       headers=admin_headers).json()
+
+    assert body["content_used"]["source"] == "scraped"
+    assert body["content_used"]["chars"] == len("full page body")
+    assert "full page body" in str(fake.calls[-1]["messages"])
+    assert _row_counts(db_session) == before
+    db_session.expire_all()
+    assert art.cleaned_content is None
+
+
+def test_run_summarizes_a_page_even_when_the_rss_had_no_text(client, admin_headers, monkeypatch, db_session, fake_pages):
+    _install(monkeypatch, db_session)
+    art = _make_article(db_session, _make_feed(db_session, url="https://e.com/f5").id, title="Leer")
+    fake_pages.pages[art.url] = ("full page body", None, None)
+
+    response = client.post("/api/playground/run",
+                           json={"article_id": art.id, "stages": ["summarization"], "summary_types": ["brief"]},
+                           headers=admin_headers)
+
+    assert response.status_code == 200
+    assert response.json()["content_used"]["source"] == "scraped"

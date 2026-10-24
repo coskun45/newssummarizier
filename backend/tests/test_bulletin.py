@@ -1247,3 +1247,30 @@ def test_bulletin_runs_every_llm_step_on_the_ayarlar_classification_model(client
     assert len(lookups) == 1  # review: classification and grouping each read it, and could differ
     rows = db_session.query(models.ArticleBulletinClassification).all()
     assert [r.model_used for r in rows] == ["gpt-4o-mini"]
+
+
+def test_generate_bulletin_summarizes_a_starred_unscraped_article_from_its_page(
+    client, auth_headers, db_session, monkeypatch, fake_pages
+):
+    """Filtered articles are never scraped by the pipeline; a starred one in the bulletin got its
+    brief from the RSS teaser. Its page is now fetched (and kept) before summarizing."""
+    contents = []
+
+    async def tracking_summary(title, content, summary_type="standard", source=None, author_hint=None):
+        contents.append(content)
+        return {"summary_text": f"📌 {source} - {title}\n🔹 özet.", "model_used": "m",
+                "tokens_used": 1, "cost": 0.0, "author": None, "structured": True}
+
+    monkeypatch.setattr(summary_service, "generate_summary", tracking_summary)
+    _make_bulletin_category(db_session, name="AVRUPA")
+    feed = _make_feed(db_session)
+    article = _make_article(db_session, feed.id, title="Favori Önemsiz", is_starred=True, status="filtered",
+                            importance="unimportant", raw_content="rss teaser",
+                            published_at=datetime.now(timezone.utc) - timedelta(hours=1))
+    fake_pages.pages[article.url] = ("full page body", None, None)
+
+    _generate(client, auth_headers, include_favorites=True)
+
+    assert contents == ["full page body"]
+    db_session.expire_all()
+    assert article.cleaned_content == "full page body"

@@ -35,6 +35,8 @@ export interface MockArticle extends Article {
   feedId: number;
   raw_content: string | null;
   cleaned_content: string | null;
+  /** Text the backend would scrape from the page on demand (GET /articles/:id/content). */
+  pageContent?: string | null;
 }
 
 export function makeFeed(overrides: Partial<Feed> = {}): Feed {
@@ -300,13 +302,15 @@ function makeStageCall(model: string, systemPrompt: string, source: PlaygroundSt
 
 /** Default dry-run response: classification says important/high; one summary per requested type. */
 export function buildPlaygroundRunResult(article: MockArticle, request: PlaygroundRunRequest): PlaygroundRunResult {
-  const content = article.cleaned_content ?? article.raw_content ?? '';
+  // Like the backend: summarizing an unscraped article uses its page, fetched but not stored.
+  const page = request.stages.includes('summarization') && !article.cleaned_content ? article.pageContent : null;
+  const content = article.cleaned_content || page || article.raw_content || '';
   const types = request.summary_types ?? ['brief', 'standard'];
   const source = (override?: string) => (override ? 'override' : 'db') as PlaygroundStageCall['prompt_source'];
   return {
     article: { id: article.id, title: article.title, url: article.url },
     content_used: {
-      source: article.cleaned_content ? 'cleaned' : article.raw_content ? 'raw' : 'none',
+      source: article.cleaned_content ? 'cleaned' : page ? 'scraped' : article.raw_content ? 'raw' : 'none',
       chars: content.length,
       used_chars: content.length,
       truncated: false,
@@ -761,6 +765,15 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
       if (summaryType) list = list.filter((s) => s.summary_type === summaryType);
       return json(list);
     }
+    m = path.match(/^\/articles\/(\d+)\/content$/);
+    if (m && method === 'GET') {
+      const article = state.articles.find((a) => a.id === parseInt(m![1], 10));
+      if (!article) return json({ detail: 'Article not found' }, 404);
+      // Like the backend: an unscraped article's page is fetched once and kept.
+      if (!article.cleaned_content && article.pageContent) article.cleaned_content = article.pageContent;
+      return json(article);
+    }
+
     m = path.match(/^\/articles\/(\d+)$/);
     if (m) {
       const articleId = parseInt(m[1], 10);

@@ -251,6 +251,12 @@ async def _ensure_brief_summaries(db: Session, articles: List[models.Article]) -
 
     await check_cost_limits()
 
+    # The pipeline only scrapes important articles; a starred filtered/Error one would
+    # otherwise be summarized from its RSS teaser.
+    for article in missing:
+        if not article.cleaned_content:
+            await summary_service.fetch_article_content(db, article.id)
+
     jobs = []
     for article in missing:
         source = _article_source(article)

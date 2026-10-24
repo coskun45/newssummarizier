@@ -1074,11 +1074,23 @@ async def run_playground(
     """
     await check_cost_limits()
 
-    content = article.cleaned_content or article.raw_content or ""
+    # The pipeline scrapes an article once it is important; fetch the page of one it never
+    # scraped (filtered/Error) so the summaries match — but a dry run doesn't store it.
+    page = None
+    if "summarization" in stages and not article.cleaned_content:
+        try:
+            page, _, _ = await extract_article_content(article.url)
+        except Exception as e:
+            logger.warning(f"Playground page fetch failed for article {article.id}: {e}")
+    if "summarization" in stages and not (article.cleaned_content or page or article.raw_content):
+        raise SummarizationError("Article has no content to summarize")
+
+    content = article.cleaned_content or page or article.raw_content or ""
     used_content = truncate_content(content) if content else ""
     result: Dict[str, Any] = {
         "content_used": {
-            "source": "cleaned" if article.cleaned_content else ("raw" if article.raw_content else "none"),
+            "source": ("cleaned" if article.cleaned_content else "scraped" if page
+                       else "raw" if article.raw_content else "none"),
             "chars": len(content),
             "used_chars": len(used_content),
             "truncated": used_content != content,
@@ -1174,6 +1186,49 @@ async def process_article_by_id(article_id: int) -> dict:
         db.close()
 
 
+def store_page(db, article_id: int, extracted: Optional[str], page_author: Optional[str], page_image_url: Optional[str]) -> None:
+    """Keep what a page fetch found. The text is written first and a failed author/image backfill
+    is only rolled back and logged — losing an og:image must never lose the article body."""
+    if extracted:
+        crud.update_article_content(db=db, article_id=article_id, cleaned_content=extracted)
+    article = crud.get_article(db, article_id)
+    backfills = (
+        (page_author and not article.author, crud.update_article_author, {"author": page_author}),
+        (page_image_url and not article.image_url, crud.update_article_image, {"image_url": page_image_url}),
+    )
+    for needed, write, value in backfills:
+        if not needed:
+            continue
+        try:
+            write(db=db, article_id=article_id, **value)
+        except Exception as e:
+            db.rollback()  # a failed write would poison the session
+            logger.warning(f"Could not store page {next(iter(value))} for article {article_id}: {e}")
+
+
+async def fetch_article_content(db, article_id: int) -> Optional[str]:
+    """The article's full page text, fetched and stored on first use. The pipeline only scrapes
+    articles it classifies important, so filtered/Error ones get their page here when a user
+    opens or reuses it. Returns None when the page has no extractable text (callers fall back to
+    the RSS content)."""
+    article = crud.get_article(db, article_id)
+    if article.cleaned_content:
+        return article.cleaned_content
+    url = article.url
+    try:
+        release_connection(db)  # don't hold a pooled connection while scraping
+        extracted, page_author, page_image_url = await extract_article_content(url)
+    except Exception as e:
+        logger.warning(f"On-demand page fetch failed for article {article_id}: {e}")
+        return None
+    try:
+        store_page(db, article_id, extracted, page_author, page_image_url)
+    except Exception as e:
+        db.rollback()  # still return the text; it is fetched again next time
+        logger.warning(f"Could not store the fetched page of article {article_id}: {e}")
+    return extracted or None
+
+
 async def process_article(db, article_id: int) -> dict:
     """
     Process a stored article: categorize + prioritize (from the title), then — only if important —
@@ -1254,13 +1309,10 @@ async def process_article(db, article_id: int) -> dict:
         try:
             release_connection(db)  # don't hold a pooled connection while scraping
             extracted, page_author, page_image_url = await extract_article_content(url)
-            if page_author and not article.author:
-                crud.update_article_author(db=db, article_id=article.id, author=page_author)
-            if page_image_url and not article.image_url:
-                crud.update_article_image(db=db, article_id=article.id, image_url=page_image_url)
             if extracted:
                 content = extracted
-                crud.update_article_content(db=db, article_id=article.id, cleaned_content=content)
+            store_page(db, article.id, extracted, page_author, page_image_url)
+            if extracted:
                 crud.update_article_status(db=db, article_id=article.id, status="scraped")
                 crud.create_log(db=db, article_id=article.id, agent_name="web_scraper", status="success", message=f"Extracted {len(content)} characters")
             else:

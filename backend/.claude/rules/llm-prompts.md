@@ -42,7 +42,8 @@ it). This rule covers the prompts it sends, the Playground dry-run, and cost tra
 - **The Playground is a dry run — it NEVER writes article data** (no summaries, no article updates,
   no logs). The one row it does write is its `llm_usage` spend (see below). It must mirror the real pipeline's decisions (skip summarization on `unimportant`/failed
   classification unless `force_summarize`), so a pipeline behavior change updates both paths and
-  `tests/test_playground.py`.
+  `tests/test_playground.py`. An article without `cleaned_content` gets its page fetched for the
+  run (`content_used.source = "scraped"`) but not stored.
 - **Per-stage failures are reported in the stage's `error`, not raised** — one failing summary type
   must not hide the others. `CostLimitExceededError` is the exception: raised before any call.
 - **A response-shape change also updates the frontend** — `src/types/index.ts` and the stand-ins in

@@ -42,6 +42,15 @@ export const useArticle = (articleId: number | null) => {
     });
 };
 
+// "Orijinal İçerik": the backend fetches the page of an article the pipeline never scraped.
+export const useArticleContent = (articleId: number | null) => {
+    return useQuery({
+        queryKey: ['article', articleId, 'content'],
+        queryFn: () => articlesApi.getContent(articleId!),
+        enabled: articleId !== null,
+    });
+};
+
 export const useDeleteArticle = () => {
     const queryClient = useQueryClient();
     return useMutation({

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Article } from '../../types';
-import { useSummaries, useArticle, useDeleteArticle, useSetArticleStarred, useReprocessArticles, useMarkArticleRead } from '../../hooks/useApi';
+import { useSummaries, useArticleContent, useDeleteArticle, useSetArticleStarred, useReprocessArticles, useMarkArticleRead } from '../../hooks/useApi';
 import ContentModal from '../ContentModal/ContentModal';
 import { copyToClipboard } from '../../utils/exportArticles';
 import { withAlpha } from '../../utils/color';
@@ -78,7 +78,7 @@ function ArticleCard({ article, isSelected = false, onToggleSelect, onDeleted, i
   const effectiveType = availableTypes.includes(summaryType) ? summaryType : availableTypes[0];
   const summary = summaries?.find((s) => s.summary_type === effectiveType);
 
-  const { data: articleDetail, isLoading: contentLoading } = useArticle(
+  const { data: articleDetail, isLoading: contentLoading } = useArticleContent(
     showContent ? article.id : null
   );
 

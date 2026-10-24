@@ -208,6 +208,12 @@ export const articlesApi = {
         return response.data;
     },
 
+    // Detail with the full page text; fetches (and stores) the page of an unscraped article.
+    getContent: async (articleId: number): Promise<ArticleDetail> => {
+        const response = await api.get(`/articles/${articleId}/content`);
+        return response.data;
+    },
+
     getCounts: async (): Promise<ArticleCounts> => {
         const response = await api.get('/articles/counts');
         return response.data;

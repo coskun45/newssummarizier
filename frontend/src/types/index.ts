@@ -432,7 +432,7 @@ export interface PlaygroundSummaryResult extends PlaygroundStageCall {
 
 export interface PlaygroundRunResult {
     article: { id: number; title: string; url: string };
-    content_used: { source: 'cleaned' | 'raw' | 'none'; chars: number; used_chars: number; truncated: boolean };
+    content_used: { source: 'cleaned' | 'scraped' | 'raw' | 'none'; chars: number; used_chars: number; truncated: boolean };
     classification: PlaygroundClassificationResult | null;
     summaries: PlaygroundSummaryResult[];
     skipped_reason: 'unimportant' | 'classification_failed' | null;

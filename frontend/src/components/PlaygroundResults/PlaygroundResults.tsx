@@ -18,7 +18,7 @@ const SKIPPED_LABELS: Record<NonNullable<PlaygroundRunResult['skipped_reason']>,
   classification_failed: 'Sınıflandırma başarısız olduğu için özetleme atlandı.',
 };
 
-const SOURCE_LABELS = { cleaned: 'temizlenmiş içerik', raw: 'ham RSS içeriği', none: 'içerik yok' } as const;
+const SOURCE_LABELS = { cleaned: 'temizlenmiş içerik', scraped: 'sayfadan çekilen içerik', raw: 'ham RSS içeriği', none: 'içerik yok' } as const;
 const PROMPT_SOURCE_LABELS = { override: 'değiştirilmiş', db: 'kayıtlı', default: 'varsayılan' } as const;
 
 const formatCost = (cost: number) => `$${cost.toFixed(4)}`;

@@ -29,7 +29,7 @@ stays correct if it is updated in the same change that alters a feature.
   find `features.json` consistent with `README.md` (Özellikler) — see the frontend `components` rule (`frontend/.claude/rules/components.md`).
 
 ## Versions
-- **`v1` = Temel haber özetleme** (RSS → scrape → classify → brief/standard/detailed summaries, news UI, feeds,
+- **`v1` = Temel haber özetleme** (RSS → classify → scrape important → brief/standard/detailed summaries, news UI, feeds,
   topics, summary types, auth, scheduler). **`v2` = Bülten ve Playground** (Word bulletin, Playground, and the
   features tied to them, e.g. system prompts, this Features page).
 - **A new feature goes into the latest version** unless the user says it starts a new one. When the user starts a

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronLeftIcon, ChevronRightIcon, ArrowPathIcon, XMarkIcon } from '@heroicons/react/24/outline';
-import { useArticles, useArticle, useSummaries } from '../../hooks/useApi';
+import { useArticles, useArticleContent, useSummaries } from '../../hooks/useApi';
 import { formatPublishedAt } from '../../utils/formatDate';
 import type { Summary } from '../../types';
 import './HomeHero.css';
@@ -53,7 +53,7 @@ function HomeHero({ onViewAll }: HomeHeroProps) {
     // would be undefined.
     const safeIndex = index < articles.length ? index : 0;
     const current = articles[safeIndex];
-    const { data: detail, isLoading: detailLoading } = useArticle(detailOpen && current ? current.id : null);
+    const { data: detail, isLoading: detailLoading } = useArticleContent(detailOpen && current ? current.id : null);
     const { data: summaries, isLoading: summaryLoading } = useSummaries(
         current ? current.id : null,
         current?.has_summaries,
