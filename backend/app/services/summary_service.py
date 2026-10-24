@@ -1293,6 +1293,8 @@ async def process_article(db, article_id: int) -> dict:
                 crud.set_article_author(db, article.id, resolve_summary_author(results, author_hint))
 
         except Exception as e:
+            # A failed DB write above (e.g. set_article_author) leaves the session unusable until it is rolled back.
+            db.rollback()
             logger.error(f"Summary generation loop failed: {e}")
 
     # "summarized" is reserved for articles that actually got at least one summary

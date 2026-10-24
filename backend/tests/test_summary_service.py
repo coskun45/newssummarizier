@@ -330,6 +330,23 @@ def test_failed_summary_write_does_not_poison_the_session(reprocess_env, monkeyp
     assert len(article.summaries) == len(calls) - 1
 
 
+def test_failed_author_write_after_summaries_does_not_poison_the_session(reprocess_env, monkeypatch, db_session):
+    """Regression: the outer except around summary generation only logged, so a failed
+    set_article_author write raised PendingRollbackError from the final status update and the
+    article never reached "summarized" despite its saved summaries."""
+    feed = _make_feed(db_session)
+    article = _make_article(db_session, feed.id, status="pending", cleaned_content="body")
+    _set_categorization(monkeypatch, reprocess_env, {"importance": "important", "priority": "high", "topics": []})
+    monkeypatch.setattr(crud, "set_article_author", lambda db, article_id, author: _poison_session(db))
+
+    result = asyncio.run(reprocess_env.process_article_by_id(article.id))
+
+    assert result["success"] is True
+    db_session.expire_all()
+    assert article.status == "summarized"
+    assert len(article.summaries) > 0
+
+
 def test_reprocess_task_tracks_progress_and_failures(monkeypatch):
     from app.tasks import background
     from app.services import summary_service
