@@ -96,3 +96,22 @@ test('shows the fetched page, not the RSS teaser, for an article the pipeline ne
   await expect(page.getByText('The full article body from the page.')).toBeVisible();
   await expect(page.getByText('Short RSS teaser.')).not.toBeVisible();
 });
+
+test('waits for a slow page fetch instead of giving up at the default request timeout', async ({ page }) => {
+  // The backend scrapes the page synchronously (robots.txt, delay, retries) — easily over 20s.
+  test.setTimeout(60_000);
+  await loginAs(page);
+  await mockApi(page, {
+    articles: [makeArticle({ id: 4242, title: 'Slow Page', is_read: false, cleaned_content: null, raw_content: 'Teaser.' })],
+  });
+  await page.route('**/api/articles/4242/content', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 21_000));
+    await route.fulfill({ json: makeArticle({ id: 4242, title: 'Slow Page', cleaned_content: 'Slowly fetched body.' }) });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
+
+  await page.getByRole('button', { name: 'Orijinal İçerik' }).click();
+
+  await expect(page.getByText('Slowly fetched body.')).toBeVisible({ timeout: 30_000 });
+});

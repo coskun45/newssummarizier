@@ -406,18 +406,6 @@ def get_article(article_id: int, db: Session = Depends(get_db)):
     return _to_article_response(article, detail=True)
 
 
-@router.get("/{article_id}/content", response_model=ArticleDetailResponse)
-async def get_article_content(article_id: int, db: Session = Depends(get_db)):
-    """
-    Article detail with its full page text ("Orijinal İçerik"). The pipeline only scrapes
-    important articles, so a filtered/Error article's page is fetched and stored on first open.
-    """
-    if not crud.get_article(db, article_id):
-        raise HTTPException(status_code=404, detail="Article not found")
-    await summary_service.fetch_article_content(db, article_id)
-    return _to_article_response(crud.get_article(db, article_id), detail=True)
-
-
 @router.get("/topic/{topic_name}")
 def get_articles_by_topic(
     topic_name: str,
@@ -451,3 +439,16 @@ def get_articles_by_topic(
         skip=skip,
         limit=limit
     )
+
+
+# Declared after the /topic/{topic_name} routes: otherwise GET /topic/content matches here (422).
+@router.get("/{article_id}/content", response_model=ArticleDetailResponse)
+async def get_article_content(article_id: int, db: Session = Depends(get_db)):
+    """
+    Article detail with its full page text ("Orijinal İçerik"). The pipeline only scrapes
+    important articles, so a filtered/Error article's page is fetched and stored on first open.
+    """
+    if not crud.get_article(db, article_id):
+        raise HTTPException(status_code=404, detail="Article not found")
+    await summary_service.fetch_article_content(db, article_id)
+    return _to_article_response(crud.get_article(db, article_id), detail=True)

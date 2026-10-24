@@ -480,3 +480,21 @@ def test_run_summarizes_a_page_even_when_the_rss_had_no_text(client, admin_heade
 
     assert response.status_code == 200
     assert response.json()["content_used"]["source"] == "scraped"
+
+
+def test_run_does_not_fetch_the_page_when_classification_skips_summarization(
+    client, admin_headers, monkeypatch, db_session, fake_pages
+):
+    """Like the pipeline, never scrape an article before it is classified important: the page
+    was fetched up front, then wasted when the run came back unimportant."""
+    _install(monkeypatch, db_session, classification=UNIMPORTANT)
+    art = _make_article(db_session, _make_feed(db_session, url="https://e.com/f6").id, title="Önemsiz",
+                        status="filtered", raw_content="rss teaser")
+    fake_pages.pages[art.url] = ("full page body", None, None)
+
+    body = client.post("/api/playground/run",
+                       json={"article_id": art.id, "stages": ["classification", "summarization"]},
+                       headers=admin_headers).json()
+
+    assert body["skipped_reason"] == "unimportant"
+    assert fake_pages.calls == []

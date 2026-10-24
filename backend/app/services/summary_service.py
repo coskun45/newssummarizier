@@ -1074,27 +1074,41 @@ async def run_playground(
     """
     await check_cost_limits()
 
-    # The pipeline scrapes an article once it is important; fetch the page of one it never
-    # scraped (filtered/Error) so the summaries match — but a dry run doesn't store it.
-    page = None
-    if "summarization" in stages and not article.cleaned_content:
-        try:
-            page, _, _ = await extract_article_content(article.url)
-        except Exception as e:
-            logger.warning(f"Playground page fetch failed for article {article.id}: {e}")
-    if "summarization" in stages and not (article.cleaned_content or page or article.raw_content):
-        raise SummarizationError("Article has no content to summarize")
+    url = article.url
 
-    content = article.cleaned_content or page or article.raw_content or ""
-    used_content = truncate_content(content) if content else ""
-    result: Dict[str, Any] = {
-        "content_used": {
+    async def fetch_page() -> Optional[str]:
+        # Dry run: the page is used for this run only, never stored.
+        release_connection(db)  # don't hold a pooled connection while scraping
+        try:
+            text, _, _ = await extract_article_content(url)
+            return text or None
+        except Exception as e:
+            logger.warning(f"Playground page fetch failed for {url}: {e}")
+            return None
+
+    def describe_content(page: Optional[str]) -> Tuple[str, Dict[str, Any]]:
+        content = article.cleaned_content or page or article.raw_content or ""
+        used = truncate_content(content) if content else ""
+        return used, {
             "source": ("cleaned" if article.cleaned_content else "scraped" if page
                        else "raw" if article.raw_content else "none"),
             "chars": len(content),
-            "used_chars": len(used_content),
-            "truncated": used_content != content,
-        },
+            "used_chars": len(used),
+            "truncated": used != content,
+        }
+
+    # Like the pipeline, an unscraped (filtered/Error) article's page is fetched only once the run
+    # decides to summarize. Without any stored text the page is the only option, so then it is
+    # fetched up front — to refuse before paying for classification when it has none either.
+    page = None
+    if "summarization" in stages and not (article.cleaned_content or article.raw_content):
+        page = await fetch_page()
+        if not page:
+            raise SummarizationError("Article has no content to summarize")
+
+    used_content, content_used = describe_content(page)
+    result: Dict[str, Any] = {
+        "content_used": content_used,
         "classification": None,
         "summaries": [],
         "skipped_reason": None,
@@ -1134,6 +1148,9 @@ async def run_playground(
                 "unimportant" if classification["pipeline_outcome"] == "filtered" else "classification_failed"
             )
         else:
+            if page is None and not article.cleaned_content:
+                page = await fetch_page()
+                used_content, result["content_used"] = describe_content(page)
             if summarization_prompt and summarization_prompt.strip():
                 system_prompt, source = summarization_prompt, "override"
             else:

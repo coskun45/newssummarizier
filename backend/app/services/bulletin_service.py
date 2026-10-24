@@ -253,9 +253,13 @@ async def _ensure_brief_summaries(db: Session, articles: List[models.Article]) -
 
     # The pipeline only scrapes important articles; a starred filtered/Error one would
     # otherwise be summarized from its RSS teaser.
+    # Use the returned text, not a re-read of cleaned_content: storing it may have failed.
+    pages: Dict[int, str] = {}
     for article in missing:
         if not article.cleaned_content:
-            await summary_service.fetch_article_content(db, article.id)
+            page = await summary_service.fetch_article_content(db, article.id)
+            if page:
+                pages[article.id] = _strip_html(page)
 
     jobs = []
     for article in missing:
@@ -263,7 +267,7 @@ async def _ensure_brief_summaries(db: Session, articles: List[models.Article]) -
         jobs.append({
             "article": article,
             "title": article.title,
-            "content": truncate_content(_article_content(article)),
+            "content": truncate_content(pages.get(article.id) or _article_content(article)),
             "source": source,
             "author_hint": clean_author(article.feed_author or article.author, source),
         })

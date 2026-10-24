@@ -209,8 +209,9 @@ export const articlesApi = {
     },
 
     // Detail with the full page text; fetches (and stores) the page of an unscraped article.
+    // That scrape (robots.txt, polite delay, up to 3 attempts of 30s) can far exceed the default 20s.
     getContent: async (articleId: number): Promise<ArticleDetail> => {
-        const response = await api.get(`/articles/${articleId}/content`);
+        const response = await api.get(`/articles/${articleId}/content`, { timeout: 120000 });
         return response.data;
     },
 

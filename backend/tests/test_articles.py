@@ -1203,3 +1203,13 @@ def test_get_article_content_falls_back_to_rss_when_the_page_has_no_text(client,
 
     assert response.status_code == 200
     assert (response.json()["cleaned_content"], response.json()["raw_content"]) == (None, "rss teaser")
+
+
+def test_get_articles_by_topic_named_content_is_not_shadowed_by_the_content_route(client, auth_headers, db_session):
+    """Regression: GET /{article_id}/content was declared before /topic/{topic_name}, so the topic
+    'content' matched it with article_id='topic' and returned 422."""
+    _make_topic(db_session, name="content")
+
+    response = client.get("/api/articles/topic/content", headers=auth_headers)
+
+    assert response.status_code == 200
