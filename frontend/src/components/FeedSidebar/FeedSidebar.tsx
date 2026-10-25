@@ -20,7 +20,7 @@ function FeedSidebar({ feeds, groups = [], selectedFeedIds, feedCounts, onFeedTo
   const getFeedLabel = (feed: Feed) => {
     if (feed.title) return feed.title;
     try {
-      return new URL(feed.url).hostname.replace('www.', '');
+      return new URL(feed.url).hostname.replace(/^www\./, '');
     } catch {
       return feed.url;
     }

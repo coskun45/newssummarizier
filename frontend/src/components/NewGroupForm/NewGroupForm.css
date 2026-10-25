@@ -1,0 +1,14 @@
+.new-group-form-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.new-group-form-row .topic-input {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.new-group-form-row .btn {
+  align-self: stretch;
+}

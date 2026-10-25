@@ -150,7 +150,6 @@ test('model cards show the saved choice, and the price only on hover', async ({ 
   const summary = content.getByRole('group', { name: 'Özet modeli' });
 
   await expect(classification.getByRole('radio', { name: 'gpt-6-luna' })).toBeChecked();
-  await expect(summary.getByRole('radio', { name: 'gpt-4o', exact: true })).toBeChecked();
 
   // The price is not on the card itself — it appears when hovering the model.
   const lunaCard = classification.locator('label', { has: page.getByRole('radio', { name: 'gpt-6-luna' }) });
@@ -164,6 +163,12 @@ test('model cards show the saved choice, and the price only on hover', async ({ 
   // Non-admins see the choice but can't change it.
   await expect(classification.getByRole('radio', { name: 'gpt-4o-mini' })).toBeDisabled();
   await expect(content.getByText('Bu ayarları yalnızca yöneticiler değiştirebilir.')).toBeVisible();
+
+  // The summary model has its own tab
+  await expect(summary).toHaveCount(0);
+  await content.getByRole('tab', { name: 'Özet' }).click();
+  await expect(summary.getByRole('radio', { name: 'gpt-4o', exact: true })).toBeChecked();
+  await expect(classification).toHaveCount(0);
 });
 
 test('without a saved choice "Sunucu varsayılanı" is selected and names the models in use', async ({ page }) => {
@@ -175,13 +180,14 @@ test('without a saved choice "Sunucu varsayılanı" is selected and names the mo
   await page.goto('/');
 
   const content = await openModelsCategory(page);
+  await expect(content.getByRole('group', { name: 'Sınıflandırma modeli' }).getByRole('radio', { name: /Sunucu varsayılanı/ }))
+    .toBeChecked();
+  await content.getByRole('tab', { name: 'Özet' }).click();
   const summary = content.getByRole('group', { name: 'Özet modeli' });
   const serverDefault = summary.getByRole('radio', { name: /Sunucu varsayılanı/ });
 
   await expect(serverDefault).toBeChecked();
   await expect(summary.getByText('gpt-4o-mini / gpt-4o')).toBeVisible();
-  await expect(content.getByRole('group', { name: 'Sınıflandırma modeli' }).getByRole('radio', { name: /Sunucu varsayılanı/ }))
-    .toBeChecked();
   await expect(content.getByRole('button', { name: 'Modelleri kaydet' })).toBeDisabled();
 
   // Hovering the default shows the price of each model it stands for.
@@ -198,6 +204,7 @@ test('choosing "Sunucu varsayılanı" again clears a saved model', async ({ page
   await page.goto('/');
 
   const content = await openModelsCategory(page);
+  await content.getByRole('tab', { name: 'Özet' }).click();
   await content.getByRole('group', { name: 'Özet modeli' }).getByText('Sunucu varsayılanı').click();
 
   const req = page.waitForRequest((r) => r.url().endsWith('/api/settings/') && r.method() === 'PUT');
@@ -215,6 +222,8 @@ test('admin saving models sends only the model fields', async ({ page }) => {
   await expect(save).toBeDisabled(); // nothing changed yet
 
   await content.getByRole('group', { name: 'Sınıflandırma modeli' }).getByText('gpt-4o-mini').click();
+  // The unsaved classification pick survives switching to the Özet tab and is saved with it
+  await content.getByRole('tab', { name: 'Özet' }).click();
   await content.getByRole('group', { name: 'Özet modeli' }).getByText('gpt-6.1-sol').click();
 
   const req = page.waitForRequest((r) => r.url().endsWith('/api/settings/') && r.method() === 'PUT');
@@ -231,6 +240,7 @@ test('saving another tab does not put an unsaved model choice live', async ({ pa
   await page.goto('/');
 
   const content = await openModelsCategory(page);
+  await content.getByRole('tab', { name: 'Özet' }).click();
   await content.getByRole('group', { name: 'Özet modeli' }).getByText('gpt-6.1-sol').click();
   await page.getByRole('button', { name: 'Özet Türleri' }).click();
   await content.getByRole('checkbox', { name: /Detaylı/ }).uncheck();
@@ -250,6 +260,7 @@ test('saving models keeps unsaved edits in other tabs', async ({ page }) => {
   await content.getByRole('checkbox', { name: /Detaylı/ }).uncheck(); // not saved
 
   await page.getByRole('button', { name: 'Yapay Zekâ Modelleri' }).click();
+  await content.getByRole('tab', { name: 'Özet' }).click();
   await content.getByRole('group', { name: 'Özet modeli' }).getByText('gpt-6.1-sol').click();
   const saved = page.waitForResponse((r) => r.url().endsWith('/api/settings/') && r.request().method() === 'PUT');
   await content.getByRole('button', { name: 'Modelleri kaydet' }).click();

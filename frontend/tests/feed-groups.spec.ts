@@ -19,6 +19,7 @@ async function openNews(page: Page) {
 async function openSettingsTab(page: Page, tab: 'RSS Beslemeleri' | 'Kategoriler') {
   await page.getByRole('button', { name: 'Ayarlar' }).click();
   await page.getByRole('button', { name: tab }).click();
+  if (tab === 'RSS Beslemeleri') await page.getByRole('tab', { name: 'Beslemeler' }).click();
   return page.locator('.settings-category');
 }
 
@@ -100,45 +101,61 @@ test('without any groups the sidebar stays a flat list', async ({ page }) => {
   await expect(page.getByRole('button', { name: /Diğer/ })).toHaveCount(0);
 });
 
-test('admin creates, renames and deletes a feed group in Ayarlar', async ({ page }) => {
+test('admin renames and deletes a feed group from its header in Ayarlar', async ({ page }) => {
   await loginAs(page, ADMIN_USER);
-  const state = await mockApi(page, { feeds: [FEED_DE], groups: [EUROPE], articles: [] });
+  const asia = makeGroup({ id: 503, kind: 'feed', name: 'Asya' });
+  const state = await mockApi(page, { feeds: [FEED_DE], groups: [EUROPE, asia], articles: [] });
   await page.goto('/');
-  const section = (await openSettingsTab(page, 'RSS Beslemeleri')).getByRole('region', { name: 'Gruplar' });
+  const list = (await openSettingsTab(page, 'RSS Beslemeleri')).getByRole('region', { name: 'Beslemeler' });
 
-  const createReq = page.waitForRequest((r) => r.url().endsWith('/api/groups/') && r.method() === 'POST');
-  await section.getByLabel('Yeni grup adı').fill('Asya');
-  await section.getByRole('button', { name: 'Grup ekle' }).click();
-  expect((await createReq).postDataJSON()).toEqual({ kind: 'feed', name: 'Asya' });
-  await expect(section.getByText('Asya')).toBeVisible();
+  // Feeds are listed under their group header (empty groups too), "Diğer" after the groups
+  await expect(list.getByRole('button', { name: 'Avrupa · 1 besleme' })).toBeVisible();
+  await expect(list.getByRole('button', { name: 'Asya · 0 besleme' })).toBeVisible();
+  await expect(list.getByText('Bu grupta besleme yok').first()).toBeVisible();
+  await expect(list.getByRole('button', { name: 'Diğer · 0 besleme' })).toBeVisible();
+  // Groups are created only while adding/editing a feed, not from the list
+  await expect(list.getByRole('button', { name: 'Yeni grup' })).toHaveCount(0);
 
-  const asia = state.groups.find((g) => g.name === 'Asya')!;
-  const asiaRow = section.locator('.user-list-item', { hasText: 'Asya' });
-  await asiaRow.getByTitle('Grubu yeniden adlandır').click();
-  await section.getByLabel('Grup adı', { exact: true }).fill('Uzak Doğu');
+  const asiaHeader = list.locator('.gsl-group-header', { hasText: 'Asya' });
+  await asiaHeader.getByTitle('Grubu yeniden adlandır').click();
+  await list.getByLabel('Grup adı', { exact: true }).fill('Uzak Doğu');
   const renameReq = page.waitForRequest((r) => r.url().endsWith(`/api/groups/${asia.id}`) && r.method() === 'PUT');
-  await section.getByTitle('Kaydet').click();
+  await list.getByTitle('Kaydet').click();
   expect((await renameReq).postDataJSON()).toEqual({ name: 'Uzak Doğu' });
-  await expect(section.getByText('Uzak Doğu')).toBeVisible();
+  await expect(list.getByRole('button', { name: 'Uzak Doğu · 0 besleme' })).toBeVisible();
 
   page.once('dialog', (d) => d.accept());
-  const europeRow = section.locator('.user-list-item', { hasText: 'Avrupa' });
+  const europeHeader = list.locator('.gsl-group-header', { hasText: 'Avrupa' });
   const deleteReq = page.waitForRequest((r) => r.url().endsWith(`/api/groups/${EUROPE.id}`) && r.method() === 'DELETE');
-  await europeRow.getByTitle('Grubu sil').click();
+  await europeHeader.getByTitle('Grubu sil').click();
   await deleteReq;
-  await expect(section.getByText('Avrupa')).not.toBeVisible();
+  // Its feed moves to "Diğer"
+  await expect(list.getByRole('button', { name: /Avrupa/ })).toHaveCount(0);
+  await expect(list.getByRole('button', { name: 'Diğer · 1 besleme' })).toBeVisible();
   expect(state.feeds[0].group_id).toBeNull();
+});
+
+test('collapsing a group in Ayarlar hides its feeds', async ({ page }) => {
+  await loginAs(page, ADMIN_USER);
+  await mockApi(page, { feeds: [FEED_DE, FEED_US], groups: [EUROPE], articles: [] });
+  await page.goto('/');
+  const list = (await openSettingsTab(page, 'RSS Beslemeleri')).getByRole('region', { name: 'Beslemeler' });
+
+  await expect(list.getByText('DW Almanca')).toBeVisible();
+  await list.getByRole('button', { name: 'Avrupa · 1 besleme' }).click();
+  await expect(list.getByText('DW Almanca')).not.toBeVisible();
+  await expect(list.getByText('NPR')).toBeVisible();
 });
 
 test('regular users see the groups but not the group management controls', async ({ page }) => {
   await loginAs(page);
   await mockApi(page, { feeds: [FEED_DE], groups: [EUROPE], articles: [] });
   await page.goto('/');
-  const section = (await openSettingsTab(page, 'RSS Beslemeleri')).getByRole('region', { name: 'Gruplar' });
+  const list = (await openSettingsTab(page, 'RSS Beslemeleri')).getByRole('region', { name: 'Beslemeler' });
 
-  await expect(section.getByText('Avrupa')).toBeVisible();
-  await expect(section.getByRole('button', { name: 'Grup ekle' })).toHaveCount(0);
-  await expect(section.getByTitle('Grubu sil')).toHaveCount(0);
+  await expect(list.getByRole('button', { name: 'Avrupa · 1 besleme' })).toBeVisible();
+  await expect(list.getByRole('button', { name: 'Yeni grup' })).toHaveCount(0);
+  await expect(list.getByTitle('Grubu sil')).toHaveCount(0);
 });
 
 test('adding a feed with a new group creates the group and sends its group_id', async ({ page }) => {
@@ -175,7 +192,7 @@ test('editing a topic moves it into a group via PUT group_id', async ({ page }) 
   const req = page.waitForRequest((r) => r.url().endsWith(`/api/topics/${TOPIC_SPORT.id}`) && r.method() === 'PUT');
   await settings.locator('.save-edit-button').click();
   expect((await req).postDataJSON()).toMatchObject({ group_id: ECONOMY.id });
-  await expect(settings.locator('.topic-item', { hasText: 'Spor' }).getByText('Ekonomi')).toBeVisible();
+  await expect(settings.getByRole('button', { name: 'Ekonomi · 1 kategori' })).toBeVisible();
 });
 
 test('an opened but not created new group blocks saving the topic until created or cancelled', async ({ page }) => {
@@ -184,7 +201,7 @@ test('an opened but not created new group blocks saving the topic until created 
   await page.goto('/');
   const settings = await openSettingsTab(page, 'Kategoriler');
 
-  await settings.getByRole('button', { name: 'Yeni kategori ekle' }).click();
+  await settings.getByRole('tab', { name: 'Düzenle' }).click();
   const form = settings.locator('.add-topic-form');
   await form.getByPlaceholder(/Kategori adı/).fill('Borsa');
   const createTopic = form.getByRole('button', { name: 'Oluştur', exact: true });
@@ -197,4 +214,85 @@ test('an opened but not created new group blocks saving the topic until created 
   await form.getByRole('button', { name: 'Vazgeç' }).click();
   await expect(createTopic).toBeEnabled();
   await expect(form.getByLabel('Grup', { exact: true })).toHaveValue('');
+});
+
+test('RSS Beslemeleri shows one section at a time: Genel ayarlar, then Beslemeler', async ({ page }) => {
+  await loginAs(page, ADMIN_USER);
+  await mockApi(page, { feeds: [FEED_DE], groups: [EUROPE], articles: [] });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Ayarlar' }).click();
+  await page.getByRole('button', { name: 'RSS Beslemeleri' }).click();
+
+  await expect(page.getByRole('tab', { name: 'Genel ayarlar' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByLabel('Otomatik yenileme aralığı')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Beslemeler' })).toHaveCount(0);
+
+  await page.getByRole('tab', { name: 'Beslemeler' }).click();
+  await expect(page.getByRole('tab', { name: 'Beslemeler' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('region', { name: 'Beslemeler' }).getByText('DW Almanca')).toBeVisible();
+  await expect(page.getByLabel('Otomatik yenileme aralığı')).toHaveCount(0);
+});
+
+test('Kategoriler › Düzenle adds a category group, which then shows in Kategori listesi', async ({ page }) => {
+  await loginAs(page, ADMIN_USER);
+  const state = await mockApi(page, { topics: [TOPIC_SPORT], groups: [], articles: [] });
+  await page.goto('/');
+  const settings = await openSettingsTab(page, 'Kategoriler');
+
+  // The list tab only lists; adding lives in Düzenle
+  await expect(settings.getByRole('button', { name: 'Yeni grup' })).toHaveCount(0);
+  await settings.getByRole('tab', { name: 'Düzenle' }).click();
+
+  const req = page.waitForRequest((r) => r.url().endsWith('/api/groups/') && r.method() === 'POST');
+  await settings.getByLabel('Yeni grup adı').fill('Ekonomi');
+  await settings.getByRole('button', { name: 'Grup ekle' }).click();
+  expect((await req).postDataJSON()).toEqual({ kind: 'topic', name: 'Ekonomi' });
+  await expect(settings.getByText('"Ekonomi" grubu eklendi.')).toBeVisible();
+  expect(state.groups.map((g) => g.name)).toEqual(['Ekonomi']);
+
+  await settings.getByRole('tab', { name: 'Kategori listesi' }).click();
+  await expect(settings.getByRole('button', { name: 'Ekonomi · 0 kategori' })).toBeVisible();
+  await expect(settings.getByRole('button', { name: 'Diğer · 1 kategori' })).toBeVisible();
+});
+
+test('only a leading "www." is dropped from a feed host (Ayarlar + sidebar)', async ({ page }) => {
+  // Review: replace('www.') also cut a "www." in the middle of the host
+  await loginAs(page, ADMIN_USER);
+  const feed = makeFeed({ id: 531, title: null, url: 'https://feeds.www.example.com/rss' });
+  await mockApi(page, { feeds: [feed, makeFeed({ id: 532, title: 'Lead', url: 'https://www.lead.example/rss' })], articles: [] });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
+  await expect(page.getByLabel('feeds.www.example.com')).toBeVisible();
+
+  const list = (await openSettingsTab(page, 'RSS Beslemeleri')).getByRole('region', { name: 'Beslemeler' });
+  await expect(list.getByText('feeds.www.example.com').first()).toBeVisible();
+  await expect(list.getByText('lead.example', { exact: true })).toBeVisible();
+});
+
+test('settings sub-tabs work from the keyboard (arrows, Home/End, one Tab stop)', async ({ page }) => {
+  await loginAs(page, ADMIN_USER);
+  await mockApi(page, { feeds: [FEED_DE], articles: [] });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Ayarlar' }).click();
+  await page.getByRole('button', { name: 'RSS Beslemeleri' }).click();
+
+  const general = page.getByRole('tab', { name: 'Genel ayarlar' });
+  const feeds = page.getByRole('tab', { name: 'Beslemeler' });
+  // Only the active tab is in the Tab order
+  await expect(general).toHaveAttribute('tabindex', '0');
+  await expect(feeds).toHaveAttribute('tabindex', '-1');
+
+  await general.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(feeds).toBeFocused();
+  await expect(feeds).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('region', { name: 'Beslemeler' })).toBeVisible();
+
+  await page.keyboard.press('ArrowRight'); // wraps around
+  await expect(general).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('End');
+  await expect(feeds).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('Home');
+  await expect(general).toBeFocused();
+  await expect(page.getByLabel('Otomatik yenileme aralığı')).toBeVisible();
 });

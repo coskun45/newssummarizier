@@ -44,9 +44,11 @@ Deutsche Welle (DW) RSS beslemelerinden haber toplayan, kategorize eden ve yapay
   yayın tarihi, yoksa çekilme tarihi kullanılır. Ek OpenAI maliyeti yoktur.
 - **RSS ve Kategori Grupları**: Sol paneldeki RSS Beslemeleri ve Kategoriler, kullanıcı tanımlı gruplar altında
   katlanabilir başlıklarla listelenir; grup başlığındaki kutu gruptaki tüm öğeleri tek seferde seçer/kaldırır.
-  Besleme grupları ile kategori grupları ayrı listelerdir. Gruplar Ayarlar › RSS Beslemeleri / Kategoriler'deki
-  "Gruplar" bölümünden eklenir, yeniden adlandırılır, silinir (yalnızca admin); besleme veya kategori eklerken/
-  düzenlerken grup seçilir ya da "+ Yeni grup…" ile yerinde oluşturulur. Grubu olmayanlar — ve silinen bir grubun
+  Besleme grupları ile kategori grupları ayrı listelerdir. Ayarlar › RSS Beslemeleri ("Genel ayarlar" / "Beslemeler"
+  sekmeleri) ve Kategoriler ("Kategori listesi" / "Düzenle" sekmeleri) listeleri de aynı gruplarla gösterilir; gruplar
+  grup başlıklarındaki düğmelerle yeniden adlandırılır ve silinir (yalnızca admin). Yeni grup, besleme veya kategori
+  eklerken/düzenlerken grup seçicideki "+ Yeni grup…" ile oluşturulur; kategoriler için Düzenle sekmesinde ayrıca bir
+  "Yeni grup" formu vardır. Grubu olmayanlar — ve silinen bir grubun
   üyeleri — "Diğer" altında görünür. Hiç grup yoksa liste eskisi gibi düzdür
 - **Kaynak ve Yazar**: Haber kartında RSS beslemesinin adı "Kaynak" olarak, yazarın üstünde gösterilir (besleme
   adı bu yüzden zorunludur). Özetin 📌 başlığında da aynı kaynak kullanılır; yazarı ise özetle birlikte yapay zeka

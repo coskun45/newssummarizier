@@ -16,7 +16,7 @@ test('adding a topic sends POST and clears the form', async ({ page }) => {
   await page.goto('/');
 
   const modal = await openSettings(page);
-  await modal.getByRole('button', { name: 'Yeni kategori ekle' }).click();
+  await modal.getByRole('tab', { name: 'Düzenle' }).click();
   const form = modal.locator('.add-topic-form');
   await form.getByPlaceholder(/Kategori adı/).fill('New Topic');
 
@@ -24,7 +24,8 @@ test('adding a topic sends POST and clears the form', async ({ page }) => {
   await form.getByRole('button', { name: 'Oluştur' }).click();
   await req;
 
-  await expect(modal.getByRole('button', { name: 'Yeni kategori ekle' })).toBeVisible();
+  await expect(modal.getByText('"New Topic" kategorisi eklendi.')).toBeVisible();
+  await expect(form.getByPlaceholder(/Kategori adı/)).toHaveValue('');
 });
 
 test('editing a topic name via the icon-only save button sends PUT', async ({ page }) => {

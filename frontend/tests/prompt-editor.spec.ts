@@ -154,6 +154,7 @@ test('summarization prompt shows the summary-type instructions read-only, in vie
 
   await page.getByRole('button', { name: 'Ayarlar' }).click();
   await page.getByRole('button', { name: 'Sistem Promptları' }).click();
+  await page.getByRole('tab', { name: 'Özetleme promptu' }).click();
   const editor = page.locator('.prompt-editor').filter({ hasText: 'Özetleme Promptu' });
   const locked = editor.getByRole('region', { name: 'Kilitli sistem bölümü' });
 
@@ -167,9 +168,15 @@ test('summarization prompt shows the summary-type instructions read-only, in vie
   await expect(locked).toContainText('brief:');
   await expect(locked.locator('textarea, input')).toHaveCount(0);
 
-  // The classification editor shows its own locked part, not the summary one.
+  // The classification editor (its own tab) shows its own locked part, not the summary one.
+  await editor.locator('textarea').fill('Özet promptu (düzenleniyor)');
+  await page.getByRole('tab', { name: 'Sınıflandırma promptu' }).click();
   const classification = page.locator('.prompt-editor').filter({ hasText: 'Sınıflandırma Promptu' });
   await expect(classification.getByRole('region', { name: 'Kilitli sistem bölümü' })).not.toContainText('brief:');
+
+  // Switching back keeps the unsaved edit: the editors stay mounted, only the inactive one is hidden.
+  await page.getByRole('tab', { name: 'Özetleme promptu' }).click();
+  await expect(editor.locator('textarea')).toHaveValue('Özet promptu (düzenleniyor)');
 });
 
 test('typing in the editor is not interrupted when the locked part finishes loading', async ({ page }) => {
@@ -210,7 +217,7 @@ test('a topic added in Kategoriler shows up in the classification prompt locked 
 
   await page.getByRole('button', { name: 'Kategoriler' }).click();
   const categories = page.locator('.settings-category');
-  await categories.getByRole('button', { name: 'Yeni kategori ekle' }).click();
+  await categories.getByRole('tab', { name: 'Düzenle' }).click();
   const form = categories.locator('.add-topic-form');
   await form.getByPlaceholder(/Kategori adı/).fill('Yeni Konu');
   await form.getByRole('button', { name: 'Oluştur' }).click();
@@ -233,6 +240,7 @@ test('the summarization locked part follows the summary types enabled in Ayarlar
 
   const openPromptLocked = async () => {
     await page.getByRole('button', { name: 'Sistem Promptları' }).click();
+    await page.getByRole('tab', { name: 'Özetleme promptu' }).click();
     return page
       .locator('.prompt-editor')
       .filter({ hasText: 'Özetleme Promptu' })

@@ -32,6 +32,7 @@ test('creating a user sends POST and clears the form', async ({ page }) => {
   await page.goto('/');
 
   const modal = await openUsersSection(page);
+  await modal.getByRole('tab', { name: 'Yeni kullanıcı' }).click();
   const form = modal.locator('.add-user-form');
   await form.getByPlaceholder('E-Posta Adresi').fill('new.user@example.com');
   await form.getByPlaceholder('Şifre').fill('supersecret123');
@@ -40,6 +41,10 @@ test('creating a user sends POST and clears the form', async ({ page }) => {
   await form.getByRole('button', { name: 'Kullanıcı oluştur' }).click();
   await req;
 
+  // Back on the list, which shows the new user; the form starts empty again
+  await expect(modal.getByRole('tab', { name: 'Kullanıcılar' })).toHaveAttribute('aria-selected', 'true');
+  await expect(modal.getByText('new.user@example.com')).toBeVisible();
+  await modal.getByRole('tab', { name: 'Yeni kullanıcı' }).click();
   await expect(form.getByPlaceholder('E-Posta Adresi')).toHaveValue('');
 });
 
@@ -51,6 +56,7 @@ test('duplicate-email error from the backend is shown inline', async ({ page }) 
   await page.goto('/');
 
   const modal = await openUsersSection(page);
+  await modal.getByRole('tab', { name: 'Yeni kullanıcı' }).click();
   const form = modal.locator('.add-user-form');
   await form.getByPlaceholder('E-Posta Adresi').fill('dup@example.com');
   await form.getByPlaceholder('Şifre').fill('supersecret123');

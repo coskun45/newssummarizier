@@ -158,7 +158,7 @@
         {
           "id": "feed-topic-groups",
           "title": "RSS ve kategori grupları",
-          "description": "Sol paneldeki RSS beslemeleri ve kategoriler gruplar altında, katlanabilir başlıklarla listelenir; grup başlığındaki kutu gruptaki tüm öğeleri tek seferde seçer. Gruplar Ayarlar › RSS Beslemeleri ve Kategoriler'den eklenir, yeniden adlandırılır ve silinir; besleme ya da kategori eklerken grup seçilebilir veya yeni grup oluşturulabilir. Grubu olmayanlar \"Diğer\" altında görünür."
+          "description": "Sol paneldeki RSS beslemeleri ve kategoriler gruplar altında, katlanabilir başlıklarla listelenir; grup başlığındaki kutu gruptaki tüm öğeleri tek seferde seçer. Ayarlar › RSS Beslemeleri (Genel ayarlar / Beslemeler sekmeleri) ve Kategoriler'de (Kategori listesi / Düzenle sekmeleri) liste de aynı gruplarla gösterilir; gruplar grup başlıklarından yeniden adlandırılır ve silinir. Besleme ya da kategori eklerken grup seçilebilir veya yeni grup oluşturulabilir; kategoriler için Düzenle sekmesinde ayrıca yeni grup formu vardır. Grubu olmayanlar \"Diğer\" altında görünür."
         }
       ]
     }

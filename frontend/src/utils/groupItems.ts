@@ -7,18 +7,22 @@ export const OTHER_GROUP_LABEL = 'Diğer';
 export interface ItemSection<T> {
   key: string;
   label: string;
+  /** The real group, or null for the virtual "Diğer". */
+  group: ItemGroup | null;
   items: T[];
 }
 
 /**
- * Split feeds/topics into sidebar sections: one per group (in the order the API returns them,
- * i.e. display_order), empty groups skipped, then "Diğer" for the rest — including members of a
- * group that no longer exists. With no groups at all it returns a single "Diğer" section, which
+ * Split feeds/topics into sections: one per group (in the order the API returns them, i.e.
+ * display_order), then "Diğer" for the rest — including members of a group that no longer exists.
+ * Empty sections are skipped (sidebar) unless `includeEmpty` (Ayarlar, where a new group must show
+ * up before it has members). With no groups at all it returns a single "Diğer" section, which
  * callers render as the plain, ungrouped list.
  */
 export function groupItems<T extends { group_id?: number | null }>(
   items: T[],
   groups: ItemGroup[],
+  { includeEmpty = false }: { includeEmpty?: boolean } = {},
 ): ItemSection<T>[] {
   const byGroup = new Map<number, T[]>(groups.map((g) => [g.id, []]));
   const other: T[] = [];
@@ -27,9 +31,11 @@ export function groupItems<T extends { group_id?: number | null }>(
     (bucket ?? other).push(item);
   }
   const sections: ItemSection<T>[] = groups
-    .filter((g) => (byGroup.get(g.id) ?? []).length > 0)
-    .map((g) => ({ key: `group-${g.id}`, label: g.name, items: byGroup.get(g.id) ?? [] }));
-  if (other.length > 0) sections.push({ key: 'other', label: OTHER_GROUP_LABEL, items: other });
+    .map((g) => ({ key: `group-${g.id}`, label: g.name, group: g, items: byGroup.get(g.id) ?? [] }))
+    .filter((s) => includeEmpty || s.items.length > 0);
+  if (other.length > 0 || includeEmpty) {
+    sections.push({ key: 'other', label: OTHER_GROUP_LABEL, group: null, items: other });
+  }
   return sections;
 }
 

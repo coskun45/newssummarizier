@@ -7,6 +7,7 @@ const FEED = makeFeed({ id: 301, title: 'Existing Feed', url: 'https://example.c
 async function openFeedsSection(page: import('@playwright/test').Page) {
   await page.getByRole('button', { name: 'Ayarlar' }).click();
   await page.getByRole('button', { name: 'RSS Beslemeleri' }).click();
+  await page.getByRole('tab', { name: 'Beslemeler' }).click();
   return page.locator('.settings-category');
 }
 
