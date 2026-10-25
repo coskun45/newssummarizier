@@ -121,15 +121,24 @@ def init_db():
         ("image_url", "VARCHAR"),
         ("feed_author", "VARCHAR"),
     ]
+    # Same for the other tables — add the table here when one of its models gains a column.
+    group_fk = "INTEGER REFERENCES item_groups(id) ON DELETE SET NULL"
+    table_columns = {
+        "articles": article_columns,
+        "feeds": [("group_id", group_fk)],
+        "topics": [("group_id", group_fk)],
+    }
 
     inspector = inspect(engine)
-    if inspector.has_table("articles"):
-        existing = {c["name"] for c in inspector.get_columns("articles")}
-        with engine.connect() as conn:
-            for column, ddl in article_columns:
+    with engine.connect() as conn:
+        for table, columns in table_columns.items():
+            if not inspector.has_table(table):
+                continue
+            existing = {c["name"] for c in inspector.get_columns(table)}
+            for column, ddl in columns:
                 if column not in existing:
                     try:
-                        conn.execute(text(f"ALTER TABLE articles ADD COLUMN {column} {ddl}"))
+                        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
                         conn.commit()
                     except Exception:
                         # On strict-transaction dialects (Postgres), a failed statement
@@ -141,8 +150,13 @@ def init_db():
                         # into all the others. SQLite has no such abort state, which is
                         # why this only shows up once Postgres is the target.
                         conn.rollback()
+        for index_ddl in (
+            "CREATE INDEX IF NOT EXISTS ix_articles_is_starred ON articles (is_starred)",
+            "CREATE INDEX IF NOT EXISTS ix_feeds_group_id ON feeds (group_id)",
+            "CREATE INDEX IF NOT EXISTS ix_topics_group_id ON topics (group_id)",
+        ):
             try:
-                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_articles_is_starred ON articles (is_starred)"))
+                conn.execute(text(index_ddl))
                 conn.commit()
             except Exception:
                 conn.rollback()

@@ -1,17 +1,20 @@
 import { useState } from 'react';
 import { ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
-import type { Feed } from '../../types';
+import type { Feed, ItemGroup } from '../../types';
+import GroupedChecklist from '../GroupedChecklist/GroupedChecklist';
 import './FeedSidebar.css';
 
 interface FeedSidebarProps {
   feeds: Feed[];
+  groups?: ItemGroup[];
   selectedFeedIds: number[];
   feedCounts: Record<string, number>;
   onFeedToggle: (id: number) => void;
+  onFeedGroupToggle: (ids: number[], select: boolean) => void;
   onClearFeeds: () => void;
 }
 
-function FeedSidebar({ feeds, selectedFeedIds, feedCounts, onFeedToggle, onClearFeeds }: FeedSidebarProps) {
+function FeedSidebar({ feeds, groups = [], selectedFeedIds, feedCounts, onFeedToggle, onFeedGroupToggle, onClearFeeds }: FeedSidebarProps) {
   const [open, setOpen] = useState(true);
 
   const getFeedLabel = (feed: Feed) => {
@@ -48,21 +51,19 @@ function FeedSidebar({ feeds, selectedFeedIds, feedCounts, onFeedToggle, onClear
             <span className="topic-count">{feeds.length}</span>
           </label>
 
-          {feeds.map(feed => (
-            <label key={feed.id} className="topic-item">
-              <input
-                type="checkbox"
-                checked={selectedFeedIds.includes(feed.id)}
-                onChange={() => onFeedToggle(feed.id)}
-              />
-              <span className="topic-name" title={feed.url}>
-                {getFeedLabel(feed)}
-              </span>
-              {feedCounts[String(feed.id)] !== undefined && (
-                <span className="topic-count">{feedCounts[String(feed.id)]}</span>
-              )}
-            </label>
-          ))}
+          <GroupedChecklist
+            items={feeds.map(feed => ({
+              id: feed.id,
+              label: getFeedLabel(feed),
+              title: feed.url,
+              count: feedCounts[String(feed.id)],
+              group_id: feed.group_id,
+            }))}
+            groups={groups}
+            selectedIds={selectedFeedIds}
+            onToggle={onFeedToggle}
+            onGroupToggle={onFeedGroupToggle}
+          />
         </div>
       )}
     </div>

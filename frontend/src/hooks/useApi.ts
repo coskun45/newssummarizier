@@ -3,9 +3,11 @@
  */
 import { useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
-import { articlesApi, summariesApi, topicsApi, settingsApi, statsApi, appApi, feedsApi, authApi, bulletinApi, newsletterApi, playgroundApi, promptsApi } from '../services/api';
+import { articlesApi, summariesApi, topicsApi, groupsApi, settingsApi, statsApi, appApi, feedsApi, authApi, bulletinApi, newsletterApi, playgroundApi, promptsApi } from '../services/api';
 import type {
     AnalysisRange,
+    GroupKind,
+    ItemGroup,
     ArticleFilters,
     UserSettingsUpdate,
     BulletinGenerateRequest,
@@ -244,8 +246,8 @@ export const useCreateTopic = () => {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: ({ name, description, color }: { name: string; description?: string; color?: string }) =>
-            topicsApi.create(name, description, color),
+        mutationFn: ({ name, description, color, groupId }: { name: string; description?: string; color?: string; groupId?: number | null }) =>
+            topicsApi.create(name, description, color, groupId),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['topics'] });
             // The classification prompt's locked part renders the live topic list.
@@ -259,8 +261,8 @@ export const useUpdateTopic = () => {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: ({ topicId, name, description, color }: { topicId: number; name?: string; description?: string; color?: string }) =>
-            topicsApi.update(topicId, name, description, color),
+        mutationFn: ({ topicId, name, description, color, groupId }: { topicId: number; name?: string; description?: string; color?: string; groupId?: number | null }) =>
+            topicsApi.update(topicId, name, description, color, groupId),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['topics'] });
             // The classification prompt's locked part renders the live topic list.
@@ -280,6 +282,51 @@ export const useDeleteTopic = () => {
             // The classification prompt's locked part renders the live topic list.
             queryClient.invalidateQueries({ queryKey: ['promptLocked'] });
             queryClient.invalidateQueries({ queryKey: ['playgroundSettings'] });
+        },
+    });
+};
+
+// Group hooks (sidebar groups for feeds / topics)
+export const useGroups = (kind: GroupKind) => {
+    return useQuery({
+        queryKey: ['groups', kind],
+        queryFn: () => groupsApi.list(kind),
+        staleTime: 30000,
+    });
+};
+
+export const useCreateGroup = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: ({ kind, name }: { kind: GroupKind; name: string }) => groupsApi.create(kind, name),
+        onSuccess: (group) => {
+            // Add it to the cached list at once: GroupSelect selects the new id immediately, and a
+            // <select> whose value matches no <option> would show the wrong group until the refetch.
+            queryClient.setQueryData<ItemGroup[]>(['groups', group.kind], (old) => old ? [...old, group] : [group]);
+            queryClient.invalidateQueries({ queryKey: ['groups'] });
+        },
+    });
+};
+
+export const useUpdateGroup = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: ({ groupId, name }: { groupId: number; name: string }) => groupsApi.update(groupId, { name }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['groups'] });
+        },
+    });
+};
+
+export const useDeleteGroup = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (groupId: number) => groupsApi.delete(groupId),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['groups'] });
+            // Members fall back to "Diğer" (group_id null)
+            queryClient.invalidateQueries({ queryKey: ['feeds'] });
+            queryClient.invalidateQueries({ queryKey: ['topics'] });
         },
     });
 };
@@ -353,8 +400,8 @@ export const useFeeds = () => {
 export const useCreateFeed = () => {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: ({ url, title }: { url: string; title: string }) =>
-            feedsApi.create(url, title),
+        mutationFn: ({ url, title, groupId }: { url: string; title: string; groupId?: number | null }) =>
+            feedsApi.create(url, title, undefined, groupId),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['feeds'] });
         },
@@ -383,8 +430,8 @@ export const useDeleteFeed = () => {
 export const useUpdateFeed = () => {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: ({ feedId, url, title }: { feedId: number; url?: string; title?: string }) =>
-            feedsApi.update(feedId, { url, title }),
+        mutationFn: ({ feedId, url, title, groupId }: { feedId: number; url?: string; title?: string; groupId?: number | null }) =>
+            feedsApi.update(feedId, { url, title, group_id: groupId }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['feeds'] });
             queryClient.invalidateQueries({ queryKey: ['articles'] });

@@ -75,3 +75,21 @@ def test_init_db_rolls_back_after_failed_alter(tmp_path, monkeypatch):
     assert "is_read" in cols
     assert "is_starred" in cols
     assert "image_url" in cols
+
+
+def test_init_db_adds_group_id_to_legacy_feeds_and_topics(tmp_path, monkeypatch):
+    """feeds/topics created before groups existed get a group_id column on startup."""
+    test_engine = create_engine(f"sqlite:///{tmp_path / 'legacy.db'}")
+    with test_engine.connect() as conn:
+        conn.execute(text("CREATE TABLE feeds (id INTEGER PRIMARY KEY, url VARCHAR, title VARCHAR)"))
+        conn.execute(text("CREATE TABLE topics (id INTEGER PRIMARY KEY, name VARCHAR)"))
+        conn.commit()
+    monkeypatch.setattr(db_module, "engine", test_engine)
+
+    db_module.init_db()
+    db_module.init_db()  # idempotent
+
+    inspector = inspect(test_engine)
+    assert "group_id" in {c["name"] for c in inspector.get_columns("feeds")}
+    assert "group_id" in {c["name"] for c in inspector.get_columns("topics")}
+    assert inspector.has_table("item_groups")

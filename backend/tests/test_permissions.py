@@ -15,6 +15,9 @@ ADMIN_ONLY = [
     ("post", "/api/playground/run", {"article_id": 1, "stages": ["classification"]}),
     ("delete", "/api/bulletin/generated/1", None),
     ("get", "/api/newsletter/admin/subscriptions", None),
+    ("post", "/api/groups/", {"kind": "feed", "name": "Avrupa"}),
+    ("put", "/api/groups/1", {"name": "Asya"}),
+    ("delete", "/api/groups/1", None),
 ]
 
 

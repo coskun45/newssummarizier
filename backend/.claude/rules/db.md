@@ -23,5 +23,5 @@ paths:
   `article_id`.
 
 ## Migrations
-- **Column adds are handled in code, not scripts.** `create_all()` only creates missing tables (never alters existing ones), so `init_db()` in `db/database.py` runs an idempotent auto-migration: it ALTER-adds any missing column listed in `article_columns`. When you add a column to a model, also append `(name, DDL)` there — the PostgreSQL DB gets patched on next startup, no manual step. Keep the DDL portable (Postgres in prod, in-memory SQLite in pytest).
+- **Column adds are handled in code, not scripts.** `create_all()` only creates missing tables (never alters existing ones), so `init_db()` in `db/database.py` runs an idempotent auto-migration: it ALTER-adds any missing column listed in `table_columns` (table → `(name, DDL)` list; Article's are in `article_columns`, `feeds`/`topics` carry `group_id`). When you add a column to a model, also append `(name, DDL)` under its table there (add the table if it isn't listed yet) — the PostgreSQL DB gets patched on next startup, no manual step. Keep the DDL portable (Postgres in prod, in-memory SQLite in pytest).
 - **More complex changes** (renames, type changes, drops, data backfills) aren't covered by the column loop — write a one-off `backend/migrate_*.py` for those (e.g. `migrate_remove_german_topics.py`) and run it manually.

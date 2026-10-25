@@ -7,10 +7,27 @@ from sqlalchemy.sql import func
 from app.db.database import Base, UTCDateTime
 
 
+class ItemGroup(Base):
+    """User-defined group that sidebar feeds or topics are listed under. Feed groups and topic
+    groups are separate lists (`kind`). Members without a group (group_id NULL) show under the
+    virtual "Diğer" group — it has no row, and deleting a group drops its members back into it."""
+    __tablename__ = "item_groups"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    kind = Column(String, nullable=False, index=True)  # feed | topic
+    name = Column(String, nullable=False)
+    display_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(UTCDateTime(), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("kind", "name", name="uq_item_group_kind_name"),
+    )
+
+
 class Feed(Base):
     """RSS Feed model."""
     __tablename__ = "feeds"
-    
+
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     url = Column(String, unique=True, nullable=False, index=True)
     title = Column(String)
@@ -18,6 +35,7 @@ class Feed(Base):
     last_fetched = Column(UTCDateTime())
     fetch_interval = Column(Integer, default=3600)  # seconds
     is_active = Column(Boolean, default=True)
+    group_id = Column(Integer, ForeignKey("item_groups.id", ondelete="SET NULL"), nullable=True, index=True)  # NULL = "Diğer"
     created_at = Column(UTCDateTime(), server_default=func.now())
     
     # Relationships
@@ -97,7 +115,8 @@ class Topic(Base):
     name = Column(String, unique=True, nullable=False)
     description = Column(Text)
     color = Column(String)  # For UI color coding
-    
+    group_id = Column(Integer, ForeignKey("item_groups.id", ondelete="SET NULL"), nullable=True, index=True)  # NULL = "Diğer"
+
     # Relationships
     articles = relationship("ArticleTopic", back_populates="topic")
 

@@ -9,7 +9,20 @@ export interface Feed {
     description: string | null;
     last_fetched: string | null;
     is_active: boolean;
+    group_id: number | null; // null = "Diğer"
     created_at: string;
+}
+
+// Sidebar group for feeds or topics (separate lists). Members with group_id null show under the
+// virtual "Diğer" group, which has no row.
+export type GroupKind = 'feed' | 'topic';
+
+export interface ItemGroup {
+    id: number;
+    kind: GroupKind;
+    name: string;
+    display_order: number;
+    created_at: string | null;
 }
 
 export interface Topic {
@@ -17,6 +30,7 @@ export interface Topic {
     name: string;
     description: string | null;
     color: string | null;
+    group_id?: number | null; // null = "Diğer"
     confidence?: number;
     article_count?: number;
     unread_count?: number;

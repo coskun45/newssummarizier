@@ -18,6 +18,7 @@ class TopicCreate(BaseModel):
     name: str
     description: Optional[str] = None
     color: Optional[str] = None
+    group_id: Optional[int] = None  # None = "Diğer"
 
 
 class TopicUpdate(BaseModel):
@@ -25,6 +26,7 @@ class TopicUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     color: Optional[str] = None
+    group_id: Optional[int] = None  # sent as null = move to "Diğer"; omitted = unchanged
 
 
 class TopicResponse(BaseModel):
@@ -33,6 +35,7 @@ class TopicResponse(BaseModel):
     name: str
     description: Optional[str] = None
     color: Optional[str] = None
+    group_id: Optional[int] = None
     article_count: int = 0
     unread_count: int = 0
 
@@ -75,6 +78,9 @@ def create_topic(
     """
     Create a new topic (admin only).
     """
+    if not crud.is_valid_group(db, topic.group_id, "topic"):
+        raise HTTPException(status_code=400, detail="Invalid group")
+
     # Check if topic with same name already exists
     existing_topic = crud.get_topic_by_name(db, topic.name)
     if existing_topic:
@@ -88,7 +94,8 @@ def create_topic(
         db=db,
         name=topic.name,
         description=topic.description,
-        color=color
+        color=color,
+        group_id=topic.group_id,
     )
     
     return TopicResponse(
@@ -96,6 +103,7 @@ def create_topic(
         name=new_topic.name,
         description=new_topic.description,
         color=new_topic.color,
+        group_id=new_topic.group_id,
         article_count=0
     )
 
@@ -117,6 +125,7 @@ def get_topic(topic_id: int, db: Session = Depends(get_db)):
         name=topic.name,
         description=topic.description,
         color=topic.color,
+        group_id=topic.group_id,
         article_count=article_count
     )
 
@@ -142,13 +151,20 @@ def update_topic(
         if name_taken:
             raise HTTPException(status_code=400, detail="Topic with this name already exists")
     
+    group_changes = {}
+    if "group_id" in topic.model_fields_set:
+        if not crud.is_valid_group(db, topic.group_id, "topic"):
+            raise HTTPException(status_code=400, detail="Invalid group")
+        group_changes["group_id"] = topic.group_id
+
     # Update topic
     updated_topic = crud.update_topic(
         db=db,
         topic_id=topic_id,
         name=topic.name,
         description=topic.description,
-        color=topic.color
+        color=topic.color,
+        **group_changes,
     )
     
     if not updated_topic:
@@ -162,6 +178,7 @@ def update_topic(
         name=updated_topic.name,
         description=updated_topic.description,
         color=updated_topic.color,
+        group_id=updated_topic.group_id,
         article_count=article_count
     )
 

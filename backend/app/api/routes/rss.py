@@ -31,6 +31,7 @@ class FeedCreate(BaseModel):
     url: HttpUrl
     title: str
     description: Optional[str] = None
+    group_id: Optional[int] = None  # None = "Diğer"
 
     _check_title = field_validator("title")(_require_title)
 
@@ -42,6 +43,7 @@ class FeedUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     is_active: Optional[bool] = None
+    group_id: Optional[int] = None  # sent as null = move to "Diğer"; omitted = unchanged
 
     _check_title = field_validator("title")(_require_title)
 
@@ -59,6 +61,7 @@ class FeedResponse(BaseModel):
     description: Optional[str] = None
     last_fetched: Optional[datetime] = None
     is_active: bool
+    group_id: Optional[int] = None
     created_at: datetime
     
     class Config:
@@ -75,6 +78,8 @@ async def create_feed(
     Create a new RSS feed (admin only).
     """
     assert_safe_feed_url(str(feed.url))
+    if not crud.is_valid_group(db, feed.group_id, "feed"):
+        raise HTTPException(status_code=400, detail="Invalid group")
 
     # Check if feed already exists
     existing_feed = crud.get_feed_by_url(db, str(feed.url))
@@ -92,7 +97,8 @@ async def create_feed(
         db=db,
         url=str(feed.url),
         title=feed.title,
-        description=feed.description
+        description=feed.description,
+        group_id=feed.group_id,
     )
     
     return db_feed
@@ -150,6 +156,11 @@ async def update_feed(
         raise HTTPException(status_code=404, detail="Feed not found")
 
     new_url = str(feed_update.url) if feed_update.url is not None else None
+    group_changes = {}
+    if "group_id" in feed_update.model_fields_set:
+        if not crud.is_valid_group(db, feed_update.group_id, "feed"):
+            raise HTTPException(status_code=400, detail="Invalid group")
+        group_changes["group_id"] = feed_update.group_id
 
     # Reject a URL change that collides with a different existing feed
     if new_url and new_url != feed.url:
@@ -171,6 +182,7 @@ async def update_feed(
         title=feed_update.title,
         description=feed_update.description,
         is_active=feed_update.is_active,
+        **group_changes,
     )
     return updated
 

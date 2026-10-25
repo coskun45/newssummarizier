@@ -1,6 +1,8 @@
 import type { Page, Route, Request } from '@playwright/test';
 import type {
   Feed,
+  ItemGroup,
+  GroupKind,
   Topic,
   Article,
   Summary,
@@ -48,6 +50,19 @@ export function makeFeed(overrides: Partial<Feed> = {}): Feed {
     description: null,
     last_fetched: null,
     is_active: true,
+    group_id: null,
+    created_at: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+export function makeGroup(overrides: Partial<ItemGroup> = {}): ItemGroup {
+  const id = overrides.id ?? nextId();
+  return {
+    id,
+    kind: 'feed',
+    name: `Group ${id}`,
+    display_order: 0,
     created_at: new Date().toISOString(),
     ...overrides,
   };
@@ -60,6 +75,7 @@ export function makeTopic(overrides: Partial<Topic> = {}): Topic {
     name: `Topic ${id}`,
     description: null,
     color: '#3b82f6',
+    group_id: null,
     ...overrides,
   };
 }
@@ -341,6 +357,7 @@ export function buildPlaygroundRunResult(article: MockArticle, request: Playgrou
 
 export interface MockState {
   feeds: Feed[];
+  groups: ItemGroup[];
   topics: Topic[];
   articles: MockArticle[];
   summaries: Map<number, Summary[]>;
@@ -365,6 +382,7 @@ export interface MockState {
 
 export interface MockApiOverrides {
   feeds?: Feed[];
+  groups?: ItemGroup[];
   topics?: Topic[];
   articles?: MockArticle[];
   summaries?: Map<number, Summary[]>;
@@ -529,6 +547,7 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
   // that shared object for every later test in the file.
   const state: MockState = {
     feeds: (overrides.feeds ?? [makeFeed({ id: 1, title: 'DW - Deutsche Welle' })]).map((f) => ({ ...f })),
+    groups: (overrides.groups ?? []).map((g) => ({ ...g })),
     topics: (overrides.topics ?? []).map((t) => ({ ...t })),
     articles: (overrides.articles ?? []).map((a) => ({ ...a })),
     summaries: overrides.summaries ?? new Map(),
@@ -599,8 +618,8 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
       return json(list);
     }
     if (method === 'POST' && path === '/feeds/') {
-      const body = request.postDataJSON() as { url: string; title?: string; description?: string };
-      const feed = makeFeed({ url: body.url, title: body.title ?? null, description: body.description ?? null });
+      const body = request.postDataJSON() as { url: string; title?: string; description?: string; group_id?: number | null };
+      const feed = makeFeed({ url: body.url, title: body.title ?? null, description: body.description ?? null, group_id: body.group_id ?? null });
       state.feeds.push(feed);
       return json(feed);
     }
@@ -800,6 +819,43 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
       return json({ articles: page, total: filtered.length, skip, limit });
     }
 
+    // ---- groups ----
+    if (method === 'GET' && path === '/groups/') {
+      const kind = params.get('kind') as GroupKind;
+      return json(
+        state.groups
+          .filter((g) => g.kind === kind)
+          .sort((a, b) => a.display_order - b.display_order || a.name.localeCompare(b.name)),
+      );
+    }
+    if (method === 'POST' && path === '/groups/') {
+      const body = request.postDataJSON() as { kind: GroupKind; name: string };
+      const name = body.name.trim();
+      if (state.groups.some((g) => g.kind === body.kind && g.name.toLowerCase() === name.toLowerCase())) {
+        return json({ detail: 'Group with this name already exists' }, 400);
+      }
+      const group = makeGroup({ kind: body.kind, name });
+      state.groups.push(group);
+      return json(group);
+    }
+    m = path.match(/^\/groups\/(\d+)$/);
+    if (m) {
+      const groupId = parseInt(m[1], 10);
+      const group = state.groups.find((g) => g.id === groupId);
+      if (!group) return json({ detail: 'Group not found' }, 404);
+      if (method === 'PUT') {
+        Object.assign(group, request.postDataJSON() as Partial<ItemGroup>);
+        return json(group);
+      }
+      if (method === 'DELETE') {
+        state.groups = state.groups.filter((g) => g.id !== groupId);
+        for (const item of [...state.feeds, ...state.topics]) {
+          if (item.group_id === groupId) item.group_id = null;
+        }
+        return json({ status: 'deleted', group_id: groupId });
+      }
+    }
+
     // ---- topics ----
     if (method === 'GET' && path === '/topics/') {
       const feedIdParam = params.get('feed_id');
@@ -807,8 +863,8 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
       return json(computeTopicsWithCounts(state.topics, state.articles, feedId));
     }
     if (method === 'POST' && path === '/topics/') {
-      const body = request.postDataJSON() as { name: string; description?: string; color?: string };
-      const topic = makeTopic({ name: body.name, description: body.description ?? null, color: body.color ?? '#3b82f6' });
+      const body = request.postDataJSON() as { name: string; description?: string; color?: string; group_id?: number | null };
+      const topic = makeTopic({ name: body.name, description: body.description ?? null, color: body.color ?? '#3b82f6', group_id: body.group_id ?? null });
       state.topics.push(topic);
       return json({ ...topic, article_count: 0, unread_count: 0 });
     }

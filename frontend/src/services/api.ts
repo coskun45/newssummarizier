@@ -5,6 +5,8 @@ import axios from 'axios';
 import { filenameFromContentDisposition } from '../utils/downloadFile';
 import type {
     Feed,
+    GroupKind,
+    ItemGroup,
     ArticleDetail,
     ArticleListResponse,
     ArticleFilters,
@@ -130,8 +132,8 @@ export const feedsApi = {
         return response.data;
     },
 
-    create: async (url: string, title: string, description?: string): Promise<Feed> => {
-        const response = await api.post('/feeds/', { url, title, description });
+    create: async (url: string, title: string, description?: string, groupId?: number | null): Promise<Feed> => {
+        const response = await api.post('/feeds/', { url, title, description, group_id: groupId ?? null });
         return response.data;
     },
 
@@ -142,7 +144,8 @@ export const feedsApi = {
 
     update: async (
         feedId: number,
-        data: { url?: string; title?: string; description?: string; is_active?: boolean }
+        // group_id: null moves the feed to "Diğer"; undefined leaves it unchanged
+        data: { url?: string; title?: string; description?: string; is_active?: boolean; group_id?: number | null }
     ): Promise<Feed> => {
         const response = await api.put(`/feeds/${feedId}`, data);
         return response.data;
@@ -290,18 +293,42 @@ export const topicsApi = {
         return response.data;
     },
 
-    create: async (name: string, description?: string, color?: string): Promise<Topic> => {
-        const response = await api.post('/topics/', { name, description, color });
+    create: async (name: string, description?: string, color?: string, groupId?: number | null): Promise<Topic> => {
+        const response = await api.post('/topics/', { name, description, color, group_id: groupId ?? null });
         return response.data;
     },
 
-    update: async (topicId: number, name?: string, description?: string, color?: string): Promise<Topic> => {
-        const response = await api.put(`/topics/${topicId}`, { name, description, color });
+    // groupId: null moves the topic to "Diğer"; undefined leaves it unchanged
+    update: async (topicId: number, name?: string, description?: string, color?: string, groupId?: number | null): Promise<Topic> => {
+        const response = await api.put(`/topics/${topicId}`, { name, description, color, group_id: groupId });
         return response.data;
     },
 
     delete: async (topicId: number): Promise<{ status: string; message: string }> => {
         const response = await api.delete(`/topics/${topicId}`);
+        return response.data;
+    },
+};
+
+// Group endpoints (sidebar groups for feeds / topics)
+export const groupsApi = {
+    list: async (kind: GroupKind): Promise<ItemGroup[]> => {
+        const response = await api.get('/groups/', { params: { kind } });
+        return response.data;
+    },
+
+    create: async (kind: GroupKind, name: string): Promise<ItemGroup> => {
+        const response = await api.post('/groups/', { kind, name });
+        return response.data;
+    },
+
+    update: async (groupId: number, data: { name?: string; display_order?: number }): Promise<ItemGroup> => {
+        const response = await api.put(`/groups/${groupId}`, data);
+        return response.data;
+    },
+
+    delete: async (groupId: number): Promise<{ status: string; group_id: number }> => {
+        const response = await api.delete(`/groups/${groupId}`);
         return response.data;
     },
 };

@@ -154,6 +154,11 @@
           "id": "settings-ai-models",
           "title": "Yapay zekâ modeli seçimi",
           "description": "Ayarlar › Yapay Zekâ Modelleri'nden sınıflandırma ve özetler için ayrı OpenAI modelleri seçilir; modeller kart olarak listelenir, bir kartın üzerine gelince 1 milyon token başına giriş/çıkış fiyatı görünür. Seçim yapılmadıysa sunucu varsayılanı (gpt-6-luna) kullanılır; değişikliği yalnızca yöneticiler yapabilir."
+        },
+        {
+          "id": "feed-topic-groups",
+          "title": "RSS ve kategori grupları",
+          "description": "Sol paneldeki RSS beslemeleri ve kategoriler gruplar altında, katlanabilir başlıklarla listelenir; grup başlığındaki kutu gruptaki tüm öğeleri tek seferde seçer. Gruplar Ayarlar › RSS Beslemeleri ve Kategoriler'den eklenir, yeniden adlandırılır ve silinir; besleme ya da kategori eklerken grup seçilebilir veya yeni grup oluşturulabilir. Grubu olmayanlar \"Diğer\" altında görünür."
         }
       ]
     }

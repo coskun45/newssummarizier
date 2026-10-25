@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
-import { useSettings, useUpdateSettings, useTopics, useCreateTopic, useUpdateTopic, useDeleteTopic, useUsers, useCreateUser, useDeleteUser, useFeeds, useCreateFeed, useUpdateFeed, useDeleteFeed, useTestFeedConnection } from '../../hooks/useApi';
+import { useSettings, useUpdateSettings, useTopics, useCreateTopic, useUpdateTopic, useDeleteTopic, useUsers, useCreateUser, useDeleteUser, useFeeds, useCreateFeed, useUpdateFeed, useDeleteFeed, useTestFeedConnection, useGroups } from '../../hooks/useApi';
 import PromptEditor from '../PromptEditor/PromptEditor';
 import Features from '../Features/Features';
 import ModelPicker from '../ModelPicker/ModelPicker';
+import GroupManager from '../GroupManager/GroupManager';
+import GroupSelect from '../GroupSelect/GroupSelect';
 import { FolderIcon, DocumentTextIcon, SparklesIcon, PencilIcon, TrashIcon, CheckIcon, XMarkIcon, PlusIcon, UsersIcon, RssIcon, ExclamationTriangleIcon, SignalIcon, CpuChipIcon } from '@heroicons/react/24/outline';
-import type { AuthUser } from '../../types';
+import type { AuthUser, ItemGroup } from '../../types';
 import './Settings.css';
 
 export type SettingsCategory = 'feeds' | 'topics' | 'summaryTypes' | 'models' | 'prompts' | 'features' | 'users';
@@ -36,6 +38,19 @@ const MAX_ARTICLE_AGE_OPTIONS: { value: number; label: string }[] = [
 
 const ADMIN_ONLY_NOTE = 'Bu ayarları yalnızca yöneticiler değiştirebilir.';
 
+/** Members per group id, for the group list's counters. */
+function countByGroup(items: { group_id?: number | null }[] | undefined): Record<number, number> {
+  const counts: Record<number, number> = {};
+  for (const item of items ?? []) {
+    if (item.group_id != null) counts[item.group_id] = (counts[item.group_id] ?? 0) + 1;
+  }
+  return counts;
+}
+
+function groupName(groups: ItemGroup[] | undefined, groupId: number | null | undefined): string | null {
+  return groups?.find(g => g.id === groupId)?.name ?? null;
+}
+
 function Settings({ category, currentUser }: SettingsProps) {
   // Settings steer the pipeline (and its cost) for everyone — only admins may change them.
   const isAdmin = currentUser.role === 'admin';
@@ -53,6 +68,8 @@ function Settings({ category, currentUser }: SettingsProps) {
   const { mutate: updateFeed, isPending: isUpdatingFeed } = useUpdateFeed();
   const { mutate: deleteFeed, isPending: isDeletingFeed } = useDeleteFeed();
   const { mutate: testFeedConnection, isPending: isTestingFeed } = useTestFeedConnection();
+  const { data: feedGroups } = useGroups('feed');
+  const { data: topicGroups } = useGroups('topic');
 
   const [enabledTopicIds, setEnabledTopicIds] = useState<number[]>([]);
   const [enabledSummaryTypes, setEnabledSummaryTypes] = useState<string[]>([]);
@@ -63,9 +80,11 @@ function Settings({ category, currentUser }: SettingsProps) {
   const [showAddTopic, setShowAddTopic] = useState(false);
   const [newTopicName, setNewTopicName] = useState('');
   const [newTopicDescription, setNewTopicDescription] = useState('');
+  const [newTopicGroupId, setNewTopicGroupId] = useState<number | null>(null);
   const [editingTopicId, setEditingTopicId] = useState<number | null>(null);
   const [editTopicName, setEditTopicName] = useState('');
   const [editTopicDescription, setEditTopicDescription] = useState('');
+  const [editTopicGroupId, setEditTopicGroupId] = useState<number | null>(null);
   
   // User management form state
   const [newUserEmail, setNewUserEmail] = useState('');
@@ -77,9 +96,16 @@ function Settings({ category, currentUser }: SettingsProps) {
   const [showAddFeed, setShowAddFeed] = useState(false);
   const [newFeedUrl, setNewFeedUrl] = useState('');
   const [newFeedTitle, setNewFeedTitle] = useState('');
+  const [newFeedGroupId, setNewFeedGroupId] = useState<number | null>(null);
   const [editingFeedId, setEditingFeedId] = useState<number | null>(null);
   const [editFeedUrl, setEditFeedUrl] = useState('');
   const [editFeedTitle, setEditFeedTitle] = useState('');
+  const [editFeedGroupId, setEditFeedGroupId] = useState<number | null>(null);
+  // A "+ Yeni grup…" left open in a form blocks saving it (see GroupSelect)
+  const [newFeedGroupPending, setNewFeedGroupPending] = useState(false);
+  const [editFeedGroupPending, setEditFeedGroupPending] = useState(false);
+  const [newTopicGroupPending, setNewTopicGroupPending] = useState(false);
+  const [editTopicGroupPending, setEditTopicGroupPending] = useState(false);
   const [feedError, setFeedError] = useState('');
   const [addFeedTested, setAddFeedTested] = useState(false);
   const [editFeedTested, setEditFeedTested] = useState(false);
@@ -158,21 +184,24 @@ function Settings({ category, currentUser }: SettingsProps) {
     if (newTopicName.trim()) {
       createTopic({
         name: newTopicName.trim(),
-        description: newTopicDescription.trim() || undefined
+        description: newTopicDescription.trim() || undefined,
+        groupId: newTopicGroupId,
       }, {
         onSuccess: () => {
           setNewTopicName('');
           setNewTopicDescription('');
+          setNewTopicGroupId(null);
           setShowAddTopic(false);
         }
       });
     }
   };
 
-  const handleEditTopic = (topicId: number, name: string, description?: string) => {
+  const handleEditTopic = (topicId: number, name: string, description?: string, groupId?: number | null) => {
     setEditingTopicId(topicId);
     setEditTopicName(name);
     setEditTopicDescription(description || '');
+    setEditTopicGroupId(groupId ?? null);
   };
 
   const handleSaveEdit = () => {
@@ -180,7 +209,8 @@ function Settings({ category, currentUser }: SettingsProps) {
       updateTopic({
         topicId: editingTopicId,
         name: editTopicName.trim(),
-        description: editTopicDescription.trim() || undefined
+        description: editTopicDescription.trim() || undefined,
+        groupId: editTopicGroupId,
       }, {
         onSuccess: () => {
           setEditingTopicId(null);
@@ -242,12 +272,13 @@ function Settings({ category, currentUser }: SettingsProps) {
   };
 
   const handleAddFeed = () => {
-    if (!newFeedUrl.trim() || !newFeedTitle.trim() || !addFeedTested) return;
+    if (!newFeedUrl.trim() || !newFeedTitle.trim() || !addFeedTested || newFeedGroupPending) return;
     setFeedError('');
-    createFeed({ url: newFeedUrl.trim(), title: newFeedTitle.trim() }, {
+    createFeed({ url: newFeedUrl.trim(), title: newFeedTitle.trim(), groupId: newFeedGroupId }, {
       onSuccess: () => {
         setNewFeedUrl('');
         setNewFeedTitle('');
+        setNewFeedGroupId(null);
         setAddFeedTested(false);
         setShowAddFeed(false);
       },
@@ -264,12 +295,13 @@ function Settings({ category, currentUser }: SettingsProps) {
     }
   };
 
-  const handleEditFeed = (feedId: number, url: string, title?: string | null) => {
+  const handleEditFeed = (feedId: number, url: string, title?: string | null, groupId?: number | null) => {
     setFeedError('');
     setEditFeedTested(false);
     setEditingFeedId(feedId);
     setEditFeedUrl(url);
     setEditFeedTitle(title || '');
+    setEditFeedGroupId(groupId ?? null);
   };
 
   const handleCancelFeedEdit = () => {
@@ -301,7 +333,8 @@ function Settings({ category, currentUser }: SettingsProps) {
       updateFeed({
         feedId: editingFeedId,
         url: editFeedUrl.trim(),
-        title: editFeedTitle.trim()
+        title: editFeedTitle.trim(),
+        groupId: editFeedGroupId,
       }, {
         onSuccess: handleCancelFeedEdit,
         onError: (err: unknown) => {
@@ -429,6 +462,7 @@ function Settings({ category, currentUser }: SettingsProps) {
                               onChange={(e) => setEditFeedTitle(e.target.value)}
                               disabled={isUpdatingFeed}
                             />
+                            <GroupSelect kind="feed" value={editFeedGroupId} onChange={setEditFeedGroupId} onPendingChange={setEditFeedGroupPending} disabled={isUpdatingFeed} />
                             <button
                               type="button"
                               className="test-connection-button"
@@ -456,10 +490,12 @@ function Settings({ category, currentUser }: SettingsProps) {
                                 onClick={handleSaveFeedEdit}
                                 disabled={
                                   isUpdatingFeed ||
+                                  editFeedGroupPending ||
                                   !editFeedUrl.trim() ||
                                   !editFeedTitle.trim() ||
                                   (editFeedUrl.trim() !== feed.url && !editFeedTested)
                                 }
+                                title={editFeedGroupPending ? 'Önce yeni grubu oluşturun ya da vazgeçin' : undefined}
                               >
                                 {isUpdatingFeed ? 'Kaydediliyor...' : 'Kaydet'}
                               </button>
@@ -470,11 +506,14 @@ function Settings({ category, currentUser }: SettingsProps) {
                             <div className="user-list-info">
                               <span className="user-list-email">{getFeedLabel(feed)}</span>
                               <span className="user-role-badge" title={feed.url}>{new URL(feed.url).hostname}</span>
+                              {groupName(feedGroups, feed.group_id) && (
+                                <span className="user-role-badge user-role-user">{groupName(feedGroups, feed.group_id)}</span>
+                              )}
                             </div>
                             <div className="topic-actions">
                               <button
                                 className="edit-topic-button"
-                                onClick={() => handleEditFeed(feed.id, feed.url, feed.title)}
+                                onClick={() => handleEditFeed(feed.id, feed.url, feed.title, feed.group_id)}
                                 title="Beslemeyi düzenle"
                               >
                                 <PencilIcon />
@@ -516,6 +555,7 @@ function Settings({ category, currentUser }: SettingsProps) {
                           onChange={(e) => setNewFeedTitle(e.target.value)}
                           disabled={isCreatingFeed}
                         />
+                        <GroupSelect kind="feed" value={newFeedGroupId} onChange={setNewFeedGroupId} onPendingChange={setNewFeedGroupPending} disabled={isCreatingFeed} />
                         <button
                           type="button"
                           className="test-connection-button"
@@ -533,7 +573,7 @@ function Settings({ category, currentUser }: SettingsProps) {
                         <div className="add-topic-buttons">
                           <button
                             className="cancel-add-button"
-                            onClick={() => { setFeedError(''); setAddFeedTested(false); setShowAddFeed(false); setNewFeedUrl(''); setNewFeedTitle(''); }}
+                            onClick={() => { setFeedError(''); setAddFeedTested(false); setShowAddFeed(false); setNewFeedUrl(''); setNewFeedTitle(''); setNewFeedGroupId(null); }}
                             disabled={isCreatingFeed}
                           >
                             İptal
@@ -541,14 +581,15 @@ function Settings({ category, currentUser }: SettingsProps) {
                           <button
                             className="confirm-add-button"
                             onClick={handleAddFeed}
-                            disabled={isCreatingFeed || !newFeedUrl.trim() || !newFeedTitle.trim() || !addFeedTested}
-                            title={!newFeedTitle.trim() ? 'Besleme adı zorunlu' : !addFeedTested ? 'Önce bağlantıyı test edin' : undefined}
+                            disabled={isCreatingFeed || newFeedGroupPending || !newFeedUrl.trim() || !newFeedTitle.trim() || !addFeedTested}
+                            title={newFeedGroupPending ? 'Önce yeni grubu oluşturun ya da vazgeçin' : !newFeedTitle.trim() ? 'Besleme adı zorunlu' : !addFeedTested ? 'Önce bağlantıyı test edin' : undefined}
                           >
                             {isCreatingFeed ? 'Ekleniyor...' : 'Ekle'}
                           </button>
                         </div>
                       </div>
                     )}
+                    <GroupManager kind="feed" isAdmin={isAdmin} memberCounts={countByGroup(feeds)} />
           </div>
         </div>
       )}
@@ -581,6 +622,7 @@ function Settings({ category, currentUser }: SettingsProps) {
                             onChange={(e) => setEditTopicDescription(e.target.value)}
                             disabled={isUpdatingTopic}
                           />
+                          <GroupSelect kind="topic" value={editTopicGroupId} onChange={setEditTopicGroupId} onPendingChange={setEditTopicGroupPending} disabled={isUpdatingTopic} />
                           <div className="edit-topic-buttons">
                             <button 
                               className="cancel-edit-button"
@@ -592,7 +634,8 @@ function Settings({ category, currentUser }: SettingsProps) {
                             <button 
                               className="save-edit-button"
                               onClick={handleSaveEdit}
-                              disabled={isUpdatingTopic || !editTopicName.trim()}
+                              disabled={isUpdatingTopic || editTopicGroupPending || !editTopicName.trim()}
+                              title={editTopicGroupPending ? 'Önce yeni grubu oluşturun ya da vazgeçin' : undefined}
                             >
                               <CheckIcon />
                             </button>
@@ -610,12 +653,15 @@ function Settings({ category, currentUser }: SettingsProps) {
                           <span className="checkbox-text">
                             {topic.name} ({topic.article_count || 0})
                           </span>
+                          {groupName(topicGroups, topic.group_id) && (
+                            <span className="user-role-badge user-role-user">{groupName(topicGroups, topic.group_id)}</span>
+                          )}
                           <div className="topic-actions">
                             <button
                               className="edit-topic-button"
                               onClick={(e) => {
                                 e.preventDefault();
-                                handleEditTopic(topic.id, topic.name, topic.description || '');
+                                handleEditTopic(topic.id, topic.name, topic.description || '', topic.group_id);
                               }}
                               title="Düzenle"
                             >
@@ -673,6 +719,7 @@ function Settings({ category, currentUser }: SettingsProps) {
                       onChange={(e) => setNewTopicDescription(e.target.value)}
                       disabled={isCreatingTopic}
                     />
+                    <GroupSelect kind="topic" value={newTopicGroupId} onChange={setNewTopicGroupId} onPendingChange={setNewTopicGroupPending} disabled={isCreatingTopic} />
                     <div className="add-topic-buttons">
                       <button 
                         className="cancel-add-button"
@@ -680,6 +727,7 @@ function Settings({ category, currentUser }: SettingsProps) {
                           setShowAddTopic(false);
                           setNewTopicName('');
                           setNewTopicDescription('');
+                          setNewTopicGroupId(null);
                         }}
                         disabled={isCreatingTopic}
                       >
@@ -688,13 +736,15 @@ function Settings({ category, currentUser }: SettingsProps) {
                       <button
                         className="confirm-add-button"
                         onClick={handleAddTopic}
-                        disabled={isCreatingTopic || !newTopicName.trim()}
+                        disabled={isCreatingTopic || newTopicGroupPending || !newTopicName.trim()}
+                        title={newTopicGroupPending ? 'Önce yeni grubu oluşturun ya da vazgeçin' : undefined}
                       >
                         {isCreatingTopic ? 'Oluşturuluyor...' : 'Oluştur'}
                       </button>
                     </div>
                   </div>
                 )}
+                <GroupManager kind="topic" isAdmin={isAdmin} memberCounts={countByGroup(topics)} />
             </div>
             <div className="settings-save-row">
               {isAdmin ? (

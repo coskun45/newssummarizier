@@ -1,13 +1,16 @@
 import { useState } from 'react';
 import { ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
-import type { Topic } from '../../types';
+import type { ItemGroup, Topic } from '../../types';
+import GroupedChecklist from '../GroupedChecklist/GroupedChecklist';
 import { PRIORITIES } from '../../constants/priorities';
 import './TopicFilter.css';
 
 interface TopicFilterProps {
   topics: Topic[];
+  topicGroups?: ItemGroup[];
   selectedTopics: number[];
   onTopicToggle: (topicId: number) => void;
+  onTopicGroupToggle: (topicIds: number[], select: boolean) => void;
   importanceMode: 'important' | 'unimportant' | null;
   onImportanceModeChange: (mode: 'important' | 'unimportant' | null) => void;
   selectedPriority: string | null;
@@ -16,7 +19,7 @@ interface TopicFilterProps {
   unimportantCount?: number;
 }
 
-function TopicFilter({ topics, selectedTopics, onTopicToggle, importanceMode, onImportanceModeChange, selectedPriority, onPriorityChange, priorityCounts, unimportantCount }: TopicFilterProps) {
+function TopicFilter({ topics, topicGroups = [], selectedTopics, onTopicToggle, onTopicGroupToggle, importanceMode, onImportanceModeChange, selectedPriority, onPriorityChange, priorityCounts, unimportantCount }: TopicFilterProps) {
   const [openCategories, setOpenCategories] = useState(true);
   const [openPriority, setOpenPriority] = useState(true);
 
@@ -93,19 +96,18 @@ function TopicFilter({ topics, selectedTopics, onTopicToggle, importanceMode, on
 
       {openCategories && (
         <div className="importance-topics">
-          {topics.map((topic) => (
-            <label key={topic.id} className="topic-item">
-              <input
-                type="checkbox"
-                checked={selectedTopics.includes(topic.id)}
-                onChange={() => onTopicToggle(topic.id)}
-              />
-              <span className="topic-name">{topic.name}</span>
-              {topic.unread_count !== undefined && (
-                <span className="topic-count">{topic.unread_count}</span>
-              )}
-            </label>
-          ))}
+          <GroupedChecklist
+            items={topics.map((topic) => ({
+              id: topic.id,
+              label: topic.name,
+              count: topic.unread_count,
+              group_id: topic.group_id,
+            }))}
+            groups={topicGroups}
+            selectedIds={selectedTopics}
+            onToggle={onTopicToggle}
+            onGroupToggle={onTopicGroupToggle}
+          />
         </div>
       )}
     </div>

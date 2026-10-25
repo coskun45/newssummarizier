@@ -56,7 +56,7 @@ bottom-up on the frontend**, so each layer compiles against the one below it.
 
 1. **Model** (`app/db/models.py`) — declarative `Column`, `server_default=func.now()`, free-form status
    strings with inline comments (`db` rule). Adding a column? Also append `(name, DDL)` to the
-   `article_columns` list in `init_db()` (`db/database.py`) so the existing PostgreSQL DB auto-migrates on
+   `table_columns` lists in `init_db()` (`article_columns` for Article) (`db/database.py`) so the existing PostgreSQL DB auto-migrates on
    startup — no separate script.
 2. **CRUD** (`app/db/crud.py`) — add a `db: Session`-first function; the single DB-access layer both
    routes and agent nodes call.

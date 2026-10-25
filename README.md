@@ -42,6 +42,12 @@ Deutsche Welle (DW) RSS beslemelerinden haber toplayan, kategorize eden ve yapay
   karşılaştırmalı), günlük önem trendi grafiği, konu × önem ısı haritası ve kaynak (feed) profili. Etiketlenmiş
   haberler sayılır (okunmuş/okunmamış fark etmez); Önemsiz ve hatalı haberler dahil edilmez. Tarih olarak
   yayın tarihi, yoksa çekilme tarihi kullanılır. Ek OpenAI maliyeti yoktur.
+- **RSS ve Kategori Grupları**: Sol paneldeki RSS Beslemeleri ve Kategoriler, kullanıcı tanımlı gruplar altında
+  katlanabilir başlıklarla listelenir; grup başlığındaki kutu gruptaki tüm öğeleri tek seferde seçer/kaldırır.
+  Besleme grupları ile kategori grupları ayrı listelerdir. Gruplar Ayarlar › RSS Beslemeleri / Kategoriler'deki
+  "Gruplar" bölümünden eklenir, yeniden adlandırılır, silinir (yalnızca admin); besleme veya kategori eklerken/
+  düzenlerken grup seçilir ya da "+ Yeni grup…" ile yerinde oluşturulur. Grubu olmayanlar — ve silinen bir grubun
+  üyeleri — "Diğer" altında görünür. Hiç grup yoksa liste eskisi gibi düzdür
 - **Kaynak ve Yazar**: Haber kartında RSS beslemesinin adı "Kaynak" olarak, yazarın üstünde gösterilir (besleme
   adı bu yüzden zorunludur). Özetin 📌 başlığında da aynı kaynak kullanılır; yazarı ise özetle birlikte yapay zeka
   belirler — yalnızca gerçek bir kişi adıysa yazılır ("Sputnik Türkiye" gibi kurum adları yazar sayılmaz), yoksa boş kalır
@@ -421,7 +427,8 @@ Bulten/
 
 ### Dashboard Özellikleri
 
-- **Konu Filtresi**: Filtrelemek için sidebar'daki konulara tıklayın
+- **Konu Filtresi**: Filtrelemek için sidebar'daki konulara tıklayın; grup başlığındaki kutu gruptaki tüm konuları
+  (veya beslemeleri) birlikte seçer
 - **Arama**: Makale başlığı ve içeriğinde arama yapın
 - **Özetleri Göster**:
   - "Özeti Göster"e tıklayın
@@ -450,7 +457,9 @@ Bulten/
 #### Beslemeler (Feeds)
 
 - `GET /api/feeds` - Tüm RSS beslemelerini listele
-- `POST /api/feeds` - Yeni besleme ekle (`title` zorunlu: haberlerde "Kaynak" olarak görünür; boşsa 422)
+- `POST /api/feeds` - Yeni besleme ekle (`title` zorunlu: haberlerde "Kaynak" olarak görünür; boşsa 422;
+  isteğe bağlı `group_id`, `null` = "Diğer")
+- `PUT /api/feeds/{id}` - Beslemeyi güncelle (`group_id: null` beslemeyi "Diğer"e taşır, gönderilmezse değişmez)
 - `POST /api/feeds/{id}/refresh` - Beslemeyi manuel olarak yenile
 
 #### Makaleler
@@ -474,10 +483,17 @@ Bulten/
 
 #### Konular & İstatistikler
 
-- `GET /api/topics` - Makale sayısıyla birlikte tüm konular
+- `GET /api/topics` - Makale sayısıyla birlikte tüm konular (`group_id` dahil)
 - `GET /api/stats/costs` - API maliyet istatistikleri
 - `GET /api/stats/analysis?days=30` - Analiz sekmesi verileri: günlük önem trendi, toplamlar, konu ve kaynak
   bazında Yüksek/Orta/Düşük dağılımı (`days`: 7, 30 veya 90; diğer değerler 400)
+
+#### Gruplar (sol panel)
+
+- `GET /api/groups?kind=feed|topic` - Beslemelerin veya kategorilerin grupları (`display_order` sırasıyla)
+- `POST /api/groups` - Grup ekle (`{kind, name}`; admin). Boş ad ya da ayrılmış "Diğer" adı 422, aynı türde aynı ad 400
+- `PUT /api/groups/{id}` - Grubu yeniden adlandır / sırala (admin)
+- `DELETE /api/groups/{id}` - Grubu sil; üyeleri "Diğer"e düşer (admin)
 
 #### Ayarlar
 

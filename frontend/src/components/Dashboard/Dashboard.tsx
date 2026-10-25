@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useArticles, useArticleCounts, useTopics, useFeeds, useRefreshFeed, useMarkArticlesBulkRead, useUnstarAll, useDeleteAllArticlesByPriority, useArchiveAllArticlesByPriority, useDeleteAllUnimportant, useArchiveAllUnimportant, useReprocessArticles, useReprocessStatus } from '../../hooks/useApi';
+import { useArticles, useArticleCounts, useTopics, useFeeds, useGroups, useRefreshFeed, useMarkArticlesBulkRead, useUnstarAll, useDeleteAllArticlesByPriority, useArchiveAllArticlesByPriority, useDeleteAllUnimportant, useArchiveAllUnimportant, useReprocessArticles, useReprocessStatus } from '../../hooks/useApi';
 import { feedsApi, articlesApi, summariesApi } from '../../services/api';
 import { downloadArticlesAsWord, buildWhatsAppMessage, copyToClipboard } from '../../utils/exportArticles';
 import ArticleList from '../ArticleList/ArticleList';
@@ -130,6 +130,23 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
   // For topic counts: use single feed if exactly one selected, else null (all)
   const topicFeedId = selectedFeedIds.length === 1 ? selectedFeedIds[0] : null;
   const { data: topicsData } = useTopics(topicFeedId);
+  const { data: feedGroups } = useGroups('feed');
+  const { data: topicGroups } = useGroups('topic');
+
+  // Picking a category narrows to important articles; clearing the last one (with no priority
+  // picked) drops that mode again.
+  const applyTopicSelection = (nextTopics: number[]) => {
+    setSelectedTopics(nextTopics);
+    if (nextTopics.length > 0) {
+      setImportanceMode('important');
+    } else if (!selectedPriority) {
+      setImportanceMode(null);
+    }
+  };
+
+  // Group checkbox in the sidebar: add/remove every id of the group at once.
+  const toggleIdGroup = (current: number[], ids: number[], select: boolean) =>
+    select ? [...new Set([...current, ...ids])] : current.filter(id => !ids.includes(id));
 
   // Manual refresh targets whichever feeds are selected in the sidebar filter, or every
   // active feed when none are ("Tüm Beslemeler"). It must not silently default to a single
@@ -440,6 +457,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
               </h2>
               <FeedSidebar
                 feeds={feedsData || []}
+                groups={feedGroups || []}
                 selectedFeedIds={selectedFeedIds}
                 feedCounts={articleCounts?.by_feed ?? {}}
                 onFeedToggle={(id) =>
@@ -447,22 +465,23 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                     prev.includes(id) ? prev.filter(f => f !== id) : [...prev, id]
                   )
                 }
+                onFeedGroupToggle={(ids, select) =>
+                  setSelectedFeedIds(prev => toggleIdGroup(prev, ids, select))
+                }
                 onClearFeeds={() => setSelectedFeedIds([])}
               />
               <TopicFilter
                 topics={topicsData || []}
+                topicGroups={topicGroups || []}
                 selectedTopics={selectedTopics}
-                onTopicToggle={(topicId) => {
-                  const nextTopics = selectedTopics.includes(topicId)
-                    ? selectedTopics.filter((id) => id !== topicId)
-                    : [...selectedTopics, topicId];
-                  setSelectedTopics(nextTopics);
-                  if (nextTopics.length > 0) {
-                    setImportanceMode('important');
-                  } else if (!selectedPriority) {
-                    setImportanceMode(null);
-                  }
-                }}
+                onTopicToggle={(topicId) =>
+                  applyTopicSelection(
+                    selectedTopics.includes(topicId)
+                      ? selectedTopics.filter((id) => id !== topicId)
+                      : [...selectedTopics, topicId]
+                  )
+                }
+                onTopicGroupToggle={(ids, select) => applyTopicSelection(toggleIdGroup(selectedTopics, ids, select))}
                 importanceMode={importanceMode}
                 onImportanceModeChange={(mode) => {
                   setImportanceMode(mode);

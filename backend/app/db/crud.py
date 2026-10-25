@@ -3,6 +3,7 @@ CRUD (Create, Read, Update, Delete) operations for database models.
 """
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import desc, func, inspect, or_, case, select
+from sqlalchemy.exc import IntegrityError
 from typing import List, Optional, Dict, Any, Set
 from datetime import datetime, timezone, timedelta
 import re
@@ -27,11 +28,114 @@ def _article_search_filter(search_query: str):
     )
 
 
+# Default for optional update args where None is a real value ("clear it"), e.g. group_id.
+_UNSET: Any = object()
+
+
+# ==================== Group Operations ====================
+
+class DuplicateGroupName(Exception):
+    """A group of the same kind already has this name."""
+
+
+def group_name_key(name: str) -> str:
+    """Comparison key for group names: case-insensitive, Turkish dotted/dotless i folded together.
+    Neither Python's lower()/casefold() nor SQL lower() handles "İ"/"ı" ("İstanbul" casefolds to
+    "i" + combining dot), so names are compared on this key in Python, not in SQL."""
+    return name.strip().casefold().replace("\u0307", "").replace("ı", "i")
+
+
+def get_groups(db: Session, kind: str) -> List[models.ItemGroup]:
+    """Groups of one kind ("feed" | "topic"), in display order."""
+    return (
+        db.query(models.ItemGroup)
+        .filter(models.ItemGroup.kind == kind)
+        .order_by(models.ItemGroup.display_order, models.ItemGroup.name)
+        .all()
+    )
+
+
+def get_group(db: Session, group_id: int, kind: str = None) -> Optional[models.ItemGroup]:
+    """Get a group by ID; with `kind`, only a group of that kind (a feed can't join a topic group)."""
+    query = db.query(models.ItemGroup).filter(models.ItemGroup.id == group_id)
+    if kind is not None:
+        query = query.filter(models.ItemGroup.kind == kind)
+    return query.first()
+
+
+def is_valid_group(db: Session, group_id: Optional[int], kind: str) -> bool:
+    """True for None ("Diğer") or an existing group of `kind` — the check every writer of a
+    feed/topic group_id must pass, since the FK alone doesn't enforce the kind."""
+    return group_id is None or get_group(db, group_id, kind=kind) is not None
+
+
+def get_group_by_name(db: Session, kind: str, name: str) -> Optional[models.ItemGroup]:
+    """Name lookup within one kind on group_name_key — "Avrupa"/"avrupa", "İzmir"/"izmir" match."""
+    key = group_name_key(name)
+    return next((g for g in get_groups(db, kind) if group_name_key(g.name) == key), None)
+
+
+def _commit_group(db: Session, group: models.ItemGroup) -> models.ItemGroup:
+    """Commit a new/renamed group. The (kind, name) unique constraint backs up the name check
+    against a concurrent insert of the same name."""
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise DuplicateGroupName(group.name)
+    db.refresh(group)
+    return group
+
+
+def create_group(db: Session, kind: str, name: str, display_order: int = 0) -> models.ItemGroup:
+    """Create a group. Raises DuplicateGroupName if the name is taken in this kind."""
+    if get_group_by_name(db, kind, name):
+        raise DuplicateGroupName(name)
+    group = models.ItemGroup(kind=kind, name=name, display_order=display_order)
+    db.add(group)
+    return _commit_group(db, group)
+
+
+def update_group(
+    db: Session, group_id: int, name: str = None, display_order: int = None
+) -> Optional[models.ItemGroup]:
+    """Rename / reorder a group. Only provided fields are changed. Raises DuplicateGroupName if
+    the new name is taken by another group of the same kind."""
+    group = get_group(db, group_id)
+    if not group:
+        return None
+    if name is not None:
+        taken = get_group_by_name(db, group.kind, name)
+        if taken and taken.id != group_id:
+            raise DuplicateGroupName(name)
+        group.name = name
+    if display_order is not None:
+        group.display_order = display_order
+    return _commit_group(db, group)
+
+
+def delete_group(db: Session, group_id: int) -> bool:
+    """Delete a group. Its feeds/topics fall back to "Diğer" (group_id NULL) — cleared here
+    explicitly so it doesn't depend on the DB honoring the FK's ON DELETE SET NULL."""
+    group = get_group(db, group_id)
+    if not group:
+        return False
+    model = models.Feed if group.kind == "feed" else models.Topic
+    db.query(model).filter(model.group_id == group_id).update(
+        {model.group_id: None}, synchronize_session=False
+    )
+    db.delete(group)
+    db.commit()
+    return True
+
+
 # ==================== Feed Operations ====================
 
-def create_feed(db: Session, url: str, title: str = None, description: str = None) -> models.Feed:
+def create_feed(
+    db: Session, url: str, title: str = None, description: str = None, group_id: int = None
+) -> models.Feed:
     """Create a new RSS feed."""
-    feed = models.Feed(url=url, title=title, description=description)
+    feed = models.Feed(url=url, title=title, description=description, group_id=group_id)
     db.add(feed)
     db.commit()
     db.refresh(feed)
@@ -73,8 +177,10 @@ def update_feed(
     title: str = None,
     description: str = None,
     is_active: bool = None,
+    group_id: Optional[int] = _UNSET,
 ) -> Optional[models.Feed]:
-    """Update a feed's editable fields. Only provided fields are changed."""
+    """Update a feed's editable fields. Only provided fields are changed (group_id=None moves
+    the feed to "Diğer")."""
     feed = get_feed(db, feed_id)
     if feed:
         if url is not None:
@@ -85,6 +191,8 @@ def update_feed(
             feed.description = description
         if is_active is not None:
             feed.is_active = is_active
+        if group_id is not _UNSET:
+            feed.group_id = group_id
         db.commit()
         db.refresh(feed)
     return feed
@@ -939,9 +1047,11 @@ def get_analysis_stats(db: Session, days: int = 30) -> Dict[str, Any]:
 
 # ==================== Topic Operations ====================
 
-def create_topic(db: Session, name: str, description: str = None, color: str = None) -> models.Topic:
+def create_topic(
+    db: Session, name: str, description: str = None, color: str = None, group_id: int = None
+) -> models.Topic:
     """Create a new topic."""
-    topic = models.Topic(name=name, description=description, color=color)
+    topic = models.Topic(name=name, description=description, color=color, group_id=group_id)
     db.add(topic)
     db.commit()
     db.refresh(topic)
@@ -1001,6 +1111,7 @@ def get_topics_with_counts(db: Session, feed_id: int = None) -> List[Dict[str, A
             "name": topic.name,
             "description": topic.description,
             "color": topic.color,
+            "group_id": topic.group_id,
             "article_count": article_count,
             "unread_count": int(unread_count or 0),
         }
@@ -1013,9 +1124,10 @@ def update_topic(
     topic_id: int,
     name: str = None,
     description: str = None,
-    color: str = None
+    color: str = None,
+    group_id: Optional[int] = _UNSET,
 ) -> Optional[models.Topic]:
-    """Update a topic."""
+    """Update a topic. Only provided fields are changed (group_id=None moves it to "Diğer")."""
     topic = get_topic(db, topic_id)
     if topic:
         if name is not None:
@@ -1024,6 +1136,8 @@ def update_topic(
             topic.description = description
         if color is not None:
             topic.color = color
+        if group_id is not _UNSET:
+            topic.group_id = group_id
         db.commit()
         db.refresh(topic)
     return topic
