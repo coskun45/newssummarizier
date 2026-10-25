@@ -469,6 +469,7 @@ Bulten/
 - `GET /api/articles` - Makaleleri listele (filtrelerle; `is_error=true` sadece önem etiketi olmayan "Error" haberleri döner)
   - Query params: `skip`, `limit`, `topic_ids`, `search`, `status`
   - Her makalede `source` (besleme adı; adı olmayan eski beslemelerde alan adı) ve `author` (özetin belirlediği kişi, yoksa `null`) döner
+- `POST /api/articles/mark-read-bulk` - Toplu arşive gönder: `article_ids` ya da `mark_all=true` + liste filtreleri; `mark_all` ile `anchor_id` + `direction` (`above`/`below`) verilirse yalnızca o haber ve listede üstündekiler/altındakiler arşivlenir
 - `GET /api/articles/{id}` - Tek bir makale
 - `GET /api/articles/topic/{topic_name}` - Konuya göre makaleler
 - `POST /api/articles/topic/{topic_id}/delete-all` - Konudaki tüm okunmamış makaleleri sil

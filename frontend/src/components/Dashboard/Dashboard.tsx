@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useArticles, useArticleCounts, useTopics, useFeeds, useGroups, useRefreshFeed, useMarkArticlesBulkRead, useUnstarAll, useDeleteAllArticlesByPriority, useArchiveAllArticlesByPriority, useDeleteAllUnimportant, useArchiveAllUnimportant, useReprocessArticles, useReprocessStatus } from '../../hooks/useApi';
 import { feedsApi, articlesApi, summariesApi } from '../../services/api';
@@ -18,6 +18,7 @@ import UserMenu from '../UserMenu/UserMenu';
 import BulletinPanel from '../Bulletin/Bulletin';
 import Playground from '../Playground/Playground';
 import Analysis from '../Analysis/Analysis';
+import ConfirmDialog from '../ConfirmDialog/ConfirmDialog';
 import logo from '../../assets/logo.svg';
 import {
   Cog6ToothIcon,
@@ -37,7 +38,8 @@ import {
   InformationCircleIcon,
 } from '@heroicons/react/24/outline';
 import { StarIcon } from '@heroicons/react/24/solid';
-import type { AuthUser, DateFilterState } from '../../types';
+import type { ArchiveDirection, Article, AuthUser, DateFilterState } from '../../types';
+import { showToast } from '../../lib/toast';
 import './Dashboard.css';
 
 const PAGE_SIZE = 20;
@@ -88,6 +90,8 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
   const { data: articleCounts } = useArticleCounts();
   const refreshFeedMutation = useRefreshFeed();
   const markBulkReadMutation = useMarkArticlesBulkRead();
+  // "Bu ve üstündekileri/altındakileri arşive gönder" waiting for the user's OK in the ConfirmDialog
+  const [pendingRange, setPendingRange] = useState<{ anchorId: number; direction: ArchiveDirection; count: number } | null>(null);
   const deleteAllByPriorityMutation = useDeleteAllArticlesByPriority();
   const archiveAllByPriorityMutation = useArchiveAllArticlesByPriority();
   const deleteAllUnimportantMutation = useDeleteAllUnimportant();
@@ -375,6 +379,27 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
     if (!confirm(`Listelenen ${total} haberin tümü arşive gönderilecek. Devam edilsin mi?`)) return;
     markBulkReadMutation.mutate({ filters }, { onSuccess: () => setSelectedArticleIds(new Set()) });
   };
+
+  const handleArchiveRange = (article: Article, direction: ArchiveDirection, count: number) => {
+    setPendingRange({ anchorId: article.id, direction, count });
+  };
+
+  const handleConfirmArchiveRange = () => {
+    if (!pendingRange) return;
+    const { anchorId, direction } = pendingRange;
+    markBulkReadMutation.mutate(
+      { filters, range: { anchorId, direction } },
+      {
+        onSuccess: ({ marked_count }) => {
+          setSelectedArticleIds(new Set());
+          showToast(`${marked_count} haber arşive gönderildi.`, 'success');
+        },
+        onSettled: () => setPendingRange(null),
+      }
+    );
+  };
+
+  const handleCancelArchiveRange = useCallback(() => setPendingRange(null), []);
 
   const handleArticleDeleted = (id: number) => {
     setSelectedArticleIds(prev => {
@@ -849,6 +874,9 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                           // Error-tab selection only feeds "Seçilenleri Tekrar Dene" (admin-only)
                           selectable={activeSection !== 'archive' && (activeSection !== 'error' || isAdmin)}
                           canReprocess={isAdmin}
+                          archiveRange={activeSection === 'unread'
+                            ? { offset: (page - 1) * PAGE_SIZE, total: articlesData.total, onArchive: handleArchiveRange }
+                            : undefined}
                         />
                         <Pagination
                           currentPage={page}
@@ -864,6 +892,18 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        isOpen={pendingRange !== null}
+        title="Arşive gönder"
+        message={pendingRange
+          ? `Bu haber dahil ${pendingRange.direction === 'above' ? 'üstteki' : 'alttaki'} ${pendingRange.count} haber arşive gönderilecek.`
+          : ''}
+        confirmLabel="Arşive gönder"
+        pending={markBulkReadMutation.isPending}
+        onConfirm={handleConfirmArchiveRange}
+        onCancel={handleCancelArchiveRange}
+      />
     </div>
   );
 }

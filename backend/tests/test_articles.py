@@ -427,6 +427,121 @@ def test_mark_read_bulk_rejects_malformed_feed_ids_in_body(client, auth_headers)
     assert response.json()["detail"] == "Invalid feed IDs format"
 
 
+def _range_fixture(db_session):
+    """Unread articles in list order (newest first): equal timestamps tie-break by id, the undated
+    one sorts last. Returns them top-to-bottom, as the article list shows them."""
+    feed = _make_feed(db_session)
+    base = datetime(2026, 10, 1, tzinfo=timezone.utc)
+    newest = _make_article(db_session, feed.id, priority="med", published_at=base + timedelta(hours=3))
+    tie_low = _make_article(db_session, feed.id, priority="med", published_at=base + timedelta(hours=2))
+    tie_high = _make_article(db_session, feed.id, priority="med", published_at=base + timedelta(hours=2))
+    oldest = _make_article(db_session, feed.id, priority="med", published_at=base)
+    undated = _make_article(db_session, feed.id, priority="med", published_at=None)
+    return [newest, tie_high, tie_low, oldest, undated]
+
+
+def _unread_ids(db_session):
+    db_session.expire_all()
+    return {a.id for a in db_session.query(models.Article).filter(models.Article.is_read.is_(False))}
+
+
+def test_list_order_matches_archive_range_order(client, auth_headers, db_session):
+    ordered = _range_fixture(db_session)
+    response = client.get("/api/articles/", headers=auth_headers)
+    assert [a["id"] for a in response.json()["articles"]] == [a.id for a in ordered]
+
+
+@pytest.mark.parametrize("anchor_index, direction, archived", [
+    (1, "above", [0, 1]),        # tie: the higher id sits above
+    (2, "above", [0, 1, 2]),
+    (2, "below", [2, 3, 4]),
+    (0, "above", [0]),
+    (4, "above", [0, 1, 2, 3, 4]),  # undated anchor
+    (4, "below", [4]),
+    (3, "below", [3, 4]),        # undated articles are below every dated one
+])
+def test_mark_read_bulk_range_archives_anchor_and_one_side(
+    client, auth_headers, db_session, anchor_index, direction, archived
+):
+    ordered = _range_fixture(db_session)
+    ids = [a.id for a in ordered]
+
+    response = client.post(
+        "/api/articles/mark-read-bulk",
+        json={"mark_all": True, "is_read": False, "anchor_id": ids[anchor_index], "direction": direction},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"marked_count": len(archived)}
+    assert _unread_ids(db_session) == {ids[i] for i in range(len(ids)) if i not in archived}
+
+
+def test_mark_read_bulk_range_respects_filters_and_skips_read(client, auth_headers, db_session):
+    feed = _make_feed(db_session)
+    base = datetime(2026, 10, 1, tzinfo=timezone.utc)
+    newer_high = _make_article(db_session, feed.id, priority="high", published_at=base + timedelta(hours=5))
+    newer_med = _make_article(db_session, feed.id, priority="med", published_at=base + timedelta(hours=4))
+    already_read = _make_article(db_session, feed.id, priority="med", is_read=True,
+                                 published_at=base + timedelta(hours=3))
+    anchor = _make_article(db_session, feed.id, priority="med", published_at=base + timedelta(hours=2))
+    older_med = _make_article(db_session, feed.id, priority="med", published_at=base)
+
+    response = client.post(
+        "/api/articles/mark-read-bulk",
+        json={"mark_all": True, "priority": "med", "anchor_id": anchor.id, "direction": "above"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"marked_count": 2}
+    assert _unread_ids(db_session) == {newer_high.id, older_med.id}
+    assert already_read.id not in _unread_ids(db_session)
+    assert newer_med.id not in _unread_ids(db_session)
+
+
+@pytest.mark.parametrize("body", [
+    {"mark_all": True, "anchor_id": 1},
+    {"mark_all": True, "direction": "above"},
+    {"article_ids": [1], "anchor_id": 1, "direction": "above"},
+])
+def test_mark_read_bulk_range_rejects_incomplete_requests(client, auth_headers, db_session, body):
+    feed = _make_feed(db_session)
+    _make_article(db_session, feed.id)
+    response = client.post("/api/articles/mark-read-bulk", json=body, headers=auth_headers)
+    assert response.status_code == 400
+    assert _unread_ids(db_session)
+
+
+def test_mark_read_bulk_range_rejects_unknown_direction(client, auth_headers):
+    response = client.post(
+        "/api/articles/mark-read-bulk",
+        json={"mark_all": True, "anchor_id": 1, "direction": "sideways"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+
+
+def test_mark_read_bulk_range_404_for_unknown_anchor(client, auth_headers, db_session):
+    feed = _make_feed(db_session)
+    kept = _make_article(db_session, feed.id)
+    response = client.post(
+        "/api/articles/mark-read-bulk",
+        json={"mark_all": True, "anchor_id": 999999, "direction": "below"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+    assert _unread_ids(db_session) == {kept.id}
+
+
+def test_mark_read_bulk_range_requires_auth(client):
+    response = client.post(
+        "/api/articles/mark-read-bulk",
+        json={"mark_all": True, "anchor_id": 1, "direction": "above"},
+    )
+    assert response.status_code == 401
+
+
 # ==================== PATCH /{article_id}/star, POST /unstar-all ====================
 
 def test_star_article_defaults_to_true_with_empty_body(client, auth_headers, db_session):

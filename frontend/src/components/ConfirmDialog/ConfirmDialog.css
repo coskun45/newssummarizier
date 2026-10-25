@@ -1,0 +1,13 @@
+.confirm-dialog-shell {
+  max-width: 440px;
+}
+
+.confirm-dialog-shell .modal-shell-header h2 {
+  font-size: 1.15rem;
+}
+
+.confirm-dialog-message {
+  margin: 0;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+}

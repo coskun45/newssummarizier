@@ -4,7 +4,7 @@ Article endpoints.
 from anyio import from_thread
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Literal, Optional
 from pydantic import BaseModel
 from datetime import datetime
 from app.db.database import get_db
@@ -222,6 +222,10 @@ class BulkReadRequest(BaseModel):
     fetched_to: Optional[datetime] = None
     is_starred: Optional[bool] = None
     is_error: Optional[bool] = None
+    # "Bu ve üstündekileri/altındakileri arşive gönder": with mark_all, limit the filtered set to
+    # the articles at/above or at/below this one in the list's order (anchor included).
+    anchor_id: Optional[int] = None
+    direction: Optional[Literal["above", "below"]] = None
 
 
 @router.post("/mark-read-bulk")
@@ -236,6 +240,15 @@ def mark_articles_read_bulk(
     """
     if not body.mark_all and not body.article_ids:
         raise HTTPException(status_code=400, detail="Provide article_ids or set mark_all=true")
+    if (body.anchor_id is None) != (body.direction is None):
+        raise HTTPException(status_code=400, detail="anchor_id and direction must be given together")
+    if body.anchor_id is not None and not body.mark_all:
+        raise HTTPException(status_code=400, detail="anchor_id requires mark_all=true")
+    anchor = None
+    if body.anchor_id is not None:
+        anchor = crud.get_article(db, body.anchor_id)
+        if not anchor:
+            raise HTTPException(status_code=404, detail="Article not found")
     ids = None if body.mark_all else body.article_ids
     if ids is not None:
         count = crud.mark_articles_read_bulk(db, ids)
@@ -243,6 +256,8 @@ def mark_articles_read_bulk(
         count = crud.mark_articles_read_bulk(
             db,
             None,
+            anchor=anchor,
+            direction=body.direction,
             topic_ids=_parse_comma_ids(body.topic_ids, "topic IDs"),
             search_query=body.search,
             status=body.status,

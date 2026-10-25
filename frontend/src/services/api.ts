@@ -10,6 +10,7 @@ import type {
     ArticleDetail,
     ArticleListResponse,
     ArticleFilters,
+    ArchiveRange,
     ArticleCounts,
     ReprocessRequest,
     ReprocessResponse,
@@ -188,8 +189,10 @@ export const articlesApi = {
         const response = await api.post('/articles/unstar-all');
         return response.data;
     },
-    markBulkRead: async (articleIds?: number[], filters?: ArticleFilters): Promise<{ marked_count: number }> => {
-        const body = articleIds ? { article_ids: articleIds } : { mark_all: true, ...filters };
+    markBulkRead: async (articleIds?: number[], filters?: ArticleFilters, range?: ArchiveRange): Promise<{ marked_count: number }> => {
+        const body = articleIds
+            ? { article_ids: articleIds }
+            : { mark_all: true, ...filters, ...(range && { anchor_id: range.anchorId, direction: range.direction }) };
         const response = await api.post('/articles/mark-read-bulk', body);
         return response.data;
     },

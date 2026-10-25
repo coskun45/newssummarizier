@@ -9,6 +9,7 @@ import type {
     GroupKind,
     ItemGroup,
     ArticleFilters,
+    ArchiveRange,
     UserSettingsUpdate,
     BulletinGenerateRequest,
     ReprocessRequest,
@@ -141,8 +142,8 @@ export const useReprocessStatus = () => {
 export const useMarkArticlesBulkRead = () => {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: ({ articleIds, filters }: { articleIds?: number[]; filters?: ArticleFilters }) =>
-            articlesApi.markBulkRead(articleIds, filters),
+        mutationFn: ({ articleIds, filters, range }: { articleIds?: number[]; filters?: ArticleFilters; range?: ArchiveRange }) =>
+            articlesApi.markBulkRead(articleIds, filters, range),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['articles'] });
             queryClient.invalidateQueries({ queryKey: ['articleCounts'] });

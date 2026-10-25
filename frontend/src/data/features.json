@@ -164,6 +164,11 @@
           "id": "collapsible-filter-panel",
           "title": "Açılır/kapanır filtre paneli",
           "description": "Haberler sekmesindeki sol Filtreleme paneli başlığındaki okla daraltılıp ince bir şeride indirilir, haber listesi genişler; şeritteki okla geri açılır. Aktif bir filtre varken şeritteki huni ikonunda nokta görünür. Tercih tarayıcıda hatırlanır."
+        },
+        {
+          "id": "archive-above-below",
+          "title": "Üstündekileri / altındakileri arşive gönder",
+          "description": "Okunmamışlar listesinde her haberin ⋯ menüsünden \"Bu ve üstündekileri\" ya da \"Bu ve altındakileri arşive gönder\" seçilir; menü kaç haberin gideceğini gösterir, ardından açılan onay penceresinde (İptal / Arşive gönder) onay istenir. Önceki sayfalar dahil, yalnızca aktif filtredeki haberler arşivlenir; sonunda kaç haberin arşive gönderildiği bildirilir."
         }
       ]
     }

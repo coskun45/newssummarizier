@@ -85,6 +85,14 @@ export interface DateFilterState {
     customTo: string;
 }
 
+/** "Bu ve üstündekileri / altındakileri arşive gönder": which side of the anchor article to archive. */
+export type ArchiveDirection = 'above' | 'below';
+
+export interface ArchiveRange {
+    anchorId: number;
+    direction: ArchiveDirection;
+}
+
 export interface ArticleFilters {
     skip?: number;
     limit?: number;

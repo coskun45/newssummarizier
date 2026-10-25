@@ -462,6 +462,16 @@ function parseIdList(raw: string | null): number[] | null {
   return raw.split(',').map((v) => parseInt(v, 10)).filter((n) => !Number.isNaN(n));
 }
 
+/** The backend's list order: published_at DESC NULLS LAST, then id DESC. */
+function compareArticleOrder(a: MockArticle, b: MockArticle): number {
+  if (a.published_at !== b.published_at) {
+    if (!a.published_at) return 1;
+    if (!b.published_at) return -1;
+    return b.published_at.localeCompare(a.published_at);
+  }
+  return b.id - a.id;
+}
+
 function matchesArticleFilters(a: MockArticle, params: URLSearchParams): boolean {
   const priority = params.get('priority');
   if (priority && a.priority !== priority) return false;
@@ -667,18 +677,28 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
       const body = request.postDataJSON() as {
         article_ids?: number[];
         mark_all?: boolean;
+        anchor_id?: number;
+        direction?: 'above' | 'below';
         [key: string]: unknown;
       };
       let count = 0;
       if (body.mark_all) {
         const qp = new URLSearchParams();
         for (const [k, v] of Object.entries(body)) {
-          if (v !== undefined && v !== null && k !== 'mark_all' && k !== 'article_ids') {
+          if (v !== undefined && v !== null && !['mark_all', 'article_ids', 'anchor_id', 'direction'].includes(k)) {
             qp.set(k, String(v));
           }
         }
+        // "Bu ve üstündekileri/altındakileri": keep the anchor and one side of it, in list order
+        const anchor = state.articles.find((a) => a.id === body.anchor_id);
+        if (body.anchor_id !== undefined && !anchor) return json({ detail: 'Article not found' }, 404);
+        const inRange = (a: MockArticle) => {
+          if (!anchor) return true;
+          const cmp = compareArticleOrder(a, anchor);
+          return body.direction === 'above' ? cmp <= 0 : cmp >= 0;
+        };
         for (const a of state.articles) {
-          if (!a.is_read && matchesArticleFilters(a, qp)) {
+          if (!a.is_read && matchesArticleFilters(a, qp) && inRange(a)) {
             a.is_read = true;
             count += 1;
           }
@@ -814,7 +834,7 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
       const skip = parseInt(params.get('skip') ?? '0', 10);
       const limit = parseInt(params.get('limit') ?? '50', 10);
       const filtered = state.articles.filter((a) => matchesArticleFilters(a, params));
-      filtered.sort((a, b) => (b.published_at ?? '').localeCompare(a.published_at ?? ''));
+      filtered.sort(compareArticleOrder);
       const page = filtered.slice(skip, skip + limit);
       return json({ articles: page, total: filtered.length, skip, limit });
     }

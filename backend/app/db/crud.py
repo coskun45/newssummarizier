@@ -426,7 +426,9 @@ def get_articles(db: Session, skip: int = 0, limit: int = 100, **filters) -> Lis
         selectinload(models.Article.topics).selectinload(models.ArticleTopic.topic)
     )
     query = _apply_article_filters(db, query, **filters)
-    query = query.order_by(desc(models.Article.published_at))
+    # id breaks published_at ties and NULLS LAST pins undated articles to the bottom on both
+    # engines, so "above/below this article" (_position_clause) always means the same rows.
+    query = query.order_by(models.Article.published_at.desc().nulls_last(), desc(models.Article.id))
     return query.offset(skip).limit(limit).all()
 
 
@@ -553,16 +555,42 @@ def mark_article_read(db: Session, article_id: int) -> Optional[models.Article]:
     return article
 
 
-def mark_articles_read_bulk(db: Session, article_ids: Optional[List[int]] = None, **filters) -> int:
+def _position_clause(anchor: models.Article, direction: str):
+    """Articles at or above (`above`) / at or below (`below`) `anchor` in `get_articles`' order
+    (published_at DESC NULLS LAST, id DESC). The anchor itself is included either way."""
+    published, article_id = models.Article.published_at, models.Article.id
+    if anchor.published_at is None:
+        undated_above = published.is_(None) & (article_id >= anchor.id)
+        if direction == "above":
+            return published.isnot(None) | undated_above
+        return published.is_(None) & (article_id <= anchor.id)
+    if direction == "above":
+        return (published > anchor.published_at) | (
+            (published == anchor.published_at) & (article_id >= anchor.id)
+        )
+    return published.is_(None) | (published < anchor.published_at) | (
+        (published == anchor.published_at) & (article_id <= anchor.id)
+    )
+
+
+def mark_articles_read_bulk(
+    db: Session,
+    article_ids: Optional[List[int]] = None,
+    anchor: Optional[models.Article] = None,
+    direction: Optional[str] = None,
+    **filters,
+) -> int:
     """Mark multiple articles as read. If article_ids is given, marks just those. Otherwise marks
     every unread article matching `filters` — the same filters as `get_articles` (no filters =
-    all unread)."""
+    all unread) — narrowed to the rows at/above or at/below `anchor` when one is given."""
     query = db.query(models.Article).filter(models.Article.is_read.is_(False))
     if article_ids is not None:
         query = query.filter(models.Article.id.in_(article_ids))
     else:
         filters.pop("is_read", None)
         query = _apply_article_filters(db, query, **filters)
+        if anchor is not None:
+            query = query.filter(_position_clause(anchor, direction))
 
     count = query.update({models.Article.is_read: True}, synchronize_session=False)
     db.commit()

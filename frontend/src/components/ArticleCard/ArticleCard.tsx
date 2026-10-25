@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import type { Article } from '../../types';
+import { useEffect, useRef, useState } from 'react';
+import type { ArchiveDirection, Article } from '../../types';
 import { useSummaries, useArticleContent, useDeleteArticle, useSetArticleStarred, useReprocessArticles, useMarkArticleRead } from '../../hooks/useApi';
 import ContentModal from '../ContentModal/ContentModal';
 import { copyToClipboard } from '../../utils/exportArticles';
@@ -14,6 +14,9 @@ import {
   CheckIcon,
   ClipboardDocumentIcon,
   ExclamationTriangleIcon,
+  EllipsisHorizontalIcon,
+  ArrowUpIcon,
+  ArrowDownIcon,
 } from '@heroicons/react/24/outline';
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid';
 import './ArticleCard.css';
@@ -34,11 +37,24 @@ interface ArticleCardProps {
   selectable?: boolean;
   /** Re-processing spends OpenAI budget, so only admins get the "Tekrar dene" button. */
   canReprocess?: boolean;
+  /** "Bu ve üstündekileri/altındakileri arşive gönder" — the ⋯ menu only renders when given. */
+  archiveRange?: ArticleArchiveRange;
+}
+
+export interface ArticleArchiveRange {
+  /** How many unread articles each menu entry archives (this one included) — the label's count,
+   *  handed back to `onArchive` so the confirmation shows the very same number. */
+  aboveCount: number;
+  belowCount: number;
+  onArchive: (article: Article, direction: ArchiveDirection, count: number) => void;
 }
 
 
-function ArticleCard({ article, isSelected = false, onToggleSelect, onDeleted, isArchiveView = false, selectable = false, canReprocess = false }: ArticleCardProps) {
+function ArticleCard({ article, isSelected = false, onToggleSelect, onDeleted, isArchiveView = false, selectable = false, canReprocess = false, archiveRange }: ArticleCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const showMenu = !isArchiveView && !article.is_read && !!archiveRange;
   const [showContent, setShowContent] = useState(false);
   const [summaryType, setSummaryType] = useState<'brief' | 'standard' | 'detailed'>('standard');
   const [copied, setCopied] = useState(false);
@@ -52,6 +68,29 @@ function ArticleCard({ article, isSelected = false, onToggleSelect, onDeleted, i
   // generated) — and not currently being processed. Mirrors the backend's error_clause.
   const isError = article.status !== 'pending' && article.status !== 'scraped'
     && ((!article.priority && article.importance !== 'unimportant') || article.status === 'failed');
+
+  // Close the ⋯ menu on an outside click or Escape
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [menuOpen]);
+
+  const handleArchiveRange = (direction: ArchiveDirection) => {
+    if (!archiveRange) return;
+    setMenuOpen(false);
+    archiveRange.onArchive(article, direction, direction === 'above' ? archiveRange.aboveCount : archiveRange.belowCount);
+  };
 
   const handleToggleExpand = () => {
     setExpanded(!expanded);
@@ -85,7 +124,7 @@ function ArticleCard({ article, isSelected = false, onToggleSelect, onDeleted, i
   const timeAgo = article.published_at ? formatPublishedAt(article.published_at) : null;
 
   return (
-    <div className={`article-card${!article.is_read ? ' article-card--unread' : ''}${isSelected ? ' article-card--selected' : ''}${(!isArchiveView && onToggleSelect) ? ' article-card--selectable' : ''}`}>
+    <div className={`article-card${showMenu ? ' article-card--has-menu' : ''}${!article.is_read ? ' article-card--unread' : ''}${isSelected ? ' article-card--selected' : ''}${(!isArchiveView && onToggleSelect) ? ' article-card--selectable' : ''}`}>
       {selectable && onToggleSelect && (
         <input
           type="checkbox"
@@ -107,6 +146,31 @@ function ArticleCard({ article, isSelected = false, onToggleSelect, onDeleted, i
       >
         <TrashIcon />
       </button>
+
+      {showMenu && (
+        <div className="article-menu" ref={menuRef}>
+          <button
+            className="article-menu-btn"
+            onClick={() => setMenuOpen((open) => !open)}
+            title="Diğer işlemler"
+            aria-label="Diğer işlemler"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+          >
+            <EllipsisHorizontalIcon />
+          </button>
+          {menuOpen && (
+            <div className="article-menu-list" role="menu">
+              <button role="menuitem" className="article-menu-item" onClick={() => handleArchiveRange('above')}>
+                <ArrowUpIcon /> Bu ve üstündekileri arşive gönder ({archiveRange?.aboveCount})
+              </button>
+              <button role="menuitem" className="article-menu-item" onClick={() => handleArchiveRange('below')}>
+                <ArrowDownIcon /> Bu ve altındakileri arşive gönder ({archiveRange?.belowCount})
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       <button
         className={`favorite-icon-btn${article.is_starred ? ' favorite-icon-btn--active' : ''}`}
