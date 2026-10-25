@@ -22,6 +22,8 @@ import logo from '../../assets/logo.svg';
 import {
   Cog6ToothIcon,
   ArrowPathIcon,
+  ChevronDoubleLeftIcon,
+  ChevronDoubleRightIcon,
   FunnelIcon,
   InboxIcon,
   ArchiveBoxIcon,
@@ -39,6 +41,15 @@ import type { AuthUser, DateFilterState } from '../../types';
 import './Dashboard.css';
 
 const PAGE_SIZE = 20;
+const SIDEBAR_COLLAPSED_KEY = 'bulten_filters_collapsed';
+
+function readSidebarCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 
 interface DashboardProps {
   currentUser: AuthUser;
@@ -59,6 +70,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
   const emptyDate: DateFilterState = { preset: null, customFrom: '', customTo: '' };
   const [publishedFilter, setPublishedFilter] = useState<DateFilterState>(emptyDate);
   const [fetchedFilter, setFetchedFilter] = useState<DateFilterState>(emptyDate);
+  const [filtersCollapsed, setFiltersCollapsed] = useState(readSidebarCollapsed);
   const [activeView, setActiveView] = useState<'home' | 'news' | 'bulletin' | 'playground' | 'analysis' | 'settings'>('home');
   const [settingsCategory, setSettingsCategory] = useState<SettingsCategory>('feeds');
   const [activeSection, setActiveSection] = useState<'unread' | 'archive' | 'important' | 'error'>('unread');
@@ -154,6 +166,26 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
   const refreshTargetFeedIds = selectedFeedIds.length > 0
     ? selectedFeedIds
     : (feedsData ?? []).map((f) => f.id);
+
+  const toggleFiltersCollapsed = () => {
+    setFiltersCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? '1' : '0');
+      } catch {
+        // storage unavailable (private mode) — the toggle still works for this session
+      }
+      return next;
+    });
+  };
+
+  const hasActiveFilters =
+    selectedFeedIds.length > 0 ||
+    selectedTopics.length > 0 ||
+    importanceMode !== null ||
+    selectedPriority !== null ||
+    publishedFilter.preset !== null ||
+    fetchedFilter.preset !== null;
 
   // Debounce search
   useEffect(() => {
@@ -446,15 +478,45 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
 
       {/* Main Content */}
       <div className="dashboard-content">
-        <div className="container">
+        <div className="container dashboard-container">
           <div className="dashboard-grid">
             {/* Left Sidebar — not shown for the Bülten view, which is a report
                 generator, not an article browser, and has its own config form */}
-            {activeView === 'news' && (
+            {activeView === 'news' && filtersCollapsed && (
+            <aside className="dashboard-sidebar dashboard-sidebar--collapsed">
+              <button
+                type="button"
+                className="sidebar-collapse-toggle"
+                onClick={toggleFiltersCollapsed}
+                aria-label="Filtreleri göster"
+                aria-expanded={false}
+                title="Filtreleri göster"
+              >
+                <ChevronDoubleRightIcon className="sidebar-collapse-icon" />
+              </button>
+              <span className="sidebar-collapsed-funnel" title={hasActiveFilters ? 'Aktif filtre var' : undefined}>
+                <FunnelIcon className="sidebar-section-icon" />
+                {hasActiveFilters && <span className="sidebar-active-dot" data-testid="filters-active-dot" />}
+              </span>
+            </aside>
+            )}
+            {activeView === 'news' && !filtersCollapsed && (
             <aside className="dashboard-sidebar">
-              <h2 className="sidebar-section-title">
-                <FunnelIcon className="sidebar-section-icon" /> Filtreleme
-              </h2>
+              <div className="sidebar-section-header">
+                <button
+                  type="button"
+                  className="sidebar-collapse-toggle"
+                  onClick={toggleFiltersCollapsed}
+                  aria-label="Filtreleri gizle"
+                  aria-expanded={true}
+                  title="Filtreleri gizle"
+                >
+                  <ChevronDoubleLeftIcon className="sidebar-collapse-icon" />
+                </button>
+                <h2 className="sidebar-section-title">
+                  <FunnelIcon className="sidebar-section-icon" /> Filtreleme
+                </h2>
+              </div>
               <FeedSidebar
                 feeds={feedsData || []}
                 groups={feedGroups || []}
