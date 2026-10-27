@@ -228,8 +228,8 @@ async def _single_group(category_name, articles, blocks, model=None):
 
 @pytest.fixture(autouse=True)
 def _stub_bulletin_llm(monkeypatch):
-    """No test calls OpenAI: classification, highlights, grouping and the brief summarizer are
-    stubbed; tests override the one they exercise. Returns the brief-summary call log."""
+    """No test calls OpenAI: classification, highlights, grouping and the bulletin summarizer are
+    stubbed; tests override the one they exercise. Returns the summarizer call log."""
     calls = []
 
     async def fake_generate_summary(title, content, summary_type="standard", source=None, author_hint=None):
@@ -286,7 +286,7 @@ def test_generate_bulletin_success(client, auth_headers, db_session):
     assert by_text["TEST ALT BAŞLIK"].style.style_id == "Heading3"
     assert not [p for p in paragraphs if p.style.style_id == "Heading2"]
 
-    # The article block comes from the brief summary: bold "📌 Kaynak - Başlık" header (the
+    # The article block comes from the bulletin summary: bold "📌 Kaynak - Başlık" header (the
     # summarizer's "**" markers stripped) and plain "🔹" bullets.
     header = by_text["📌 Test Feed - Test Haberi"]
     assert header.runs[0].bold
@@ -398,7 +398,7 @@ def test_group_category_articles_puts_leftovers_into_other_group(monkeypatch):
     ]
 
 
-def test_generate_bulletin_creates_and_saves_missing_brief_summaries(
+def test_generate_bulletin_creates_and_saves_missing_summaries(
     client, auth_headers, db_session, _stub_bulletin_llm
 ):
     _make_bulletin_category(db_session, name="AVRUPA")
@@ -407,22 +407,85 @@ def test_generate_bulletin_creates_and_saves_missing_brief_summaries(
     with_brief = _make_article(db_session, feed.id, title="Özetli", published_at=now - timedelta(hours=1))
     _make_summary(db_session, with_brief.id, summary_type="brief",
                   summary_text="📌 BBC Türkçe - Özetli\n🔹 Kayıtlı kısa özet.")
-    without_brief = _make_article(db_session, feed.id, title="Özetsiz", cleaned_content="Metin",
-                                  published_at=now - timedelta(hours=1))
+    without_summary = _make_article(db_session, feed.id, title="Özetsiz", cleaned_content="Metin",
+                                    published_at=now - timedelta(hours=1))
+    crud.set_setting(db_session, "enabled_summary_types", "brief,standard")
 
     texts = [p.text for p in _paragraphs(_generate(client, auth_headers))]
 
+    # Default "stored": the stored brief is used as is; the missing one is generated in the first
+    # enabled type of the preference order (detailed > standard > brief) and saved.
     assert [c["title"] for c in _stub_bulletin_llm] == ["Özetsiz"]
-    assert _stub_bulletin_llm[0]["summary_type"] == "brief"
+    assert _stub_bulletin_llm[0]["summary_type"] == "standard"
     assert _stub_bulletin_llm[0]["source"] == "BBC Türkçe"
-    stored = db_session.query(models.Summary).filter_by(article_id=without_brief.id, summary_type="brief").all()
-    assert len(stored) == 1
+    stored = db_session.query(models.Summary).filter_by(article_id=without_summary.id).all()
+    assert [s.summary_type for s in stored] == ["standard"]
     assert "🔹 Kayıtlı kısa özet." in texts
     assert "🔹 Özetsiz özeti." in texts
 
     # Saved: the next report doesn't summarize again.
     _generate(client, auth_headers)
     assert len(_stub_bulletin_llm) == 1
+
+
+def test_generate_bulletin_uses_stored_summary_and_adds_no_disabled_type(
+    client, auth_headers, db_session, _stub_bulletin_llm
+):
+    """Regression: with only "Detaylı" enabled in Ayarlar, every bulletin article still got a
+    generated and saved "brief" summary, which then showed up as "Kısa Özet" on its card."""
+    _make_bulletin_category(db_session, name="AVRUPA")
+    feed = _make_feed(db_session)
+    now = datetime.now(timezone.utc)
+    crud.set_setting(db_session, "enabled_summary_types", "detailed")
+    detailed = _make_article(db_session, feed.id, title="Detaylı", priority="high",
+                             published_at=now - timedelta(hours=1))
+    _make_summary(db_session, detailed.id, summary_type="detailed",
+                  summary_text="📌 Test Feed - Detaylı\n🔹 Kayıtlı detaylı özet.")
+    unsummarized = _make_article(db_session, feed.id, title="Özetsiz", priority="high", cleaned_content="Metin",
+                                 published_at=now - timedelta(hours=1))
+
+    texts = [p.text for p in _paragraphs(_generate(client, auth_headers))]
+
+    assert "🔹 Kayıtlı detaylı özet." in texts
+    assert [(c["title"], c["summary_type"]) for c in _stub_bulletin_llm] == [("Özetsiz", "detailed")]
+    assert db_session.query(models.Summary).filter(
+        models.Summary.article_id.in_([detailed.id, unsummarized.id]),
+        models.Summary.summary_type == "brief",
+    ).count() == 0
+
+
+def test_generate_bulletin_uses_the_requested_summary_type(
+    client, auth_headers, db_session, _stub_bulletin_llm
+):
+    _make_bulletin_category(db_session, name="AVRUPA")
+    feed = _make_feed(db_session)
+    now = datetime.now(timezone.utc)
+    with_standard = _make_article(db_session, feed.id, title="Standartlı", published_at=now - timedelta(hours=1))
+    _make_summary(db_session, with_standard.id, summary_type="detailed",
+                  summary_text="📌 Test Feed - Standartlı\n🔹 Detaylı metin.")
+    _make_summary(db_session, with_standard.id, summary_type="standard",
+                  summary_text="📌 Test Feed - Standartlı\n🔹 Standart metin.")
+    detailed_only = _make_article(db_session, feed.id, title="Detaylı", cleaned_content="Metin",
+                                  published_at=now - timedelta(hours=1))
+    _make_summary(db_session, detailed_only.id, summary_type="detailed",
+                  summary_text="📌 Test Feed - Detaylı\n🔹 Sadece detaylı.")
+
+    texts = [p.text for p in _paragraphs(_generate(client, auth_headers, summary_type="standard"))]
+
+    assert "🔹 Standart metin." in texts
+    assert not any("Detaylı metin." in t for t in texts)
+    # The chosen type is generated (and saved) even though another summary is stored.
+    assert [(c["title"], c["summary_type"]) for c in _stub_bulletin_llm] == [("Detaylı", "standard")]
+    assert "🔹 Detaylı özeti." in texts
+    assert db_session.query(models.Summary).filter_by(
+        article_id=detailed_only.id, summary_type="standard").count() == 1
+
+
+@pytest.mark.parametrize("value", ["", "short", "brief,standard"])
+def test_generate_bulletin_rejects_unknown_summary_type(client, auth_headers, db_session, value):
+    _make_bulletin_category(db_session, name="AVRUPA")
+    response = client.post("/api/bulletin/generate", json={"summary_type": value}, headers=auth_headers)
+    assert response.status_code == 422
 
 
 def test_generate_bulletin_marks_opinion_pieces_with_yorum_icon(client, auth_headers, db_session, monkeypatch):
@@ -460,7 +523,7 @@ def test_article_block_parses_single_line_brief():
 
 
 def test_generate_bulletin_strips_html_from_raw_content_fallback(client, auth_headers, db_session, monkeypatch):
-    """Regression test: when an article has no "brief" summary (and generating one fails), the
+    """Regression test: when an article has no stored summary (and generating one fails), the
     bulletin falls back to raw_content, which for several feeds (e.g. Aydinlik) is an HTML
     fragment straight from the RSS <description> rather than plain text. A real generated
     bulletin showed this markup — <a>/<img>/<h4> tags and &#039;-style entities — rendered
@@ -492,11 +555,11 @@ def test_generate_bulletin_strips_html_from_raw_content_fallback(client, auth_he
     assert any("Firari şüpheli 'yakalandı'" in t for t in paragraph_texts)
 
 
-def test_generate_bulletin_falls_back_to_stored_summary_when_brief_fails(
+def test_generate_bulletin_falls_back_to_stored_summary_when_generation_fails(
     client, auth_headers, db_session, monkeypatch
 ):
-    """A failed brief uses the stored standard summary (else the detailed one) instead of the
-    plain-content snippet, and that fallback is not saved as a brief."""
+    """A failed summary of the chosen type uses another stored summary (detailed > standard)
+    instead of the plain-content snippet, and that fallback is not saved as the chosen type."""
     async def failing_summary(**kwargs):
         raise RuntimeError("summarizer down")
 
@@ -504,28 +567,28 @@ def test_generate_bulletin_falls_back_to_stored_summary_when_brief_fails(
     _make_bulletin_category(db_session, name="AVRUPA")
     feed = _make_feed(db_session)
     now = datetime.now(timezone.utc)
-    both = _make_article(db_session, feed.id, title="Standartlı", cleaned_content="Ham metin A",
+    both = _make_article(db_session, feed.id, title="İkisi", cleaned_content="Ham metin A",
                          published_at=now - timedelta(hours=1))
     _make_summary(db_session, both.id, summary_type="detailed",
-                  summary_text="📌 Test Feed - Standartlı\n\nDetaylı paragraf A.")
+                  summary_text="📌 Test Feed - İkisi\n\nDetaylı paragraf A.")
     _make_summary(db_session, both.id, summary_type="standard",
-                  summary_text="📌 Test Feed - Standartlı\n\nStandart paragraf A.")
-    detailed_only = _make_article(db_session, feed.id, title="Detaylı", cleaned_content="Ham metin B",
+                  summary_text="📌 Test Feed - İkisi\n\nStandart paragraf A.")
+    standard_only = _make_article(db_session, feed.id, title="Standartlı", cleaned_content="Ham metin B",
                                   published_at=now - timedelta(hours=1))
-    _make_summary(db_session, detailed_only.id, summary_type="detailed",
-                  summary_text="📌 Test Feed - Detaylı\n\nDetaylı paragraf B.")
+    _make_summary(db_session, standard_only.id, summary_type="standard",
+                  summary_text="📌 Test Feed - Standartlı\n\nStandart paragraf B.")
     no_summary = _make_article(db_session, feed.id, title="Özetsiz", cleaned_content="Ham metin C",
                                published_at=now - timedelta(hours=1))
 
-    texts = [p.text for p in _paragraphs(_generate(client, auth_headers))]
+    texts = [p.text for p in _paragraphs(_generate(client, auth_headers, summary_type="brief"))]
 
-    assert "🔹 Standart paragraf A." in texts
-    assert not any("Detaylı paragraf A." in t or "Ham metin A" in t for t in texts)
-    assert "🔹 Detaylı paragraf B." in texts
+    assert "🔹 Detaylı paragraf A." in texts
+    assert not any("Standart paragraf A." in t or "Ham metin A" in t for t in texts)
+    assert "🔹 Standart paragraf B." in texts
     assert not any("Ham metin B" in t for t in texts)
     assert "🔹 Ham metin C" in texts
     stored_briefs = db_session.query(models.Summary).filter(
-        models.Summary.article_id.in_([both.id, detailed_only.id, no_summary.id]),
+        models.Summary.article_id.in_([both.id, standard_only.id, no_summary.id]),
         models.Summary.summary_type == "brief",
     ).count()
     assert stored_briefs == 0

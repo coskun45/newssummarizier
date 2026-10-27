@@ -282,11 +282,15 @@ export interface BulletinCategory {
     display_order: number;
 }
 
+/** Which summary a bulletin uses: "stored" = the article's own stored summary (detailed > standard > brief). */
+export type BulletinSummaryType = 'stored' | 'detailed' | 'standard' | 'brief';
+
 export interface BulletinGenerateRequest {
     published_from?: string;
     published_to?: string;
     priorities?: string[];
     include_favorites?: boolean;
+    summary_type?: BulletinSummaryType;
 }
 
 export interface BulletinPreviewCountResponse {
@@ -320,6 +324,7 @@ export interface NewsletterSubscriptionInput {
     include_favorites: boolean;
     category_ids: number[]; // empty = all top-level categories
     delivery_format: NewsletterFormat;
+    summary_type: BulletinSummaryType;
 }
 
 export interface NewsletterSubscription extends NewsletterSubscriptionInput {

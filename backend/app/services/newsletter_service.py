@@ -112,6 +112,7 @@ def content_key(sub: models.NewsletterSubscription) -> Tuple:
         tuple(sorted(_priorities(sub) or [])),
         bool(sub.include_favorites),
         tuple(sub.category_ids),
+        sub.summary_type,
     )
 
 
@@ -141,9 +142,11 @@ async def select_articles(
     batch_size = max(1, settings.bulletin_classification_batch_size)
     for i in range(0, len(candidates), batch_size):
         batch = candidates[i:i + batch_size]
-        # Classified from brief summaries (generated where missing), exactly like the bulletin itself
+        # Classified from the bulletin summaries (generated where missing), exactly like the bulletin itself
         # does — the result is cached and reused by every later bulletin.
-        classifications = await bulletin_service.classify_for_bulletin(db, batch, categories)
+        classifications = await bulletin_service.classify_for_bulletin(
+            db, batch, categories, summary_type=sub.summary_type,
+        )
         for article in batch:
             if bulletin_service.placement_category(classifications.get(article.id), category_names) in wanted:
                 selected.append(article)
@@ -210,7 +213,9 @@ async def build_bulletin(db: Session, sub: models.NewsletterSubscription, now: d
         if not articles:
             built.status = "no_articles"
             return built
-        built.sections = await bulletin_service.build_bulletin_sections(db, articles, categories)
+        built.sections = await bulletin_service.build_bulletin_sections(
+            db, articles, categories, summary_type=sub.summary_type,
+        )
         built.article_count = len(articles)
         built.docx = bulletin_service.render_bulletin_report(
             db, built.sections, generated_at=now,
@@ -224,7 +229,7 @@ async def build_bulletin(db: Session, sub: models.NewsletterSubscription, now: d
         built.status = "error"
         built.error = str(e)
     finally:
-        # Approximate: LLM calls booked meanwhile by the bulletin pipeline (incl. its brief summaries).
+        # Approximate: LLM calls booked meanwhile by the bulletin pipeline (incl. its summaries).
         ended = _utcnow()
         built.cost = sum(crud.get_total_cost(db, start_date=started, end_date=ended, kind=kind)
                          for kind in ("bulletin", "summary"))

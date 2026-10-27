@@ -30,7 +30,12 @@ import {
 import { downloadBlob } from '../../utils/downloadFile';
 import { showToast } from '../../lib/toast';
 import { PRIORITIES } from '../../constants/priorities';
-import type { BulletinGenerateRequest, DateFilterState, GeneratedBulletin } from '../../types';
+import {
+  BULLETIN_SUMMARY_HINT,
+  BULLETIN_SUMMARY_OPTIONS,
+  DEFAULT_BULLETIN_SUMMARY_TYPE,
+} from '../../constants/bulletinSummary';
+import type { BulletinGenerateRequest, BulletinSummaryType, DateFilterState, GeneratedBulletin } from '../../types';
 import './Bulletin.css';
 
 const EMPTY_DATE_FILTER: DateFilterState = { preset: null, customFrom: '', customTo: '' };
@@ -102,6 +107,7 @@ function BulletinPanel({ isAdmin = false, currentUserEmail = '' }: BulletinPanel
   const [dateFilter, setDateFilter] = useState<DateFilterState>(EMPTY_DATE_FILTER);
   const [selectedPriorities, setSelectedPriorities] = useState<string[]>([]);
   const [includeFavorites, setIncludeFavorites] = useState(false);
+  const [summaryType, setSummaryType] = useState<BulletinSummaryType>(DEFAULT_BULLETIN_SUMMARY_TYPE);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
   const [editCategoryName, setEditCategoryName] = useState('');
@@ -169,7 +175,8 @@ function BulletinPanel({ isAdmin = false, currentUserEmail = '' }: BulletinPanel
 
   const handleGenerate = async () => {
     try {
-      const { blob, filename } = await generateMutation.mutateAsync(bulletinParams);
+      // The summary choice only matters for /generate, not for the preview count.
+      const { blob, filename } = await generateMutation.mutateAsync({ ...bulletinParams, summary_type: summaryType });
       downloadBlob(blob, filename);
       showToast('Bülten oluşturuldu ve indirildi.', 'success');
     } catch (err) {
@@ -259,6 +266,24 @@ function BulletinPanel({ isAdmin = false, currentUserEmail = '' }: BulletinPanel
               />
               <span>Favoriler</span>
             </label>
+          </div>
+        </section>
+
+        <section className="bulletin-section">
+          <h3 className="bulletin-section-title" id="bulletin-summary-type-title">Özet Uzunluğu</h3>
+          <p className="bulletin-section-description">{BULLETIN_SUMMARY_HINT}</p>
+          <div className="checkbox-group" role="radiogroup" aria-labelledby="bulletin-summary-type-title">
+            {BULLETIN_SUMMARY_OPTIONS.map((option) => (
+              <label key={option.value} className="bulletin-checkbox-label">
+                <input
+                  type="radio"
+                  name="bulletin-summary-type"
+                  checked={summaryType === option.value}
+                  onChange={() => setSummaryType(option.value)}
+                />
+                <span>{option.label} <span className="text-muted">· {option.hint}</span></span>
+              </label>
+            ))}
           </div>
         </section>
 

@@ -18,6 +18,7 @@ from app.core.exceptions import BulletinGenerationError, CostLimitExceededError
 from app.db import crud, models
 from app.db.database import get_db
 from app.services import bulletin_service
+from app.services.bulletin_service import DEFAULT_BULLETIN_SUMMARY_TYPE, BulletinSummaryType
 
 router = APIRouter()
 
@@ -144,6 +145,7 @@ class BulletinGenerateRequest(BaseModel):
     published_to: Optional[datetime] = None
     priorities: Optional[List[str]] = None
     include_favorites: bool = False
+    summary_type: BulletinSummaryType = DEFAULT_BULLETIN_SUMMARY_TYPE  # "stored" = the article's own
 
 
 class BulletinPreviewCountResponse(BaseModel):
@@ -214,7 +216,9 @@ async def generate_bulletin(
         raise HTTPException(status_code=400, detail="Seçilen aralıkta haber bulunamadı")
 
     try:
-        buffer = await bulletin_service.generate_bulletin_report(db, articles, categories)
+        buffer = await bulletin_service.generate_bulletin_report(
+            db, articles, categories, summary_type=body.summary_type,
+        )
     except CostLimitExceededError as e:
         raise HTTPException(status_code=429, detail=str(e))
     except BulletinGenerationError as e:

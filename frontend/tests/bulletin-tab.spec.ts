@@ -94,11 +94,29 @@ test('clicking "Oluştur ve İndir" requests the report and downloads it', async
   );
   const downloadPromise = page.waitForEvent('download');
   await panel.getByRole('button', { name: 'Oluştur ve İndir' }).click();
-  await req;
+  // Default: the article's own stored summary.
+  expect((await req).postDataJSON().summary_type).toBe('stored');
   const download = await downloadPromise;
 
   expect(download.suggestedFilename()).toMatch(/^bulten-\d{4}-\d{2}-\d{2}\.docx$/);
   await expect(page.getByRole('alert')).toHaveText('Bülten oluşturuldu ve indirildi.');
+});
+
+test('the chosen summary length is sent with the generate request', async ({ page }) => {
+  await loginAs(page);
+  await mockApi(page, { articles: [makeArticle()], bulletinCategories: [makeBulletinCategory({ name: 'Avrupa' })] });
+  await page.goto('/');
+
+  const panel = await openBulletinTab(page);
+  const lengths = panel.getByRole('radiogroup', { name: 'Özet Uzunluğu' });
+  await expect(lengths.getByRole('radio', { name: /Kayıtlı özet/ })).toBeChecked();
+  await lengths.getByRole('radio', { name: /Kısa/ }).check();
+
+  const req = page.waitForRequest(
+    (r) => r.url().endsWith('/api/bulletin/generate') && r.method() === 'POST'
+  );
+  await panel.getByRole('button', { name: 'Oluştur ve İndir' }).click();
+  expect((await req).postDataJSON().summary_type).toBe('brief');
 });
 
 test('generating a bulletin for a past custom range downloads a file named for that period, not today', async ({ page }) => {

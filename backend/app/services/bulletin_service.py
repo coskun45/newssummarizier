@@ -2,8 +2,9 @@
 On-demand Word bulletin report generation.
 
 Steps (see `build_bulletin_sections`; `generate_bulletin_report` renders them to .docx):
-1. every selected article gets a brief summary — the one the pipeline already stored, or a new
-   one generated with the same summarizer and saved (`_ensure_brief_summaries`); its
+1. every selected article gets a summary of the chosen `summary_type` (default "stored": the
+   one the pipeline already stored), or a new one generated with the same summarizer and saved
+   (`_ensure_bulletin_summaries`); its
    "📌 Kaynak / Yazar - Başlık" + "🔹 ..." lines are the article's block in the report;
 2. each article is classified into one of the user's top-level categories + a type (cached per
    category set);
@@ -25,7 +26,7 @@ import re
 from datetime import datetime, timezone
 from html import unescape
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Literal, Optional, Sequence, get_args
 from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
@@ -62,7 +63,7 @@ OTHER_GROUP_SUFFIX = "DİĞER GELİŞMELER"
 _HEADER_ICON = "📌"
 _YORUM_ICON = "⭕️"
 _BULLET_ICON = "🔹"
-_BRIEF_CONCURRENCY = 5
+_SUMMARY_CONCURRENCY = 5
 _PRIORITY_RANK = {"high": 0, "med": 1, "low": 2, None: 3}
 _HIGHLIGHT_CANDIDATE_CAP = 10
 
@@ -212,42 +213,53 @@ def _existing_summary(article: models.Article, summary_type: str) -> Optional[st
     )
 
 
-def _existing_brief(article: models.Article) -> Optional[str]:
-    return _existing_summary(article, "brief")
+# Which summary a bulletin uses, chosen per bulletin (Bülten › Oluştur) and per subscription:
+# "stored" uses whichever summary the article already has, the others ask for that one type.
+BulletinSummaryType = Literal["stored", "detailed", "standard", "brief"]
+BULLETIN_SUMMARY_TYPES = get_args(BulletinSummaryType)
+DEFAULT_BULLETIN_SUMMARY_TYPE = "stored"
+# Which stored summary "stored" picks first; also the fallback order when a summary fails.
+_STORED_PREFERENCE = ("detailed", "standard", "brief")
 
 
-# Stored summaries a failed brief falls back to, shortest first.
-_FALLBACK_SUMMARY_TYPES = ("standard", "detailed")
-
-
-def _existing_fallback_summary(article: models.Article) -> Optional[str]:
-    return next(
-        (text for text in (_existing_summary(article, t) for t in _FALLBACK_SUMMARY_TYPES) if text),
-        None,
-    )
+def _preferred_stored_summary(article: models.Article, first: Optional[str] = None) -> Optional[str]:
+    """The article's stored summary: `first` if it has one, else in `_STORED_PREFERENCE` order."""
+    order = ([first] if first else []) + [t for t in _STORED_PREFERENCE if t != first]
+    return next((text for text in (_existing_summary(article, t) for t in order) if text), None)
 
 
 # ---------------------------------------------------------------------------
-# Brief summaries
+# Bulletin summaries
 # ---------------------------------------------------------------------------
 
-async def _ensure_brief_summaries(db: Session, articles: List[models.Article]) -> Dict[int, str]:
-    """{article_id: brief summary text}. Articles without a stored brief summary get one from the
-    pipeline's own summarizer (same system prompt, source and author handling as
-    `summary_service.process_article`), which is saved so the next report doesn't pay again. A
-    failed summary falls back to the article's stored standard/detailed summary (used for this
-    report only, not saved as a brief), else to plain content; hitting the cost limit stops the
-    report."""
-    briefs: Dict[int, str] = {}
+async def _ensure_bulletin_summaries(
+    db: Session, articles: List[models.Article], summary_type: str,
+) -> Dict[int, str]:
+    """{article_id: summary text} for the bulletin, per `summary_type` (see BULLETIN_SUMMARY_TYPES):
+    "stored" takes the article's stored summary (detailed > standard > brief), a concrete type
+    takes the stored summary of that type. An article without one gets it from the pipeline's own
+    summarizer (same system prompt, source and author handling as `summary_service.process_article`)
+    — for "stored" in the first summary type enabled in Ayarlar, so the bulletin never adds a type
+    the user switched off — and it is saved so the next report doesn't pay again. A failed summary
+    falls back to any other stored summary (used for this report only), else to plain content;
+    hitting the cost limit stops the report."""
+    summaries: Dict[int, str] = {}
     missing: List[models.Article] = []
     for article in articles:
-        text = _existing_brief(article)
+        text = (_preferred_stored_summary(article) if summary_type == "stored"
+                else _existing_summary(article, summary_type))
         if text:
-            briefs[article.id] = text
+            summaries[article.id] = text
         else:
             missing.append(article)
     if not missing:
-        return briefs
+        return summaries
+
+    if summary_type == "stored":
+        enabled = summary_service.get_enabled_summary_types(db)
+        generate_type = next(t for t in _STORED_PREFERENCE if t in enabled)
+    else:
+        generate_type = summary_type
 
     await check_cost_limits()
 
@@ -272,19 +284,19 @@ async def _ensure_brief_summaries(db: Session, articles: List[models.Article]) -
             "author_hint": clean_author(article.feed_author or article.author, source),
         })
 
-    semaphore = asyncio.Semaphore(_BRIEF_CONCURRENCY)
+    semaphore = asyncio.Semaphore(_SUMMARY_CONCURRENCY)
 
     async def summarize(job):
         async with semaphore:
             try:
                 return await summary_service.generate_summary(
-                    title=job["title"], content=job["content"], summary_type="brief",
+                    title=job["title"], content=job["content"], summary_type=generate_type,
                     source=job["source"], author_hint=job["author_hint"],
                 )
             except CostLimitExceededError:
                 raise
             except Exception as e:
-                logger.warning(f"Bulletin: brief summary failed for article {job['article'].id}: {e}")
+                logger.warning(f"Bulletin: {generate_type} summary failed for article {job['article'].id}: {e}")
                 return e
 
     results = await asyncio.gather(*(summarize(job) for job in jobs))
@@ -293,33 +305,33 @@ async def _ensure_brief_summaries(db: Session, articles: List[models.Article]) -
         article = job["article"]
         if isinstance(result, Exception) or not result or not result.get("summary_text"):
             crud.create_log(db=db, article_id=article.id, agent_name="summarizer", status="error",
-                            message="Failed to generate brief summary for the bulletin",
+                            message=f"Failed to generate {generate_type} summary for the bulletin",
                             error_details=str(result))
-            fallback = _existing_fallback_summary(article)
+            fallback = _preferred_stored_summary(article)
             if fallback:
-                briefs[article.id] = fallback
+                summaries[article.id] = fallback
             continue
         crud.create_summary(
-            db=db, article_id=article.id, summary_text=result["summary_text"], summary_type="brief",
+            db=db, article_id=article.id, summary_text=result["summary_text"], summary_type=generate_type,
             model_used=result.get("model_used"), tokens_used=result.get("tokens_used", 0),
             cost=result.get("cost", 0.0),
         )
         if not article.author:
             crud.set_article_author(db, article.id, resolve_summary_author([result], job["author_hint"]))
-        briefs[article.id] = result["summary_text"]
-    return briefs
+        summaries[article.id] = result["summary_text"]
+    return summaries
 
 
 _ICON_SPLIT_RE = re.compile(r"\s*(📌|⭕️|⭕|🔹)")
 
 
-def _article_block(article: models.Article, brief: Optional[str], article_type: str) -> Dict[str, Any]:
+def _article_block(article: models.Article, summary: Optional[str], article_type: str) -> Dict[str, Any]:
     """The article as the bulletin shows it: a "📌 Kaynak / Yazar - Başlık" header line and "🔹"
-    bullets, taken from the brief summary (which the summarizer writes in exactly this shape)."""
+    bullets, taken from the bulletin summary (the summarizer writes every type in this shape)."""
     header: Optional[str] = None
     bullets: List[str] = []
-    if brief:
-        text = _ICON_SPLIT_RE.sub(r"\n\1", brief.replace("**", ""))
+    if summary:
+        text = _ICON_SPLIT_RE.sub(r"\n\1", summary.replace("**", ""))
         for line in (raw.strip() for raw in text.splitlines()):
             if not line:
                 continue
@@ -623,14 +635,15 @@ async def classify_for_bulletin(
     db: Session,
     articles: List[models.Article],
     categories: List[models.BulletinCategory],
-    briefs: Optional[Dict[int, str]] = None,
+    summaries: Optional[Dict[int, str]] = None,
     model: Optional[str] = None,
+    summary_type: str = DEFAULT_BULLETIN_SUMMARY_TYPE,
 ) -> Dict[int, models.ArticleBulletinClassification]:
     """{article_id: classification} for `articles` against the current category set: cached rows
     are reused, the rest are classified by the LLM and stored. An article the model dropped is
-    simply missing from the result (callers place it under DİĞER). Without `briefs`, the brief
-    summaries are ensured first (generated where missing): the stored classification is reused by
-    every later bulletin, so it must not come from a title-only prompt."""
+    simply missing from the result (callers place it under DİĞER). Without `summaries`, the
+    bulletin summaries (`summary_type`) are ensured first (generated where missing): the stored
+    classification is reused by every later bulletin, so it must not come from a title-only prompt."""
     category_names = [c.name for c in categories]
     category_set_hash = compute_category_set_hash(category_names)
     articles_by_id = {a.id: a for a in articles}
@@ -638,11 +651,11 @@ async def classify_for_bulletin(
     uncached_articles = [a for a in articles if a.id not in cached]
     if not uncached_articles:
         return cached
-    if briefs is None:
-        briefs = await _ensure_brief_summaries(db, uncached_articles)
+    if summaries is None:
+        summaries = await _ensure_bulletin_summaries(db, uncached_articles, summary_type)
 
     # Classification needs a header to work from; the type (yorum → ⭕️) is applied by the caller.
-    draft_blocks = {a.id: _article_block(a, briefs.get(a.id), "haber") for a in uncached_articles}
+    draft_blocks = {a.id: _article_block(a, summaries.get(a.id), "haber") for a in uncached_articles}
 
     # Resolved once (or handed down by build_bulletin_sections): every row records the model that ran.
     model = model or get_classification_model(db)
@@ -680,15 +693,16 @@ async def build_bulletin_sections(
     db: Session,
     articles: List[models.Article],
     categories: List[models.BulletinCategory],
+    summary_type: str = DEFAULT_BULLETIN_SUMMARY_TYPE,
 ) -> List[Dict[str, Any]]:
-    """Orchestrates: brief summaries -> classification (cached) -> highlights -> per-category
+    """Orchestrates: bulletin summaries -> classification (cached) -> highlights -> per-category
     topic groups. Returns the body sections both the docx and the e-mail are rendered from."""
     category_names = [c.name for c in categories]
     articles_by_id = {a.id: a for a in articles}
 
-    briefs = await _ensure_brief_summaries(db, articles)
+    summaries = await _ensure_bulletin_summaries(db, articles, summary_type)
     model = get_classification_model(db)  # once per bulletin: every LLM step runs on the same model
-    cached = await classify_for_bulletin(db, articles, categories, briefs, model=model)
+    cached = await classify_for_bulletin(db, articles, categories, summaries, model=model)
 
     # An article the classifier dropped still belongs in the report — under DİĞER.
     placement: Dict[int, str] = {}
@@ -697,7 +711,7 @@ async def build_bulletin_sections(
         classification = cached.get(article.id)
         placement[article.id] = placement_category(classification, category_names)
         article_type = classification.article_type if classification else "haber"
-        blocks[article.id] = _article_block(article, briefs.get(article.id), article_type)
+        blocks[article.id] = _article_block(article, summaries.get(article.id), article_type)
 
     highlight_groups = await pick_bulletin_highlights(articles, blocks, model=model)
     highlighted = {i for g in highlight_groups for i in g["article_ids"]}
@@ -743,7 +757,8 @@ async def generate_bulletin_report(
     articles: List[models.Article],
     categories: List[models.BulletinCategory],
     metadata: Optional[Dict[str, Any]] = None,
+    summary_type: str = DEFAULT_BULLETIN_SUMMARY_TYPE,
 ) -> io.BytesIO:
     """Sections (see `build_bulletin_sections`) rendered into the Word template."""
-    sections = await build_bulletin_sections(db, articles, categories)
+    sections = await build_bulletin_sections(db, articles, categories, summary_type)
     return render_bulletin_report(db, sections, metadata=metadata)

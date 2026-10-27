@@ -1646,6 +1646,7 @@ def newsletter_settings_key(sub: Any) -> tuple:
         bool(sub.include_favorites),
         sub.delivery_format,
         tuple(sorted(set(sub.category_ids))),
+        sub.summary_type,
     )
 
 
@@ -1679,6 +1680,7 @@ def create_newsletter_subscription(
     category_ids: List[int],
     status: str,
     unsubscribe_token: str,
+    summary_type: str = "stored",
     confirm_token: Optional[str] = None,
     confirm_sent_at: Optional[datetime] = None,
     active_since: Optional[datetime] = None,
@@ -1693,6 +1695,7 @@ def create_newsletter_subscription(
         priorities=",".join(priorities) if priorities else None,
         include_favorites=include_favorites,
         delivery_format=delivery_format,
+        summary_type=summary_type,
         status=status,
         unsubscribe_token=unsubscribe_token,
         confirm_token=confirm_token,

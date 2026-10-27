@@ -50,6 +50,8 @@ test('creating a weekly subscription sends the chosen settings', async ({ page }
   await form.getByLabel('Yüksek').check();
   await form.getByLabel('ASYA').check();
   await form.getByLabel('Sadece Word dosyası').check();
+  await expect(form.getByLabel('Kayıtlı özet')).toBeChecked();
+  await form.getByLabel('Detaylı').check();
   await form.getByRole('button', { name: 'Abone Ol' }).click();
 
   await expect(page.getByText('Abonelik oluşturuldu.')).toBeVisible();
@@ -63,12 +65,13 @@ test('creating a weekly subscription sends the chosen settings', async ({ page }
     include_favorites: false,
     category_ids: [7],
     delivery_format: 'docx',
+    summary_type: 'detailed',
   }]);
 
   const card = panel.getByRole('listitem', { name: 'Abonelik tester@example.com' });
   await expect(card.getByText('Aktif')).toBeVisible();
   await expect(card.getByText('Haftalık · her Cuma 07:00')).toBeVisible();
-  await expect(card.getByText('en fazla 15 haber · Yüksek · ASYA · Sadece Word dosyası')).toBeVisible();
+  await expect(card.getByText('en fazla 15 haber · Yüksek · ASYA · özet: Detaylı · Sadece Word dosyası')).toBeVisible();
 });
 
 test('a foreign address waits for confirmation', async ({ page }) => {
@@ -122,7 +125,7 @@ test('pause, resume, send now, history and delete', async ({ page }) => {
 test('editing keeps the existing settings in the form', async ({ page }) => {
   await loginAs(page);
   const state = await mockApi(page, {
-    newsletterSubscriptions: [makeNewsletterSubscription({ id: 5, send_hour: 18, max_articles: 20 })],
+    newsletterSubscriptions: [makeNewsletterSubscription({ id: 5, send_hour: 18, max_articles: 20, summary_type: 'brief' })],
   });
   await page.goto('/');
   const panel = await openSubscriptions(page);
@@ -131,12 +134,14 @@ test('editing keeps the existing settings in the form', async ({ page }) => {
   const form = panel.getByRole('form', { name: 'Abonelik formu' });
   await expect(form.getByLabel('Saat')).toHaveValue('18');
   await expect(form.getByLabel('En fazla haber')).toHaveValue('20');
+  await expect(form.getByLabel('Kısa')).toBeChecked();
   await form.getByLabel('Sadece mail').check();
   await form.getByRole('button', { name: 'Kaydet' }).click();
 
   await expect(page.getByText('Abonelik güncellendi.')).toBeVisible();
   expect(state.newsletterRequests[0].delivery_format).toBe('email');
   expect(state.newsletterRequests[0].send_hour).toBe(18);
+  expect(state.newsletterRequests[0].summary_type).toBe('brief');
 });
 
 test('editing a pending subscription without changing the address sends no confirmation mail', async ({ page }) => {

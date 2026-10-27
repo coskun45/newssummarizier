@@ -18,14 +18,16 @@ Deutsche Welle (DW) RSS beslemelerinden haber toplayan, kategorize eden ve yapay
   yapısında bir Word (.docx) raporu üretir (en fazla `BULLETIN_MAX_ARTICLES` = 50 haber): en başta yapay
   zekanın önceliği en yüksek ve en yeni 10 haber arasından seçtiği en fazla 5 haberlik **Öne Çıkan
   Başlıklar**, ardından kullanıcı tanımlı üst düzey kategoriler (Avrupa, Amerika vb.; Heading1) ve her birinin
-  altında haberlerin konularına göre oluşturulan anlamlı alt başlıklar (Heading3). Her haber, uygulamanın kısa
-  özetiyle (`📌 Kaynak / Yazar - Başlık` + `🔹` maddeler) yazılır; kısa özeti olmayan habere aynı özetleyiciyle
-  özet üretilip kaydedilir; üretilemezse kayıtlı standart, o da yoksa detaylı özet kullanılır. İçindekiler hazır doldurulur (Word açılışta güncelleme sormaz); "BAZI KAYNAKLAR"
+  altında haberlerin konularına göre oluşturulan anlamlı alt başlıklar (Heading3). Her haber, oluştururken
+  seçilen **özet uzunluğuyla** (`📌 Kaynak / Yazar - Başlık` + `🔹` maddeler) yazılır: varsayılan **Kayıtlı özet**
+  haberin mevcut özetini kullanır (detaylı, yoksa standart, yoksa kısa); Detaylı, Standart ya da Kısa da seçilebilir.
+  Seçilen özeti olmayan habere aynı özetleyiciyle özet üretilip kaydedilir (Kayıtlı özette Ayarlar › Özet
+  Türleri'nde açık olan ilk tür; böylece kapatılmış bir tür eklenmez); üretilemezse başka bir kayıtlı özet kullanılır. İçindekiler hazır doldurulur (Word açılışta güncelleme sormaz); "BAZI KAYNAKLAR"
   listesine takip edilen RSS beslemeleri eklenir. Şablon: `backend/app/resources/bulletin_template.docx`
 - **Bülten Aboneliği (e-posta)**: Bülten › Abonelikler'den günlük veya haftalık abonelik oluşturulur. Günlük bülten
   gönderim anından geriye son 24 saatin, haftalık bülten son 7 günün haberlerini alır. Gönderim saati (haftalıkta
-  gün de), en fazla haber sayısı, önem seviyesi, üst düzey kategoriler ve format (Word eki, mail içinde bülten ya da
-  ikisi) seçilir. Haber sayısı üst sınırdır: daha az haber varsa hepsi alınır, fazlaysa önce önem (Yüksek > Orta >
+  gün de), en fazla haber sayısı, önem seviyesi, üst düzey kategoriler, özet uzunluğu ve format (Word eki, mail
+  içinde bülten ya da ikisi) seçilir. Haber sayısı üst sınırdır: daha az haber varsa hepsi alınır, fazlaysa önce önem (Yüksek > Orta >
   Düşük), sonra güncellik sırasına göre kırpılır. İçerik ve Word şablonu elle üretilen bültenle aynıdır; aynı
   filtrelere sahip abonelikler için bülten bir kez üretilir. Kendi hesap adresiniz dışındaki adreslere önce onay
   maili gider. Her mailde girişsiz "Abonelikten çık" bağlantısı (ve tek tıkla çıkma header'ı) vardır; abonelik
@@ -510,7 +512,8 @@ Bulten/
 - `GET /api/bulletin/categories` - Üst düzey bülten kategorilerini listele
 - `POST /api/bulletin/categories` - Yeni üst düzey kategori ekle (admin)
 - `PUT /api/bulletin/categories/reorder` - Kategori görüntüleme sırasını güncelle (admin)
-- `POST /api/bulletin/generate` - Filtrelere (tarih aralığı, önem seviyesi) göre Word (.docx) bülten
+- `POST /api/bulletin/generate` - Filtrelere (tarih aralığı, önem seviyesi) ve `summary_type`'a
+  (`stored` varsayılan / `detailed` / `standard` / `brief`) göre Word (.docx) bülten
   raporu oluşturur ve dosya olarak döner
 
 #### Bülten Aboneliği

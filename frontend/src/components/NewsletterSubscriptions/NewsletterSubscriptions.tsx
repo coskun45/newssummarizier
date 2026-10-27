@@ -39,6 +39,11 @@ import type {
   NewsletterSubscription,
   NewsletterSubscriptionInput,
 } from '../../types';
+import {
+  BULLETIN_SUMMARY_HINT,
+  BULLETIN_SUMMARY_OPTIONS,
+  DEFAULT_BULLETIN_SUMMARY_TYPE,
+} from '../../constants/bulletinSummary';
 import './NewsletterSubscriptions.css';
 
 const WEEKDAYS = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'];
@@ -91,6 +96,7 @@ function filterLabel(sub: NewsletterSubscriptionInput, categories: BulletinCateg
     `en fazla ${sub.max_articles} haber`,
     priorities.length > 0 ? priorities.join(', ') : 'tüm önem seviyeleri',
     categoryNames.length > 0 ? categoryNames.join(', ') : 'tüm kategoriler',
+    `özet: ${BULLETIN_SUMMARY_OPTIONS.find((o) => o.value === sub.summary_type)?.label ?? sub.summary_type}`,
     FORMAT_OPTIONS.find((f) => f.value === sub.delivery_format)?.label ?? sub.delivery_format,
   ].join(' · ');
 }
@@ -110,6 +116,7 @@ function emptyInput(email: string): NewsletterSubscriptionInput {
     include_favorites: false,
     category_ids: [],
     delivery_format: 'both',
+    summary_type: DEFAULT_BULLETIN_SUMMARY_TYPE,
   };
 }
 
@@ -124,6 +131,7 @@ function toInput(sub: NewsletterSubscription): NewsletterSubscriptionInput {
     include_favorites: sub.include_favorites,
     category_ids: sub.category_ids,
     delivery_format: sub.delivery_format,
+    summary_type: sub.summary_type,
   };
 }
 
@@ -309,6 +317,24 @@ function SubscriptionForm({
             </div>
           )}
           <span className="newsletter-hint">Seçim yapılmazsa tüm kategoriler.</span>
+        </fieldset>
+
+        <fieldset className="newsletter-field">
+          <legend>Özet uzunluğu</legend>
+          <div className="newsletter-check-grid">
+            {BULLETIN_SUMMARY_OPTIONS.map((option) => (
+              <label key={option.value} className="newsletter-choice">
+                <input
+                  type="radio"
+                  name="summary_type"
+                  checked={form.summary_type === option.value}
+                  onChange={() => update({ summary_type: option.value })}
+                />
+                {option.label}
+              </label>
+            ))}
+          </div>
+          <span className="newsletter-hint">{BULLETIN_SUMMARY_HINT}</span>
         </fieldset>
 
         <fieldset className="newsletter-field newsletter-field--wide">

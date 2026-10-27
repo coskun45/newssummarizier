@@ -21,6 +21,7 @@ from app.core.config import settings
 from app.db import crud, models
 from app.db.database import get_db
 from app.services import email_service, newsletter_service
+from app.services.bulletin_service import DEFAULT_BULLETIN_SUMMARY_TYPE, BulletinSummaryType
 
 router = APIRouter()
 public_router = APIRouter()
@@ -42,6 +43,7 @@ class SubscriptionBody(BaseModel):
     include_favorites: bool = False
     category_ids: List[int] = []  # empty = all top-level categories
     delivery_format: Literal["docx", "email", "both"]
+    summary_type: BulletinSummaryType = DEFAULT_BULLETIN_SUMMARY_TYPE  # "stored" = the article's own
 
 
 class SubscriptionResponse(BaseModel):
@@ -56,6 +58,7 @@ class SubscriptionResponse(BaseModel):
     include_favorites: bool
     category_ids: List[int]
     delivery_format: str
+    summary_type: str
     status: str
     consecutive_failures: int
     confirm_sent_at: Optional[datetime]
@@ -107,6 +110,7 @@ def _to_response(sub: models.NewsletterSubscription) -> SubscriptionResponse:
         include_favorites=sub.include_favorites,
         category_ids=sub.category_ids,
         delivery_format=sub.delivery_format,
+        summary_type=sub.summary_type,
         status=sub.status,
         consecutive_failures=sub.consecutive_failures or 0,
         confirm_sent_at=sub.confirm_sent_at,
@@ -227,6 +231,7 @@ async def create_subscription(
         priorities=body.priorities,
         include_favorites=body.include_favorites,
         delivery_format=body.delivery_format,
+        summary_type=body.summary_type,
         category_ids=body.category_ids,
         status="active" if own else "pending",
         unsubscribe_token=newsletter_service.new_token(),

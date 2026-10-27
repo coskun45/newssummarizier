@@ -209,6 +209,7 @@ export function makeNewsletterSubscription(
     include_favorites: false,
     category_ids: [],
     delivery_format: 'both',
+    summary_type: 'stored',
     status: 'active',
     consecutive_failures: 0,
     confirm_sent_at: null,

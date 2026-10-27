@@ -14,7 +14,7 @@ from app.core.exceptions import CostLimitExceededError
 from app.core.security import hash_password
 from app.db import crud, models
 from app.services import bulletin_service, newsletter_service, summary_service
-from tests.conftest import _make_article, _make_feed
+from tests.conftest import _make_article, _make_feed, _make_summary
 
 # Friday 2026-10-02 08:10 in Europe/Berlin (CEST, UTC+2).
 NOW = datetime(2026, 10, 2, 6, 10, tzinfo=timezone.utc)
@@ -67,7 +67,7 @@ def _fresh_confirmation_quota(monkeypatch):
 def bulletin_llm(monkeypatch):
     """Classification puts "ASYA: ..." titles into ASYA, everything else into the first category.
     Records how often the bulletin is built."""
-    calls = {"build": 0, "classified": [], "blocks": {}}
+    calls = {"build": 0, "classified": [], "blocks": {}, "summary_types": []}
 
     async def fake_classify(db, articles, category_names, blocks=None, model=None):
         calls["classified"].extend(a.id for a in articles)
@@ -87,6 +87,7 @@ def bulletin_llm(monkeypatch):
         return [{"title": f"{category_name} GÜNDEMİ", "article_ids": [a.id for a in articles]}] if articles else []
 
     async def fake_summary(title, content, summary_type="standard", source=None, author_hint=None):
+        calls["summary_types"].append(summary_type)
         return {"summary_text": f"📌 **DW - {title}**\n🔹 {title} özeti.", "model_used": "gpt-test",
                 "tokens_used": 1, "cost": 0.0, "author": None, "structured": True}
 
@@ -95,9 +96,9 @@ def bulletin_llm(monkeypatch):
 
     real_build = bulletin_service.build_bulletin_sections
 
-    async def counting_build(db, articles, categories):
+    async def counting_build(db, articles, categories, summary_type="stored"):
         calls["build"] += 1
-        return await real_build(db, articles, categories)
+        return await real_build(db, articles, categories, summary_type=summary_type)
 
     monkeypatch.setattr(bulletin_service, "classify_articles_for_bulletin", fake_classify)
     monkeypatch.setattr(bulletin_service, "pick_bulletin_highlights", no_highlights)
@@ -138,12 +139,13 @@ def _create(client, headers, **overrides):
 
 def _subscription(db_session, user, *, email=None, frequency="daily", send_hour=8, send_weekday=None,
                   max_articles=10, priorities=None, include_favorites=False, delivery_format="both",
-                  category_ids=(), status="active", active_since=NOW - timedelta(days=30), last_sent_at=None):
+                  category_ids=(), status="active", active_since=NOW - timedelta(days=30), last_sent_at=None,
+                  summary_type="stored"):
     sub = crud.create_newsletter_subscription(
         db_session, user_id=user.id, email=email or user.email, frequency=frequency, send_hour=send_hour,
         send_weekday=send_weekday, max_articles=max_articles, priorities=priorities,
         include_favorites=include_favorites, delivery_format=delivery_format, category_ids=list(category_ids),
-        status=status, unsubscribe_token=newsletter_service.new_token(),
+        status=status, unsubscribe_token=newsletter_service.new_token(), summary_type=summary_type,
         confirm_token=newsletter_service.new_token() if status == "pending" else None,
         active_since=active_since,
     )
@@ -238,6 +240,47 @@ def test_duplicate_subscription_rejected(client, auth_headers):
     assert "aynı ayarlarla" in response.json()["detail"]
     # A different setting is a different subscription.
     assert _create(client, auth_headers, priorities=["high"]).status_code == 201
+    assert _create(client, auth_headers, priorities=["high"], summary_type="brief").status_code == 201
+
+
+def test_subscription_summary_type_defaults_to_stored_and_is_saved(client, auth_headers, db_session):
+    created = _create(client, auth_headers)
+    assert created.status_code == 201
+    assert created.json()["summary_type"] == "stored"
+
+    updated = client.put(f"/api/newsletter/subscriptions/{created.json()['id']}",
+                         json=_body(summary_type="detailed"), headers=auth_headers)
+
+    assert updated.status_code == 200
+    assert updated.json()["summary_type"] == "detailed"
+    db_session.expire_all()
+    assert crud.get_newsletter_subscription(db_session, created.json()["id"]).summary_type == "detailed"
+
+
+@pytest.mark.parametrize("value", ["", "short", None])
+def test_subscription_rejects_unknown_summary_type(client, auth_headers, value):
+    assert _create(client, auth_headers, summary_type=value).status_code == 422
+
+
+def test_bulletin_uses_the_subscriptions_summary_type(db_session, test_user, bulletin_llm):
+    """The subscription's summary choice reaches the bulletin: an article whose stored summary is
+    of another type gets the chosen one generated; with "stored" its own summary is used."""
+    avrupa = _category(db_session, "AVRUPA")
+    article = _articles(db_session, ("Berlin", "high", 1))[0]
+    _make_summary(db_session, article.id, summary_type="detailed",
+                  summary_text="📌 DW - Berlin\n🔹 Kayıtlı detaylı özet.")
+
+    stored = _subscription(db_session, test_user, category_ids=[avrupa.id])
+    built = asyncio.run(newsletter_service.build_bulletin(db_session, stored, NOW))
+    assert built.status == "ok"
+    assert bulletin_llm["summary_types"] == []
+    assert newsletter_service.content_key(stored) != newsletter_service.content_key(
+        _subscription(db_session, test_user, send_hour=9, category_ids=[avrupa.id], summary_type="brief"))
+
+    brief = _subscription(db_session, test_user, send_hour=10, summary_type="brief")
+    built = asyncio.run(newsletter_service.build_bulletin(db_session, brief, NOW))
+    assert built.status == "ok"
+    assert bulletin_llm["summary_types"] == ["brief"]
 
 
 def test_per_user_subscription_limit(client, auth_headers, monkeypatch):
@@ -682,7 +725,7 @@ def test_cost_limit_sends_info_mail(db_session, test_user, outbox, monkeypatch):
     _articles(db_session, ("Haber", "high", 1))
     _subscription(db_session, test_user)
 
-    async def over_limit(db, articles, categories):
+    async def over_limit(db, articles, categories, summary_type="stored"):
         raise CostLimitExceededError("Daily cost limit exceeded")
 
     monkeypatch.setattr(bulletin_service, "build_bulletin_sections", over_limit)
@@ -729,7 +772,7 @@ def test_bulletin_build_errors_do_not_disable_the_subscription(db_session, test_
     _articles(db_session, *[(f"Haber {day}", "high", 1 - 24 * day) for day in range(3)])  # one per run window
     sub = _subscription(db_session, test_user)
 
-    async def outage(db, articles, categories):
+    async def outage(db, articles, categories, summary_type="stored"):
         raise RuntimeError("OpenAI unavailable")
 
     monkeypatch.setattr(bulletin_service, "build_bulletin_sections", outage)
@@ -799,9 +842,9 @@ def test_category_filter_stops_classifying_once_enough_matched(db_session, test_
     assert len(bulletin_llm["classified"]) == 2
 
 
-def test_category_filter_classifies_with_brief_summaries(db_session, test_user, bulletin_llm):
+def test_category_filter_classifies_with_bulletin_summaries(db_session, test_user, bulletin_llm):
     """Regression: classification for the category filter ran on title-only headers for articles
-    without a brief summary, and that weaker result stayed cached for every later bulletin."""
+    without a stored summary, and that weaker result stayed cached for every later bulletin."""
     avrupa = _category(db_session, "AVRUPA")
     article = _articles(db_session, ("Berlin", "high", 1))[0]
     sub = _subscription(db_session, test_user, category_ids=[avrupa.id])

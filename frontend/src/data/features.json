@@ -103,7 +103,7 @@
         {
           "id": "bulletin-report",
           "title": "Word bülten raporu",
-          "description": "Seçilen zaman aralığı ve önem seviyesindeki haberlerden örnek bülten yapısında bir Word (.docx) raporu üretir: önceliği en yüksek ve en yeni 10 haber arasından seçilen en fazla 5 haberlik Öne Çıkan Başlıklar, ardından kullanıcı tanımlı kategoriler altında yapay zekanın konulara göre belirlediği alt başlıklar. Her haber kısa özetiyle (📌 kaynak - başlık, 🔹 maddeler) yazılır; kısa özeti olmayanlara özet üretilir, üretilemezse kayıtlı standart ya da detaylı özet kullanılır. Bir raporda en fazla 50 haber olabilir. İçindekiler hazır gelir, kaynak listesine takip edilen RSS beslemeleri eklenir. Geçmiş raporlar indirilebilir, silme yalnızca yöneticilere açıktır."
+          "description": "Seçilen zaman aralığı ve önem seviyesindeki haberlerden örnek bülten yapısında bir Word (.docx) raporu üretir: önceliği en yüksek ve en yeni 10 haber arasından seçilen en fazla 5 haberlik Öne Çıkan Başlıklar, ardından kullanıcı tanımlı kategoriler altında yapay zekanın konulara göre belirlediği alt başlıklar. Her haber, oluştururken seçilen özet uzunluğuyla (📌 kaynak - başlık, 🔹 maddeler) yazılır: varsayılan Kayıtlı özet haberin mevcut özetini kullanır (detaylı, yoksa standart, yoksa kısa); Detaylı, Standart ya da Kısa da seçilebilir. Seçilen özeti olmayan habere özet üretilip kaydedilir (Kayıtlı özette Ayarlar'da açık olan türde), üretilemezse başka bir kayıtlı özet kullanılır. Bir raporda en fazla 50 haber olabilir. İçindekiler hazır gelir, kaynak listesine takip edilen RSS beslemeleri eklenir. Geçmiş raporlar indirilebilir, silme yalnızca yöneticilere açıktır."
         },
         {
           "id": "bulletin-categories",
@@ -113,7 +113,7 @@
         {
           "id": "bulletin-subscription",
           "title": "Bülten aboneliği (e-posta)",
-          "description": "Bülten › Abonelikler'den günlük (son 24 saat) veya haftalık (son 7 gün) bülten aboneliği: gönderim saati/günü, en fazla haber sayısı (fazlası önem ve güncelliğe göre kırpılır), önem seviyesi, üst düzey kategoriler ve format (Word eki, mail içinde bülten ya da ikisi) seçilir. Kendi adresiniz dışındaki adreslere önce onay maili gider; her maildeki bağlantıyla ya da uygulamadan abonelikten çıkılır, durdurup sürdürülebilir. Şimdi gönder ile bülten arka planda hazırlanıp hemen gönderilir (saatte bir; haber yoksa hak yanmaz), gönderim geçmişi görülür; başarısız gönderimler tekrar denenir. Yöneticiler tüm aboneleri ve son 30 günün maliyetini görür. Word dosyası başlık, konu, kategori ve filtre bilgilerini metadata olarak taşır."
+          "description": "Bülten › Abonelikler'den günlük (son 24 saat) veya haftalık (son 7 gün) bülten aboneliği: gönderim saati/günü, en fazla haber sayısı (fazlası önem ve güncelliğe göre kırpılır), önem seviyesi, üst düzey kategoriler, özet uzunluğu (Kayıtlı özet, Detaylı, Standart, Kısa) ve format (Word eki, mail içinde bülten ya da ikisi) seçilir. Kendi adresiniz dışındaki adreslere önce onay maili gider; her maildeki bağlantıyla ya da uygulamadan abonelikten çıkılır, durdurup sürdürülebilir. Şimdi gönder ile bülten arka planda hazırlanıp hemen gönderilir (saatte bir; haber yoksa hak yanmaz), gönderim geçmişi görülür; başarısız gönderimler tekrar denenir. Yöneticiler tüm aboneleri ve son 30 günün maliyetini görür. Word dosyası başlık, konu, kategori ve filtre bilgilerini metadata olarak taşır."
         },
         {
           "id": "playground",

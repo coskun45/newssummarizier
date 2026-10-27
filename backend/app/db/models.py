@@ -262,6 +262,8 @@ class NewsletterSubscription(Base):
     priorities = Column(String, nullable=True)  # comma-separated, e.g. "high,med"; null = all
     include_favorites = Column(Boolean, nullable=False, default=False)
     delivery_format = Column(String, nullable=False)  # "docx" | "email" | "both"
+    # Which summary the bulletin uses: "stored" (the article's own) | "detailed" | "standard" | "brief"
+    summary_type = Column(String, nullable=False, default="stored", server_default="stored")
     status = Column(String, nullable=False, default="pending")  # pending|active|paused|unsubscribed|disabled
     confirm_token = Column(String, nullable=True, unique=True)
     confirm_sent_at = Column(UTCDateTime(), nullable=True)
