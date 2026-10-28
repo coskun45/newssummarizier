@@ -233,3 +233,85 @@ def _make_bulletin_classification(db_session, article_id, *, category_set_hash="
     db_session.commit()
     db_session.refresh(row)
     return row
+
+
+# ---------------------------------------------------------------------------
+# Asistan (analysis chat) fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def agent_db(monkeypatch, db_session):
+    """Point the Asistan's own sessions (agent nodes, tools, chat_service, the cost booking in
+    summary_service, the embedding backfill) at the in-memory test DB, and create the chat_*
+    views the SQL tool reads."""
+    from sqlalchemy.orm import sessionmaker
+    from app.agents.analysis import nodes, tools
+    from app.db.database import create_chat_views
+    from app.services import chat_service, summary_service
+    from app.tasks import background
+
+    factory = sessionmaker(bind=db_session.get_bind(), expire_on_commit=False)
+    for module in (nodes, tools, chat_service, summary_service, background):
+        monkeypatch.setattr(module, "SessionLocal", factory)
+    create_chat_views(db_session.get_bind())
+    return factory
+
+
+class FakeAgentLLM:
+    """Stand-in for summary_service.run_agent_llm / stream_agent_llm. Script answers per agent
+    stage with `script(purpose, *answers)`; an answer is a dict (JSON-mode content), a string
+    (plain content) or `tool_call(name, **arguments)`. A stage without a scripted answer gets a
+    sensible default, so a test scripts only what it is about. `calls` records every call."""
+
+    def __init__(self):
+        self.answers = {}
+        self.calls = []
+        self.report = "Rapor: sonuç [#1]."
+        self.cost_per_call = 0.0
+
+    def script(self, purpose, *answers):
+        self.answers.setdefault(purpose, []).extend(answers)
+
+    @staticmethod
+    def tool_call(name, **arguments):
+        import json
+        return {"tool_calls": [{"id": f"call_{name}_{next(_tool_call_ids)}", "name": name,
+                                "arguments": json.dumps(arguments)}]}
+
+    _DEFAULTS = {
+        "understand": {"restatement": "Anlaşılan amaç", "analysis_type": "distribution", "open_questions": []},
+        "plan": {"steps": [{"goal": "Önem seviyelerini say", "tool": "sql"}]},
+        "execute": "Adım bulgusu.",
+        "reflect": {"decision": "continue"},
+    }
+
+    async def run(self, messages, model, max_tokens, *, purpose, json_mode=False, tools=None, temperature=0.2):
+        import json
+        self.calls.append({"purpose": purpose, "messages": messages, "tools": tools})
+        queue = self.answers.get(purpose) or []
+        answer = queue.pop(0) if queue else self._DEFAULTS[purpose]
+        if isinstance(answer, dict) and "tool_calls" in answer:
+            return {"content": "", "tool_calls": answer["tool_calls"], "finish_reason": "tool_calls",
+                    "cost": self.cost_per_call, "purpose": purpose}
+        content = json.dumps(answer, ensure_ascii=False) if isinstance(answer, dict) else answer
+        return {"content": content, "tool_calls": [], "finish_reason": "stop", "cost": self.cost_per_call,
+                "purpose": purpose}
+
+    async def stream(self, messages, model, max_tokens, *, purpose, temperature=0.3):
+        self.calls.append({"purpose": purpose, "messages": messages, "tools": None})
+        for piece in (self.report[: len(self.report) // 2], self.report[len(self.report) // 2:]):
+            yield ("token", piece)
+        yield ("cost", self.cost_per_call)
+
+
+_tool_call_ids = itertools.count(1)
+
+
+@pytest.fixture()
+def fake_agent_llm(monkeypatch):
+    from app.services import summary_service
+
+    fake = FakeAgentLLM()
+    monkeypatch.setattr(summary_service, "run_agent_llm", fake.run)
+    monkeypatch.setattr(summary_service, "stream_agent_llm", fake.stream)
+    return fake

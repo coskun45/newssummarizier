@@ -1,9 +1,9 @@
 /**
  * React Query hooks for data fetching and caching.
  */
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
-import { articlesApi, summariesApi, topicsApi, groupsApi, settingsApi, statsApi, appApi, feedsApi, authApi, bulletinApi, newsletterApi, playgroundApi, promptsApi } from '../services/api';
+import { articlesApi, summariesApi, topicsApi, groupsApi, settingsApi, statsApi, appApi, feedsApi, authApi, bulletinApi, newsletterApi, playgroundApi, promptsApi, chatApi } from '../services/api';
 import type {
     AnalysisRange,
     GroupKind,
@@ -15,6 +15,8 @@ import type {
     ReprocessRequest,
     PlaygroundRunRequest,
     NewsletterSubscriptionInput,
+    ChatEvent,
+    ChatSendRequest,
 } from '../types';
 
 // Articles hooks
@@ -351,6 +353,8 @@ export const useUpdateSettings = () => {
             // The summarization prompt's locked part lists the enabled summary types.
             queryClient.invalidateQueries({ queryKey: ['promptLocked'] });
             queryClient.invalidateQueries({ queryKey: ['playgroundSettings'] });
+            // The Asistan's tool switches live in the settings too.
+            queryClient.invalidateQueries({ queryKey: ['chatTools'] });
         },
     });
 };
@@ -671,4 +675,128 @@ export const useRunPlayground = () => {
     return useMutation({
         mutationFn: (request: PlaygroundRunRequest) => playgroundApi.run(request),
     });
+};
+
+// Asistan (analysis chat) hooks
+export const useChatConversations = () => {
+    return useQuery({
+        queryKey: ['chatConversations'],
+        queryFn: chatApi.listConversations,
+    });
+};
+
+export const useChatConversation = (conversationId: number | null) => {
+    return useQuery({
+        queryKey: ['chatConversation', conversationId],
+        queryFn: () => chatApi.getConversation(conversationId!),
+        enabled: conversationId !== null,
+    });
+};
+
+export const useCreateChatConversation = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (title?: string) => chatApi.createConversation(title),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['chatConversations'] });
+        },
+    });
+};
+
+export const useDeleteChatConversation = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (conversationId: number) => chatApi.deleteConversation(conversationId),
+        onSuccess: (_data, conversationId) => {
+            queryClient.invalidateQueries({ queryKey: ['chatConversations'] });
+            queryClient.removeQueries({ queryKey: ['chatConversation', conversationId] });
+        },
+    });
+};
+
+export const useChatTools = () => {
+    return useQuery({
+        queryKey: ['chatTools'],
+        queryFn: chatApi.getTools,
+    });
+};
+
+/** Vectorization status; polls while a backfill runs. */
+export const useEmbeddingStatus = () => {
+    return useQuery({
+        queryKey: ['embeddingStatus'],
+        queryFn: chatApi.getEmbeddingStatus,
+        refetchInterval: (query) => (query.state.data?.job.status === 'running' ? 2000 : false),
+    });
+};
+
+export const useStartEmbeddingBackfill = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: () => chatApi.startEmbeddingBackfill(),
+        onSuccess: (status) => {
+            queryClient.setQueryData(['embeddingStatus'], status);
+            queryClient.invalidateQueries({ queryKey: ['embeddingStatus'] });
+        },
+    });
+};
+
+/**
+ * One Asistan turn, streamed: `send` posts the message and collects the run's events as they
+ * arrive; `stop` aborts it (the server keeps what was done and frees the conversation). When the
+ * stream ends the conversation is refetched — it then holds the stored turn — and only after
+ * that are the live events cleared, so the answer never blinks out.
+ */
+export const useChatStream = () => {
+    const queryClient = useQueryClient();
+    const [events, setEvents] = useState<ChatEvent[]>([]);
+    // Report tokens are kept apart from `events`: copying the whole event array per token made a
+    // long report's streaming quadratic.
+    const [tokens, setTokens] = useState('');
+    const [userText, setUserText] = useState<string | null>(null);
+    const [streaming, setStreaming] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const abortRef = useRef<AbortController | null>(null);
+
+    useEffect(() => () => abortRef.current?.abort(), []);
+
+    const send = useCallback(async (conversationId: number, body: ChatSendRequest, shownText: string) => {
+        abortRef.current?.abort();
+        const controller = new AbortController();
+        abortRef.current = controller;
+        setEvents([]);
+        setTokens('');
+        setError(null);
+        setUserText(shownText);
+        setStreaming(true);
+        try {
+            await chatApi.sendMessage(conversationId, body, (event) => {
+                if (event.type === 'token') setTokens((previous) => previous + event.text);
+                else setEvents((previous) => [...previous, event]);
+            }, controller.signal);
+        } catch (e) {
+            if (!(e instanceof DOMException && e.name === 'AbortError')) {
+                setError(e instanceof Error ? e.message : 'Mesaj gönderilemedi');
+            }
+        } finally {
+            if (abortRef.current === controller) abortRef.current = null;
+            setStreaming(false);
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ['chatConversation', conversationId] }),
+                queryClient.invalidateQueries({ queryKey: ['chatConversations'] }),
+            ]);
+            setEvents([]);
+            setTokens('');
+            setUserText(null);
+        }
+    }, [queryClient]);
+
+    const stop = useCallback(() => abortRef.current?.abort(), []);
+
+    // The stored assistant message of the finished run; once the refetched conversation has it,
+    // the live copy is hidden (they would otherwise both show until the live events are cleared).
+    const doneEvent = events.find((e): e is Extract<ChatEvent, { type: 'done' }> => e.type === 'done');
+    const doneMessageId = doneEvent?.message_id ?? null;
+
+    return { send, stop, events, tokens, userText, streaming, error, doneMessageId, clearError: () => setError(null) };
 };

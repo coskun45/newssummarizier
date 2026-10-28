@@ -1,7 +1,10 @@
 services:
 
   db:
-    image: postgres:16-alpine
+    # postgres:16-alpine + pgvector (Asistan vektör araması) — bkz. docker/postgres/Dockerfile
+    build:
+      context: ./docker/postgres
+    image: bulten-postgres:16-pgvector
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-bulten}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}

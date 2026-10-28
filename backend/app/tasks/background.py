@@ -195,3 +195,55 @@ async def reprocess_articles_task(article_ids: List[int]):
                 _reprocess_status["done"] += 1
             if _reprocess_status["done"] >= _reprocess_status["total"]:
                 _reprocess_status["status"] = "done"
+
+
+# ---------------------------------------------------------------------------
+# Embedding backfill (vector search): embed summarized articles that have no embedding yet —
+# articles from before vector search existed, or ones whose pipeline embedding step failed.
+# ---------------------------------------------------------------------------
+
+_embedding_status: Dict[str, Any] = {"status": "idle", "total": 0, "done": 0, "failed": 0, "cost": 0.0, "error": None}
+
+
+def get_embedding_backfill_status() -> Dict[str, Any]:
+    return dict(_embedding_status)
+
+
+def register_embedding_backfill() -> bool:
+    """Mark a backfill as started; False if one is already running (called before scheduling it,
+    so two clicks can't start two runs)."""
+    if _embedding_status["status"] == "running":
+        return False
+    _embedding_status.update({"status": "running", "total": 0, "done": 0, "failed": 0, "cost": 0.0, "error": None})
+    return True
+
+
+async def embed_missing_articles_task() -> None:
+    """Embed every summarized article without an embedding, one after another. A failing article
+    is counted and skipped; the OpenAI cost limit stops the run."""
+    from app.core.config import settings
+    from app.core.exceptions import CostLimitExceededError
+    from app.services.summary_service import embed_article
+
+    db = SessionLocal()
+    try:
+        article_ids = crud.get_article_ids_missing_embeddings(db, settings.embedding_model)
+        _embedding_status["total"] = len(article_ids)
+        for article_id in article_ids:
+            try:
+                outcome = await embed_article(db, article_id)
+                _embedding_status["cost"] = round(_embedding_status["cost"] + outcome["cost"], 6)
+            except CostLimitExceededError as e:
+                _embedding_status["error"] = str(e)
+                break
+            except Exception as e:
+                db.rollback()
+                logger.error(f"Embedding article {article_id} failed: {e}")
+                _embedding_status["failed"] += 1
+            _embedding_status["done"] += 1
+    except Exception as e:
+        logger.error(f"Embedding backfill failed: {e}", exc_info=True)
+        _embedding_status["error"] = str(e)
+    finally:
+        db.close()
+        _embedding_status["status"] = "done"

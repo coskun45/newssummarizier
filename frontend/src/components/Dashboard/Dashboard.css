@@ -165,8 +165,8 @@ button svg {
   padding: 2rem 0;
 }
 
-/* Wide content with a small side gutter so the filter sidebar sits near the left edge
-   instead of floating in the centered 1400px column. Doubled class: index.css loads after this
+/* Wide header + content with a small side gutter so the logo, nav and filter sidebar sit near
+   the edges instead of floating in the centered 1400px column. Doubled class: index.css loads after this
    file and its .container would otherwise win. */
 .container.dashboard-container {
   max-width: none;
@@ -276,6 +276,13 @@ button svg {
 
 .dashboard-main {
   min-height: 400px;
+  min-width: 0;
+}
+
+/* Views without a sidebar (home, Analiz, Asistan…) span both grid columns instead of
+   shrinking into the `auto` one to their content's width. */
+.dashboard-main:only-child {
+  grid-column: 1 / -1;
 }
 
 .empty-state,

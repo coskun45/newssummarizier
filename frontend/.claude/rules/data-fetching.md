@@ -9,6 +9,9 @@ paths:
 ## API layer (`src/services/api.ts`)
 - **Components NEVER import `axios` or call endpoints directly** — every HTTP call goes through a typed group in `src/services/api.ts` (`articlesApi`, `feedsApi`, `topicsApi`, ...). Add new endpoints there and return `response.data` typed against `src/types`.
 - **Base URL is `/api`** (proxied by Vite/nginx) — never hardcode hostnames.
+- **The one `fetch` is `chatApi.sendMessage`** (Asistan SSE stream — axios can't read a response as it
+  arrives). It mirrors the interceptors by hand (bearer token, 401 → clear session + `auth:logout`);
+  keep it in sync if they change, and don't add other `fetch` calls.
 - **Auth is handled by interceptors, not callers** — the request interceptor injects the `auth_token` from `localStorage`; the response interceptor clears the session and dispatches a `auth:logout` window event on 401. Don't add per-call token handling or 401 checks.
 
 ## Hooks (`src/hooks/useApi.ts`)

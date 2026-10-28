@@ -169,6 +169,26 @@
           "id": "archive-above-below",
           "title": "Üstündekileri / altındakileri arşive gönder",
           "description": "Okunmamışlar listesinde her haberin ⋯ menüsünden \"Bu ve üstündekileri\" ya da \"Bu ve altındakileri arşive gönder\" seçilir; menü kaç haberin gideceğini gösterir, ardından açılan onay penceresinde (İptal / Arşive gönder) onay istenir. Önceki sayfalar dahil, yalnızca aktif filtredeki haberler arşivlenir; sonunda kaç haberin arşive gönderildiği bildirilir."
+        },
+        {
+          "id": "assistant-analysis-chat",
+          "title": "Asistan: haberler üzerinde analiz sohbeti",
+          "description": "Önem seviyeli haberler hakkında serbest soru sorulur; asistan gerekirse önce seçenekli netleştirici sorular sorar, sonra bir analiz planı çıkarıp adım adım yürütür (zaman tespiti, salt-okunur veritabanı sorguları, grafik) ve kaynak haberlere atıf yapan bir rapor yazar. Boş ekranda karşılama, ortada mesaj kutusu ve örnek soru kartları görünür; sohbet başlayınca mesaj kutusu alta iner. Sohbetler tarihe göre gruplanır (Bugün, Dün, Son 7 gün…), plan ilerlemesi adım sayısıyla gösterilir, rapor tek tıkla kopyalanır, başarısız istek tekrar denenir ve çalışan analiz Esc ile durdurulur. Analiz sürerken başka bir sekmeye geçilse de analiz devam eder; dönünce sonuç hazırdır."
+        },
+        {
+          "id": "assistant-empty-period-check",
+          "title": "Asistan: boş dönem uyarısı ve dönem seçimi",
+          "description": "Sorulan dönemde (ör. son 24 saat) hiç haber yoksa asistan arama yapmadan bunu hemen söyler, en yeni haberin tarihini belirtir ve Son 7 gün / Son 30 gün / Tüm veriler seçeneklerini sunar. Netleştirmede seçilen dönem sorudaki ifadenin yerine geçer; \"neden?\" gibi bir itirazda gerekçeyi açıklayıp seçimi yeniden sorar."
+        },
+        {
+          "id": "assistant-vector-search",
+          "title": "Asistan: vektör arama",
+          "description": "Özetlenen haberlerin tam metni parçalara bölünerek vektörleştirilir; asistan konu, olay ve ayrıntı sorularında ilgili haberleri anlam benzerliği ve kelime eşleşmesiyle birlikte bulur. Yeni haberler özetlenince otomatik vektörleştirilir, eskiler için toplu vektörleştirme başlatılabilir."
+        },
+        {
+          "id": "assistant-settings",
+          "title": "Asistan ayarları",
+          "description": "Asistanın kullanabileceği araçlar (zaman tespiti, veritabanı, vektör arama, grafik…) tek tek açılıp kapatılır; analiz planının çalıştırılmadan önce onay beklemesi istenebilir."
         }
       ]
     }

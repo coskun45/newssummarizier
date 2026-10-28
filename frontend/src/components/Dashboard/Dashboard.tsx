@@ -18,6 +18,7 @@ import UserMenu from '../UserMenu/UserMenu';
 import BulletinPanel from '../Bulletin/Bulletin';
 import Playground from '../Playground/Playground';
 import Analysis from '../Analysis/Analysis';
+import Chat from '../Chat/Chat';
 import ConfirmDialog from '../ConfirmDialog/ConfirmDialog';
 import logo from '../../assets/logo.svg';
 import {
@@ -73,7 +74,11 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
   const [publishedFilter, setPublishedFilter] = useState<DateFilterState>(emptyDate);
   const [fetchedFilter, setFetchedFilter] = useState<DateFilterState>(emptyDate);
   const [filtersCollapsed, setFiltersCollapsed] = useState(readSidebarCollapsed);
-  const [activeView, setActiveView] = useState<'home' | 'news' | 'bulletin' | 'playground' | 'analysis' | 'settings'>('home');
+  const [activeView, setActiveView] = useState<'home' | 'news' | 'bulletin' | 'playground' | 'analysis' | 'assistant' | 'settings'>('home');
+  // Once opened, the Asistan stays mounted (only hidden): unmounting it would abort a running
+  // analysis' stream, which the backend treats as "Durdur".
+  const [assistantOpened, setAssistantOpened] = useState(false);
+  if (activeView === 'assistant' && !assistantOpened) setAssistantOpened(true);
   const [settingsCategory, setSettingsCategory] = useState<SettingsCategory>('feeds');
   const [activeSection, setActiveSection] = useState<'unread' | 'archive' | 'important' | 'error'>('unread');
   const [selectedArticleIds, setSelectedArticleIds] = useState<Set<number>>(new Set());
@@ -442,7 +447,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
     <div className="dashboard">
       {/* Header */}
       <header className="dashboard-header">
-        <div className="container">
+        <div className="container dashboard-container">
           <div className="header-content">
             <div className="header-text">
               <button
@@ -486,6 +491,12 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                 onClick={() => setActiveView('analysis')}
               >
                 Analiz
+              </button>
+              <button
+                className={`header-nav-item${activeView === 'assistant' ? ' header-nav-item--active' : ''}`}
+                onClick={() => setActiveView('assistant')}
+              >
+                Asistan
               </button>
               <button
                 className={`header-nav-item${activeView === 'settings' ? ' header-nav-item--active' : ''}`}
@@ -626,6 +637,12 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
               {activeView === 'playground' && isAdmin && <Playground />}
 
               {activeView === 'analysis' && <Analysis />}
+
+              {assistantOpened && (
+                <div hidden={activeView !== 'assistant'}>
+                  <Chat active={activeView === 'assistant'} />
+                </div>
+              )}
 
               {activeView === 'settings' && (
                 <Settings category={settingsCategory} currentUser={currentUser} />

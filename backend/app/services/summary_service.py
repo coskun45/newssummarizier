@@ -45,6 +45,9 @@ PRICING = {
     "gpt-4.1-mini": {"input": 0.0004, "output": 0.0016},
     "gpt-4o-mini": {"input": 0.00015, "output": 0.0006},
     "gpt-4o": {"input": 0.0025, "output": 0.01},
+    # Embeddings (vector search; input tokens only). Not offered in Ayarlar — EMBEDDING_MODEL picks one.
+    "text-embedding-3-large": {"input": 0.00013, "output": 0.0},
+    "text-embedding-3-small": {"input": 0.00002, "output": 0.0},
     # Legacy: kept so old usage rows / env values still price correctly, not offered in Ayarlar.
     "gpt-3.5-turbo": {"input": 0.0005, "output": 0.0015},
     "gpt-4-turbo-preview": {"input": 0.01, "output": 0.03},
@@ -1374,5 +1377,202 @@ async def process_article(db, article_id: int) -> dict:
 
     crud.update_article_status(db=db, article_id=article.id, status="summarized")
     crud.create_log(db=db, article_id=article.id, agent_name="article_processor", status="success", message=f"Article processing completed. Cost: ${total_cost:.4f}")
+    # Vector search: embed the full text (never fails the article; see embed_article_safely).
+    total_cost += await embed_article_safely(db, article.id)
 
     return {"article_id": article.id, "status": "summarized", "cost": total_cost, "success": True}
+
+
+# ==================== Asistan (analysis chat) ====================
+# The analysis agent (app/agents/analysis/) makes all its OpenAI calls through these two functions,
+# so the cost limits and llm_usage booking work the same as for the pipeline.
+
+def _message_tokens(messages: Sequence[Dict[str, Any]], model: str) -> int:
+    return count_tokens(json.dumps(messages, ensure_ascii=False, default=str), model)
+
+
+async def run_agent_llm(
+    messages: List[Dict[str, Any]],
+    model: str,
+    max_tokens: int,
+    *,
+    purpose: str,
+    json_mode: bool = False,
+    tools: Optional[List[Dict[str, Any]]] = None,
+    temperature: float = 0.2,
+) -> Dict[str, Any]:
+    """One agent LLM call. `purpose` names the agent stage (understand / plan / execute / reflect)
+    for logs and test doubles. Returns the answer text, the requested tool calls
+    ([{id, name, arguments}]) and the call's cost. Raises CostLimitExceededError before calling
+    when a limit is reached; API errors propagate."""
+    await check_cost_limits()
+    kwargs: Dict[str, Any] = {}
+    if json_mode:
+        kwargs["response_format"] = {"type": "json_object"}
+    if tools:
+        kwargs["tools"] = tools
+    response = await get_openai_client().chat.completions.create(
+        model=model, messages=messages, **kwargs, **completion_params(model, temperature, max_tokens),
+    )
+    choice = response.choices[0]
+    input_tokens = _input_tokens(response, _message_tokens(messages, model))
+    output_tokens = getattr(response.usage, "completion_tokens", 0) or 0
+    cost = calculate_cost(model, input_tokens, output_tokens)
+    record_llm_usage("chat", model, input_tokens, output_tokens, cost)
+    tool_calls = [
+        {"id": call.id, "name": call.function.name, "arguments": call.function.arguments}
+        for call in (choice.message.tool_calls or [])
+    ]
+    return {
+        "content": choice.message.content or "",
+        "tool_calls": tool_calls,
+        "finish_reason": choice.finish_reason,
+        "cost": cost,
+        "purpose": purpose,
+    }
+
+
+async def stream_agent_llm(
+    messages: List[Dict[str, Any]],
+    model: str,
+    max_tokens: int,
+    *,
+    purpose: str,
+    temperature: float = 0.3,
+):
+    """Streamed agent LLM call (the final report). Yields ("token", text) pieces as they arrive and
+    last ("cost", usd). The usage chunk at the end of the stream gives the billed tokens; if it is
+    missing, tokens are estimated locally."""
+    await check_cost_limits()
+    stream = await get_openai_client().chat.completions.create(
+        model=model,
+        messages=messages,
+        stream=True,
+        stream_options={"include_usage": True},
+        **completion_params(model, temperature, max_tokens),
+    )
+    parts: List[str] = []
+    usage = None
+    async for chunk in stream:
+        if getattr(chunk, "usage", None):
+            usage = chunk.usage
+        for choice in chunk.choices or []:
+            text = getattr(choice.delta, "content", None)
+            if text:
+                parts.append(text)
+                yield ("token", text)
+    input_tokens = getattr(usage, "prompt_tokens", None)
+    if not isinstance(input_tokens, int):
+        input_tokens = _message_tokens(messages, model)
+    output_tokens = getattr(usage, "completion_tokens", None)
+    if not isinstance(output_tokens, int):
+        output_tokens = count_tokens("".join(parts), model)
+    cost = calculate_cost(model, input_tokens, output_tokens)
+    record_llm_usage("chat", model, input_tokens, output_tokens, cost)
+    yield ("cost", cost)
+
+
+# ==================== Embeddings (vector search) ====================
+# A summarized article's full text is embedded in overlapping chunks (title in front of each), for
+# finding the articles a question is about and the passage that answers it. See crud.semantic_candidates.
+
+EMBEDDING_BATCH_SIZE = 64
+MAX_CHUNKS_PER_ARTICLE = 40
+
+
+def _embedding_encoding():
+    return tiktoken.get_encoding("cl100k_base")  # the text-embedding-3 tokenizer
+
+
+def chunk_text(text: str, max_tokens: int, overlap: int) -> List[str]:
+    """Split `text` into chunks of at most `max_tokens` tokens, each overlapping the previous by
+    `overlap` tokens, so a sentence cut at a border is whole in one of the two."""
+    text = (text or "").strip()
+    if not text:
+        return []
+    encoding = _embedding_encoding()
+    tokens = encoding.encode(text)
+    step = max(1, max_tokens - overlap)
+    chunks = []
+    for start in range(0, len(tokens), step):
+        chunks.append(encoding.decode(tokens[start:start + max_tokens]).strip())
+        if start + max_tokens >= len(tokens):
+            break
+    return [c for c in chunks if c]
+
+
+def _source_hash(text: str) -> str:
+    import hashlib
+    key = f"{settings.embedding_model}|{settings.embedding_dimensions}|{text}"
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+
+async def embed_texts(texts: List[str], kind: str = "embedding",
+                      article_id: Optional[int] = None) -> Tuple[List[List[float]], float]:
+    """Embed `texts` with EMBEDDING_MODEL (in batches); returns the vectors in input order and the
+    total cost. Every batch is booked in llm_usage. Raises CostLimitExceededError before calling
+    when a limit is reached; API errors propagate."""
+    vectors: List[List[float]] = []
+    total_cost = 0.0
+    model = settings.embedding_model
+    for start in range(0, len(texts), EMBEDDING_BATCH_SIZE):
+        batch = texts[start:start + EMBEDDING_BATCH_SIZE]
+        await check_cost_limits()
+        response = await get_openai_client().embeddings.create(
+            model=model, input=batch, dimensions=settings.embedding_dimensions,
+        )
+        items = sorted(response.data, key=lambda item: item.index)
+        vectors.extend(list(item.embedding) for item in items)
+        tokens = getattr(response.usage, "total_tokens", None)
+        if not isinstance(tokens, int):
+            tokens = sum(count_tokens(text, model) for text in batch)
+        cost = calculate_cost(model, tokens, 0)
+        total_cost += cost
+        record_llm_usage(kind, model, tokens, 0, cost, article_id=article_id)
+    return vectors, total_cost
+
+
+async def embed_article(db, article_id: int) -> Dict[str, Any]:
+    """(Re-)embed a summarized article's full text in chunks, unless it is unchanged since the
+    last time. Returns {chunks, cost} (chunks = how many were embedded now); does nothing for an
+    article that is not summarized, has no text, or when the DB has no pgvector. API/cost-limit
+    errors propagate (callers log them)."""
+    from app.db.database import vector_support
+    result = {"chunks": 0, "cost": 0.0}
+    if not vector_support["available"]:
+        return result
+    article = crud.get_article(db, article_id)
+    if article is None or article.status != "summarized":
+        return result
+    content = (article.cleaned_content or "").strip()
+    if not content:
+        return result
+    content_hash = _source_hash(f"{article.title}\n{content}")
+    if content_hash == crud.get_chunk_source_hash(db, article_id):
+        return result
+
+    chunks = chunk_text(content, settings.embedding_chunk_tokens,
+                        settings.embedding_chunk_overlap)[:MAX_CHUNKS_PER_ARTICLE]
+    inputs = [f"{article.title}\n\n{chunk}" for chunk in chunks]
+    release_connection(db)
+    vectors, cost = await embed_texts(inputs, article_id=article_id)
+    crud.replace_article_chunk_embeddings(
+        db, article_id, settings.embedding_model, content_hash, list(zip(chunks, vectors))
+    )
+    return {"chunks": len(chunks), "cost": cost}
+
+
+async def embed_article_safely(db, article_id: int) -> float:
+    """The pipeline's embedding step: never fails the article (it is already summarized) — an
+    error is logged and the backfill picks the article up later. Returns the cost."""
+    try:
+        outcome = await embed_article(db, article_id)
+    except Exception as e:
+        db.rollback()
+        crud.create_log(db=db, article_id=article_id, agent_name="embedder", status="error",
+                        message="Embedding failed (the backfill retries it)", error_details=str(e))
+        return 0.0
+    if outcome["chunks"]:
+        crud.create_log(db=db, article_id=article_id, agent_name="embedder", status="success",
+                        message=f"Embedded the full text in {outcome['chunks']} chunks")
+    return outcome["cost"]

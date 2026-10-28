@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useSettings, useUpdateSettings, useTopics, useCreateTopic, useUpdateTopic, useDeleteTopic, useUsers, useCreateUser, useDeleteUser, useFeeds, useCreateFeed, useUpdateFeed, useDeleteFeed, useTestFeedConnection } from '../../hooks/useApi';
 import PromptEditor from '../PromptEditor/PromptEditor';
 import Features from '../Features/Features';
+import AssistantSettings from '../AssistantSettings/AssistantSettings';
 import ModelPicker from '../ModelPicker/ModelPicker';
 import GroupedSettingsList from '../GroupedSettingsList/GroupedSettingsList';
 import GroupSelect from '../GroupSelect/GroupSelect';
@@ -11,7 +12,7 @@ import { FolderIcon, DocumentTextIcon, SparklesIcon, PencilIcon, TrashIcon, Chec
 import type { AuthUser, Feed, Topic } from '../../types';
 import './Settings.css';
 
-export type SettingsCategory = 'feeds' | 'topics' | 'summaryTypes' | 'models' | 'prompts' | 'features' | 'users';
+export type SettingsCategory = 'feeds' | 'topics' | 'summaryTypes' | 'models' | 'prompts' | 'assistant' | 'features' | 'users';
 
 interface SettingsProps {
   category: SettingsCategory;
@@ -957,6 +958,8 @@ function Settings({ category, currentUser }: SettingsProps) {
       )}
 
       {category === 'features' && <Features />}
+
+      {category === 'assistant' && <AssistantSettings isAdmin={isAdmin} />}
 
       {category === 'users' && currentUser.role === 'admin' && (
         <div className="settings-category">

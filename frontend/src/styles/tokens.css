@@ -52,6 +52,16 @@
   --color-priority-low: var(--color-success);
   --color-priority-low-bg: var(--color-success-soft);
 
+  /* Categorical chart series (Asistan charts), fixed order — validated for CVD separation on
+     --color-surface (dataviz validate_palette.js); slots 3-5 are under 3:1 on white, so charts
+     using them also offer a table view. */
+  --color-chart-1: #2a78d6;
+  --color-chart-2: #eb6834;
+  --color-chart-3: #1baf7a;
+  --color-chart-4: #eda100;
+  --color-chart-5: #e87ba4;
+  --color-chart-6: #6250d6;
+
   /* Spacing scale */
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -78,6 +88,14 @@
 
 :root[data-theme='dark'] {
   color-scheme: dark;
+
+  /* Same hues stepped for the dark surface (validated against #1e293b). */
+  --color-chart-1: #3987e5;
+  --color-chart-2: #d95926;
+  --color-chart-3: #199e70;
+  --color-chart-4: #c98500;
+  --color-chart-5: #d55181;
+  --color-chart-6: #9085e9;
 
   --color-primary: #3b82f6;
   --color-primary-hover: #60a5fa;

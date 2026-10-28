@@ -18,6 +18,11 @@ from app.services.summary_service import (
     saved_model,
 )
 from app.tasks import scheduler
+from app.agents.analysis.tools import (
+    get_chat_require_plan_approval,
+    get_enabled_chat_tools,
+    normalize_enabled_tools,
+)
 
 router = APIRouter()
 
@@ -36,6 +41,9 @@ class UserSettings(BaseModel):
     # One of SELECTABLE_MODELS; "" clears the choice (back to DEFAULT_MODEL / DETAILED_MODEL).
     classification_model: Optional[str] = None
     summary_model: Optional[str] = None  # used by every summary type
+    # Asistan: comma-separated tool names given to the model; at least one data tool stays on.
+    chat_enabled_tools: Optional[str] = None
+    chat_require_plan_approval: Optional[bool] = None  # wait for "Başlat" before running a plan
 
     @field_validator("enabled_topics")
     @classmethod
@@ -59,6 +67,11 @@ class UserSettings(BaseModel):
         if not requested:
             raise ValueError("En az bir özet türü seçilmelidir")
         return ",".join(t for t in SUMMARY_TYPES if t in requested)
+
+    @field_validator("chat_enabled_tools")
+    @classmethod
+    def _chat_tools(cls, value: Optional[str]) -> Optional[str]:
+        return None if value is None else normalize_enabled_tools(value)
 
     @field_validator("classification_model", "summary_model")
     @classmethod
@@ -93,6 +106,8 @@ class SettingsResponse(BaseModel):
     summary_model: Optional[str]
     default_models: DefaultModels
     available_models: List[ModelOption]
+    chat_enabled_tools: str  # the tools the Asistan uses now (enabled and available)
+    chat_require_plan_approval: bool
 
 
 def _current_settings(db: Session) -> SettingsResponse:
@@ -109,6 +124,8 @@ def _current_settings(db: Session) -> SettingsResponse:
             detailed_summary=app_settings.detailed_model,
         ),
         available_models=available_models(),
+        chat_enabled_tools=",".join(get_enabled_chat_tools(db)),
+        chat_require_plan_approval=get_chat_require_plan_approval(db),
     )
 
 
@@ -142,6 +159,10 @@ def update_settings(
         value = getattr(update, key)
         if value is not None:
             crud.set_setting(db, key, value)
+    if update.chat_require_plan_approval is not None:
+        crud.set_setting(db, "chat_require_plan_approval", "true" if update.chat_require_plan_approval else "false")
+    if update.chat_enabled_tools is not None:
+        crud.set_setting(db, "chat_enabled_tools", update.chat_enabled_tools)
     if interval_changed:
         scheduler.reschedule_feed_processing(interval)
 

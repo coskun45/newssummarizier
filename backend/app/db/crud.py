@@ -1843,3 +1843,322 @@ def delete_expired_pending_newsletter_subscriptions(db: Session, sent_before: da
         db.delete(row)
     db.commit()
     return len(rows)
+
+
+# ==================== Chat (Asistan) Operations ====================
+
+CHAT_ACTIVE_STATUSES = ("running",)
+
+
+def create_chat_conversation(db: Session, user_id: int, title: str) -> models.ChatConversation:
+    conversation = models.ChatConversation(user_id=user_id, title=title, status="idle")
+    db.add(conversation)
+    db.commit()
+    db.refresh(conversation)
+    return conversation
+
+
+def get_chat_conversation(
+    db: Session, conversation_id: int, user_id: Optional[int] = None
+) -> Optional[models.ChatConversation]:
+    """A conversation by id; with `user_id`, only if that user owns it (others' are "not found")."""
+    query = db.query(models.ChatConversation).filter(models.ChatConversation.id == conversation_id)
+    if user_id is not None:
+        query = query.filter(models.ChatConversation.user_id == user_id)
+    return query.first()
+
+
+def get_chat_conversations(db: Session, user_id: int) -> List[models.ChatConversation]:
+    """A user's conversations, most recently active first."""
+    return (
+        db.query(models.ChatConversation)
+        .filter(models.ChatConversation.user_id == user_id)
+        .order_by(desc(func.coalesce(models.ChatConversation.updated_at, models.ChatConversation.created_at)),
+                  desc(models.ChatConversation.id))
+        .all()
+    )
+
+
+def delete_chat_conversation(db: Session, conversation_id: int) -> bool:
+    conversation = get_chat_conversation(db, conversation_id)
+    if not conversation:
+        return False
+    db.delete(conversation)
+    db.commit()
+    return True
+
+
+def claim_chat_conversation(db: Session, conversation_id: int) -> Optional[str]:
+    """Mark a conversation `running` unless a run is already in progress. Returns the status it had
+    (the caller resumes a pending question/approval from it), or None if it was already running —
+    a single UPDATE, so two requests can't both start a run."""
+    conversation = get_chat_conversation(db, conversation_id)
+    if conversation is None:
+        return None
+    previous = conversation.status
+    claimed = (
+        db.query(models.ChatConversation)
+        .filter(models.ChatConversation.id == conversation_id,
+                models.ChatConversation.status.notin_(CHAT_ACTIVE_STATUSES))
+        .update({"status": "running"}, synchronize_session=False)
+    )
+    db.commit()
+    return previous if claimed else None
+
+
+def update_chat_conversation(
+    db: Session,
+    conversation_id: int,
+    status: Optional[str] = None,
+    agent_state: Any = _UNSET,
+    title: Optional[str] = None,
+) -> Optional[models.ChatConversation]:
+    conversation = get_chat_conversation(db, conversation_id)
+    if conversation is None:
+        return None
+    if status is not None:
+        conversation.status = status
+    if agent_state is not _UNSET:
+        conversation.agent_state = agent_state
+    if title is not None:
+        conversation.title = title
+    conversation.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(conversation)
+    return conversation
+
+
+def reset_running_chat_conversations(db: Session) -> int:
+    """Startup: a run cut off by a restart left its conversation `running` — free it again."""
+    count = (
+        db.query(models.ChatConversation)
+        .filter(models.ChatConversation.status.in_(CHAT_ACTIVE_STATUSES))
+        .update({"status": "idle"}, synchronize_session=False)
+    )
+    db.commit()
+    return count
+
+
+def add_chat_message(
+    db: Session,
+    conversation_id: int,
+    role: str,
+    content: str,
+    events: Optional[str] = None,
+    cost: float = 0.0,
+) -> models.ChatMessage:
+    message = models.ChatMessage(
+        conversation_id=conversation_id, role=role, content=content, events=events, cost=cost
+    )
+    db.add(message)
+    db.commit()
+    db.refresh(message)
+    return message
+
+
+def get_article_coverage(db: Session, date_from: Optional[datetime], date_to: Optional[datetime]) -> Dict[str, Any]:
+    """How many articles fall in [date_from, date_to] (naive UTC, dated like chat_articles.article_date:
+    published_at, else fetched_at) and when the newest article overall is dated — lets the Asistan
+    notice an empty period before it plans searches over it."""
+    article_date = func.coalesce(models.Article.published_at, models.Article.fetched_at)
+    query = db.query(func.count(models.Article.id))
+    if date_from is not None:
+        query = query.filter(article_date >= date_from)
+    if date_to is not None:
+        query = query.filter(article_date <= date_to)
+    latest = db.query(func.max(article_date)).scalar()
+    if isinstance(latest, str):  # SQLite returns COALESCE(datetime, datetime) as text
+        latest = datetime.fromisoformat(latest)
+    return {"count": query.scalar() or 0, "latest": latest}
+
+
+def run_readonly_query(db: Session, sql: str, timeout_ms: int, max_rows: int) -> Dict[str, Any]:
+    """Run an already validated SELECT (app/agents/analysis/sql_guard.py) for the Asistan. On
+    PostgreSQL it runs in a READ ONLY transaction, under a statement timeout and as the read-only
+    role that can see the chat_* views only; the transaction is always rolled back. Give it a
+    session of its own: it ends whatever transaction the session had open first."""
+    from sqlalchemy import text
+    from app.db.database import CHAT_READONLY_ROLE
+    db.rollback()  # SET TRANSACTION must be the first statement of its transaction
+    connection = db.connection()
+    try:
+        if connection.dialect.name == "postgresql":
+            db.execute(text("SET TRANSACTION READ ONLY"))
+            db.execute(text(f"SET LOCAL statement_timeout = {int(timeout_ms)}"))
+            db.execute(text(f"SET LOCAL ROLE {CHAT_READONLY_ROLE}"))
+        result = db.execute(text(sql))
+        columns = list(result.keys())
+        rows = result.fetchmany(max_rows + 1)
+    finally:
+        db.rollback()
+    return {
+        "columns": columns,
+        "rows": [list(row) for row in rows[:max_rows]],
+        "truncated": len(rows) > max_rows,
+    }
+
+
+# ==================== Embedding (vector search) Operations ====================
+
+def get_chunk_source_hash(db: Session, article_id: int) -> Optional[str]:
+    """The source hash an article's stored chunk embeddings were made from (None = not embedded)."""
+    return db.query(models.ArticleChunkEmbedding.source_hash).filter(
+        models.ArticleChunkEmbedding.article_id == article_id
+    ).limit(1).scalar()
+
+
+def replace_article_chunk_embeddings(
+    db: Session, article_id: int, model: str, source_hash: str, chunks: List[tuple]
+) -> None:
+    """Replace an article's chunk embeddings with `chunks` = [(text, vector), ...]."""
+    db.query(models.ArticleChunkEmbedding).filter(
+        models.ArticleChunkEmbedding.article_id == article_id
+    ).delete(synchronize_session=False)
+    db.add_all(
+        models.ArticleChunkEmbedding(article_id=article_id, chunk_index=i, text=text, model=model,
+                                     source_hash=source_hash, embedding=vector)
+        for i, (text, vector) in enumerate(chunks)
+    )
+    db.commit()
+
+
+def get_article_ids_missing_embeddings(db: Session, model: str, limit: Optional[int] = None) -> List[int]:
+    """Summarized articles with text but no chunk embeddings of `model` (newest first) — the
+    backfill's work list. A changed text is caught by the hash when an article is embedded."""
+    embedded = select(models.ArticleChunkEmbedding.article_id).where(models.ArticleChunkEmbedding.model == model)
+    query = (
+        db.query(models.Article.id)
+        .filter(models.Article.status == "summarized", models.Article.id.notin_(embedded),
+                func.length(func.trim(func.coalesce(models.Article.cleaned_content, ""))) > 0)
+        .order_by(desc(models.Article.id))
+    )
+    if limit:
+        query = query.limit(limit)
+    return [row.id for row in query.all()]
+
+
+def get_embedding_stats(db: Session, model: str) -> Dict[str, int]:
+    summarized = db.query(func.count(models.Article.id)).filter(models.Article.status == "summarized").scalar()
+    embedded = (
+        db.query(func.count(func.distinct(models.ArticleChunkEmbedding.article_id)))
+        .join(models.Article, models.Article.id == models.ArticleChunkEmbedding.article_id)
+        .filter(models.Article.status == "summarized", models.ArticleChunkEmbedding.model == model)
+        .scalar()
+    )
+    chunks = db.query(func.count(models.ArticleChunkEmbedding.id)).filter(
+        models.ArticleChunkEmbedding.model == model
+    ).scalar()
+    return {"summarized": summarized or 0, "embedded": embedded or 0, "chunks": chunks or 0}
+
+
+def _search_scope(
+    priorities: Optional[List[str]] = None,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
+    topic_names: Optional[List[str]] = None,
+    analyzable_only: bool = False,
+    starred_only: bool = False,
+):
+    """Ids of the summarized articles a semantic search may return, given its filters."""
+    article_date = func.coalesce(models.Article.published_at, models.Article.fetched_at)
+    query = select(models.Article.id).where(models.Article.status == "summarized")
+    if priorities:
+        query = query.where(models.Article.priority.in_(priorities))
+    if date_from:
+        query = query.where(article_date >= date_from)
+    if date_to:
+        query = query.where(article_date <= date_to)
+    if starred_only:
+        query = query.where(models.Article.is_starred.is_(True))
+    if analyzable_only:
+        query = query.where(
+            models.Article.priority.in_(ANALYSIS_PRIORITIES),
+            or_(models.Article.importance.is_(None), models.Article.importance != "unimportant"),
+        )
+    if topic_names:
+        lowered = [name.lower() for name in topic_names]
+        topic_articles = (
+            select(models.ArticleTopic.article_id)
+            .join(models.Topic, models.Topic.id == models.ArticleTopic.topic_id)
+            .where(func.lower(models.Topic.name).in_(lowered))
+        )
+        query = query.where(models.Article.id.in_(topic_articles))
+    return query
+
+
+def _cosine_distance(a: List[float], b: List[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b))
+    norm = (sum(x * x for x in a) ** 0.5) * (sum(y * y for y in b) ** 0.5)
+    return 1.0 - (dot / norm if norm else 0.0)
+
+
+def _nearest(db: Session, model_class, columns, query_vector: List[float], scope, limit: int) -> list:
+    """Rows of `model_class` (restricted to articles in `scope`) nearest to `query_vector` by cosine
+    distance, as (*columns, distance). pgvector's `<=>` (HNSW index) on PostgreSQL; computed in
+    Python on SQLite (the tests)."""
+    embedding = model_class.embedding
+    if db.get_bind().dialect.name == "postgresql":
+        from sqlalchemy import Float, bindparam
+        distance = embedding.op("<=>", return_type=Float)(
+            bindparam("query_vector", query_vector, type_=embedding.type)
+        ).label("distance")
+        # When the planner walks the HNSW index, the scope filter applies after it: by default only
+        # hnsw.ef_search (40) candidates come out, so a selective filter (last 7 days of months of
+        # chunks) leaves few or no hits. Iterative scan (pgvector ≥ 0.8, pinned in
+        # docker/postgres/Dockerfile) keeps walking until `limit` rows pass the filter.
+        from sqlalchemy import text
+        db.execute(text("SET LOCAL hnsw.iterative_scan = strict_order"))
+        return db.execute(
+            select(*columns, distance).where(model_class.article_id.in_(scope)).order_by(distance).limit(limit)
+        ).all()
+    rows = db.execute(select(*columns, embedding).where(model_class.article_id.in_(scope))).all()
+    scored = [(*row[:-1], _cosine_distance(query_vector, row[-1])) for row in rows]
+    return sorted(scored, key=lambda row: row[-1])[:limit]
+
+
+def semantic_candidates(
+    db: Session, query_vector: List[float], query_text: str, limit: int = 30, **filters
+) -> Dict[str, list]:
+    """The two ranked lists the hybrid search fuses: full-text chunks by embedding similarity and
+    by keyword match. Each list is best first, as (article_id, chunk_id, text, score)."""
+    scope = _search_scope(**filters)
+    chunk = models.ArticleChunkEmbedding
+    chunks = _nearest(db, chunk, [chunk.article_id, chunk.id, chunk.text], query_vector, scope, limit)
+    return {
+        "chunk": [(row[0], row[1], row[2], row[-1]) for row in chunks],
+        "keyword": _keyword_chunks(db, query_text, scope, limit),
+    }
+
+
+def _keyword_chunks(db: Session, query_text: str, scope, limit: int) -> list:
+    """Chunks matching the query's words, best first, as (article_id, chunk_id, text, score).
+    PostgreSQL full-text search ('simple' config: the texts are German, English and Turkish);
+    a word-count stand-in on SQLite."""
+    chunk = models.ArticleChunkEmbedding
+    if db.get_bind().dialect.name == "postgresql":
+        vector = func.to_tsvector("simple", chunk.text)
+        tsquery = func.plainto_tsquery("simple", query_text)
+        rank = func.ts_rank(vector, tsquery).label("rank")
+        return db.execute(
+            select(chunk.article_id, chunk.id, chunk.text, rank)
+            .where(chunk.article_id.in_(scope), vector.op("@@")(tsquery))
+            .order_by(desc("rank")).limit(limit)
+        ).all()
+    words = {w for w in re.findall(r"\w+", query_text.lower()) if len(w) >= 3}
+    if not words:
+        return []
+    rows = db.execute(select(chunk.article_id, chunk.id, chunk.text).where(chunk.article_id.in_(scope))).all()
+    scored = [(*row, sum(row[2].lower().count(w) for w in words)) for row in rows]
+    return sorted([r for r in scored if r[-1] > 0], key=lambda r: -r[-1])[:limit]
+
+
+def get_articles_for_search(db: Session, article_ids: List[int]) -> Dict[int, models.Article]:
+    """Articles (with feed, summaries, topics loaded) for search results, by id."""
+    rows = (
+        db.query(models.Article)
+        .options(selectinload(models.Article.feed), selectinload(models.Article.summaries),
+                 selectinload(models.Article.topics).selectinload(models.ArticleTopic.topic))
+        .filter(models.Article.id.in_(article_ids))
+        .all()
+    )
+    return {article.id: article for article in rows}

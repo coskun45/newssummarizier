@@ -338,6 +338,13 @@ Aşağıdaki tablo öne çıkanlardır; tam liste `.env.example`'dadır. Contain
 | `SMTP_USE_TLS` | `true` | 587'de STARTTLS; port `465` ise otomatik SSL kullanılır |
 | `APP_PUBLIC_URL` | `http://localhost:5174` | Maillerdeki onay / abonelikten çık linklerinin başı — sunucuda uygulamanın dışarıdan erişilen adresi (deploy `http://<sunucu-ip>` yapar) |
 | `NEWSLETTER_TIMEZONE` | `Europe/Berlin` | Abonelik gönderim saati/gününün yorumlandığı saat dilimi (IANA adı; yaz/kış saati otomatik) |
+| `CHAT_MODEL` / `CHAT_FAST_MODEL` | `gpt-6-luna` / `gpt-6-luna` | Asistan: plan, adım yürütme ve rapor modeli / soruyu anlama ve adım değerlendirme modeli |
+| `CHAT_MAX_CLARIFY_ROUNDS` | `2` | Asistan'ın netleştirici soru turu; sonra varsayımla planlar |
+| `CHAT_MAX_STEPS` / `CHAT_MAX_TOOL_CALLS_PER_STEP` | `6` / `4` | Analiz planı adım sınırı (yeniden planlama dahil) / adım başına araç çağrısı |
+| `CHAT_MAX_COST_PER_RUN` | `0.5` | Bir analiz çalıştırmasının bütçesi (USD); aşılınca ajan durur ve elindekini raporlar |
+| `CHAT_SQL_TIMEOUT_MS` / `CHAT_SQL_MAX_ROWS` | `5000` / `200` | Asistan'ın salt-okunur SQL sorgusu için süre ve satır sınırı |
+| `EMBEDDING_MODEL` / `EMBEDDING_DIMENSIONS` | `text-embedding-3-large` / `1536` | Vektör arama için embedding modeli ve vektör boyutu (boyut değişirse vektörler yeniden üretilmeli) |
+| `EMBEDDING_CHUNK_TOKENS` / `EMBEDDING_CHUNK_OVERLAP` | `400` / `50` | Haber tam metninin vektörleştirilirken bölündüğü parça boyutu ve örtüşme (token) |
 
 ### Sürümleme
 
@@ -582,6 +589,20 @@ SMTP_FROM=  # ör. Bülten <bulten@example.com>
 SMTP_USE_TLS=true
 APP_PUBLIC_URL=http://localhost:5174  # maildeki onay / abonelikten çık linklerinin başı
 NEWSLETTER_TIMEZONE=Europe/Berlin
+
+# Asistan (analiz sohbeti)
+CHAT_MODEL=gpt-6-luna
+CHAT_FAST_MODEL=gpt-6-luna
+CHAT_MAX_CLARIFY_ROUNDS=2
+CHAT_MAX_STEPS=6
+CHAT_MAX_TOOL_CALLS_PER_STEP=4
+CHAT_MAX_COST_PER_RUN=0.5
+CHAT_SQL_TIMEOUT_MS=5000
+CHAT_SQL_MAX_ROWS=200
+EMBEDDING_MODEL=text-embedding-3-large
+EMBEDDING_DIMENSIONS=1536
+EMBEDDING_CHUNK_TOKENS=400
+EMBEDDING_CHUNK_OVERLAP=50
 
 # CORS
 CORS_ORIGINS=http://localhost:5173,http://localhost:3000

@@ -138,6 +138,10 @@ export interface UserSettings {
     summary_model: string | null;
     default_models: DefaultModels;
     available_models: ModelOption[];
+    /** Asistan: the tools the agent uses now (enabled in Ayarlar and available), comma-separated. */
+    chat_enabled_tools: string;
+    /** Asistan: wait for "Başlat" before running an analysis plan. */
+    chat_require_plan_approval: boolean;
 }
 
 /** PUT /settings is partial: only the fields sent change, so each Ayarlar tab saves its own. */
@@ -149,6 +153,9 @@ export interface UserSettingsUpdate {
     /** A SELECTABLE model, or "" to clear the choice (back to the server default). */
     classification_model?: string;
     summary_model?: string;
+    /** Comma-separated tool names; at least one available data tool (sql / semantic_search). */
+    chat_enabled_tools?: string;
+    chat_require_plan_approval?: boolean;
 }
 
 export interface CostStats {
@@ -483,4 +490,134 @@ export interface FeatureVersion {
 
 export interface FeaturesData {
     versions: FeatureVersion[];
+}
+
+// ---- Asistan (analysis chat) — mirrors backend app/api/routes/chat.py ----
+
+export type ChatToolName = 'time' | 'sql' | 'semantic_search' | 'python' | 'web_search' | 'chart';
+
+export interface ChatToolInfo {
+    name: ChatToolName;
+    label: string;
+    description: string;
+    /** Reads the news data; at least one available data tool must stay enabled. */
+    data_tool: boolean;
+    /** Its infrastructure exists (e.g. pgvector for semantic_search). */
+    available: boolean;
+    unavailable_reason: string | null;
+    /** Switched on in Ayarlar (an unavailable tool can be pre-enabled). */
+    enabled: boolean;
+    /** Given to the model now: enabled and available. */
+    active: boolean;
+}
+
+export interface EmbeddingJob {
+    status: 'idle' | 'running' | 'done';
+    total: number;
+    done: number;
+    failed: number;
+    cost: number;
+    error: string | null;
+}
+
+export interface EmbeddingStatus {
+    available: boolean;
+    unavailable_reason: string | null;
+    model: string;
+    dimensions: number;
+    /** Summarized articles (what gets vectorized). */
+    summarized: number;
+    /** Of those, vectorized with the current model. */
+    embedded: number;
+    /** Full-text chunk vectors. */
+    chunks: number;
+    job: EmbeddingJob;
+}
+
+export type ChatConversationStatus = 'idle' | 'running' | 'awaiting_clarification' | 'awaiting_plan_approval';
+
+export interface ChatConversationSummary {
+    id: number;
+    title: string;
+    status: ChatConversationStatus;
+    created_at: string | null;
+    updated_at: string | null;
+}
+
+export type ChatStepStatus = 'pending' | 'running' | 'done' | 'failed' | 'skipped';
+
+export interface ChatPlanStep {
+    id: number;
+    goal: string;
+    tool: string;
+    status: ChatStepStatus;
+    finding: string;
+}
+
+export interface ChatQuestion {
+    question: string;
+    options: string[];
+}
+
+export interface ChatChartSpec {
+    id: string;
+    kind: 'chart';
+    type: 'bar' | 'line' | 'stacked_bar';
+    title: string;
+    x: string[];
+    series: { name: string; values: number[] }[];
+    x_label?: string | null;
+    y_label?: string | null;
+}
+
+export interface ChatTimeRange {
+    from: string;
+    to: string;
+    label: string;
+}
+
+/** One event of an analysis run, streamed live (SSE) and stored on the assistant message. */
+export type ChatEvent =
+    | { type: 'phase'; phase: 'understanding' | 'planning' | 'executing' | 'reporting'; label: string; step?: number; total?: number }
+    | { type: 'intent'; restatement: string; time_range: ChatTimeRange | null; assumptions: string[] }
+    | { type: 'clarification'; questions: ChatQuestion[]; restatement: string }
+    | { type: 'plan'; steps: ChatPlanStep[]; requires_approval: boolean }
+    | { type: 'plan_approval'; steps: ChatPlanStep[] }
+    | { type: 'replan'; reason: string; steps: ChatPlanStep[] }
+    | { type: 'step_started'; step_id: number; goal: string; tool: string }
+    | { type: 'tool_call'; step_id: number; call_id: string; name: string; arguments: string }
+    | { type: 'tool_result'; step_id: number; call_id: string; tool: string; ok: boolean; summary: string; sql?: string | null; artifact_id?: string | null }
+    | { type: 'step_result'; step_id: number; status: ChatStepStatus; finding: string }
+    | { type: 'chart'; step_id: number; chart: ChatChartSpec }
+    | { type: 'token'; text: string }
+    | { type: 'error'; message: string }
+    | { type: 'stopped' }
+    | { type: 'done'; message_id: number | null; status: ChatConversationStatus; cost: number };
+
+export interface ChatMessage {
+    id: number;
+    role: 'user' | 'assistant';
+    content: string;
+    events: ChatEvent[];
+    cost: number;
+    created_at: string | null;
+}
+
+/** What a conversation waits for: clarifying answers, or approval of a plan. */
+export interface ChatPending {
+    kind: 'clarification' | 'plan_approval';
+    questions?: ChatQuestion[];
+    restatement?: string;
+    steps?: ChatPlanStep[];
+}
+
+export interface ChatConversation extends ChatConversationSummary {
+    messages: ChatMessage[];
+    pending: ChatPending | null;
+}
+
+export interface ChatSendRequest {
+    content: string;
+    /** "approve_plan" with empty content starts the waiting plan; with content it revises it. */
+    action: 'message' | 'approve_plan';
 }

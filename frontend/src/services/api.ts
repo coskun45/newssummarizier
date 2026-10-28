@@ -42,6 +42,12 @@ import type {
     PlaygroundSettings,
     PlaygroundRunRequest,
     PlaygroundRunResult,
+    ChatConversation,
+    ChatConversationSummary,
+    ChatEvent,
+    ChatSendRequest,
+    ChatToolInfo,
+    EmbeddingStatus,
 } from '../types';
 
 const API_BASE_URL = '/api';
@@ -541,6 +547,108 @@ export const playgroundApi = {
     run: async (request: PlaygroundRunRequest): Promise<PlaygroundRunResult> => {
         const response = await api.post('/playground/run', request, { timeout: 120000 });
         return response.data;
+    },
+};
+
+// Asistan (analysis chat) endpoints
+export const chatApi = {
+    listConversations: async (): Promise<ChatConversationSummary[]> => {
+        const response = await api.get('/chat/conversations');
+        return response.data;
+    },
+
+    getConversation: async (id: number): Promise<ChatConversation> => {
+        const response = await api.get(`/chat/conversations/${id}`);
+        return response.data;
+    },
+
+    createConversation: async (title?: string): Promise<ChatConversation> => {
+        const response = await api.post('/chat/conversations', { title: title ?? null });
+        return response.data;
+    },
+
+    deleteConversation: async (id: number): Promise<void> => {
+        await api.delete(`/chat/conversations/${id}`);
+    },
+
+    getTools: async (): Promise<ChatToolInfo[]> => {
+        const response = await api.get('/chat/tools');
+        return response.data;
+    },
+
+    getEmbeddingStatus: async (): Promise<EmbeddingStatus> => {
+        const response = await api.get('/chat/embeddings/status');
+        return response.data;
+    },
+
+    startEmbeddingBackfill: async (): Promise<EmbeddingStatus> => {
+        const response = await api.post('/chat/embeddings/backfill');
+        return response.data;
+    },
+
+    /**
+     * Send a message and stream the agent's run (Server-Sent Events). axios can't read a response
+     * as it arrives, so this is the one call made with `fetch`; it mirrors the axios interceptors:
+     * the same bearer token, and a 401 ends the session the same way. Resolves when the stream
+     * ends; rejects with the backend's `detail` for a refused request (400/404/409/429).
+     */
+    sendMessage: async (
+        conversationId: number,
+        body: ChatSendRequest,
+        onEvent: (event: ChatEvent) => void,
+        signal?: AbortSignal,
+    ): Promise<void> => {
+        const token = localStorage.getItem('auth_token');
+        const response = await fetch(`${API_BASE_URL}/chat/conversations/${conversationId}/messages`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'text/event-stream',
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify(body),
+            signal,
+        });
+        if (response.status === 401) {
+            localStorage.removeItem('auth_token');
+            localStorage.removeItem('auth_user');
+            window.dispatchEvent(new Event('auth:logout'));
+        }
+        if (!response.ok || !response.body) {
+            let detail = `İstek başarısız (${response.status})`;
+            try {
+                const data = await response.json();
+                if (typeof data?.detail === 'string') detail = data.detail;
+            } catch {
+                // not JSON — keep the generic message
+            }
+            throw new Error(detail);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        const flush = (block: string) => {
+            // An SSE block: "data: {...}" lines (keepalive comments start with ":" and are skipped).
+            const data = block
+                .split('\n')
+                .filter((line) => line.startsWith('data:'))
+                .map((line) => line.slice(5).trimStart())
+                .join('\n');
+            if (data) onEvent(JSON.parse(data) as ChatEvent);
+        };
+        for (;;) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+            let boundary = buffer.indexOf('\n\n');
+            while (boundary !== -1) {
+                flush(buffer.slice(0, boundary));
+                buffer = buffer.slice(boundary + 2);
+                boundary = buffer.indexOf('\n\n');
+            }
+        }
+        if (buffer.trim()) flush(buffer);
     },
 };
 

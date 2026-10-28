@@ -787,13 +787,17 @@ def test_bulk_delete_keeps_a_row_that_stopped_matching_mid_delete(db_session):
 
     assert {a.id for a in db_session.query(models.Article).all()} == {archived_id}
     for child in crud._article_child_models():
-        assert {row.article_id for row in db_session.query(child).all()} == {archived_id}
+        remaining = {row.article_id for row in db_session.query(child).all()}
+        # Every child the fixture created survives for the archived article only (the chunk
+        # embeddings table has no rows here: the fixture article isn't vectorized).
+        assert remaining == ({archived_id} if child is not models.ArticleChunkEmbedding else set())
     assert doomed_id not in {row.article_id for row in db_session.query(models.Summary).all()}
 
 
 def test_article_child_models_cover_every_cascade_child():
     assert set(crud._article_child_models()) == {
         models.Summary, models.ArticleTopic, models.ProcessingLog, models.ArticleBulletinClassification,
+        models.ArticleChunkEmbedding,
     }
 
 

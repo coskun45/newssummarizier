@@ -4,7 +4,8 @@ SQLAlchemy database models.
 from sqlalchemy import Column, Integer, String, Text, Float, Boolean, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from app.db.database import Base, UTCDateTime
+from app.core.config import settings
+from app.db.database import Base, EmbeddingVector, UTCDateTime
 
 
 class ItemGroup(Base):
@@ -71,6 +72,9 @@ class Article(Base):
     bulletin_classifications = relationship(
         "ArticleBulletinClassification", back_populates="article", cascade="all, delete-orphan"
     )
+    chunk_embeddings = relationship(
+        "ArticleChunkEmbedding", back_populates="article", cascade="all, delete-orphan"
+    )
 
 
 class Summary(Base):
@@ -90,6 +94,24 @@ class Summary(Base):
     article = relationship("Article", back_populates="summaries")
 
 
+class ArticleChunkEmbedding(Base):
+    """Vector search: a summarized article's full text in overlapping chunks (each embedded with
+    the title in front). All chunks of an article share `source_hash` (text + model), so a changed
+    text or a model change re-embeds it."""
+    __tablename__ = "article_chunk_embeddings"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    article_id = Column(Integer, ForeignKey("articles.id", ondelete="CASCADE"), nullable=False, index=True)
+    chunk_index = Column(Integer, nullable=False)
+    text = Column(Text, nullable=False)
+    model = Column(String, nullable=False)
+    source_hash = Column(String, nullable=False)
+    embedding = Column(EmbeddingVector(settings.embedding_dimensions), nullable=False)
+    created_at = Column(UTCDateTime(), server_default=func.now())
+
+    article = relationship("Article", back_populates="chunk_embeddings")
+
+
 class LlmUsage(Base):
     """One OpenAI call (classification, summary, bulletin, playground) and what it cost. The cost
     limits and stats sum this table, so every call counts — including ones whose result is never
@@ -98,7 +120,7 @@ class LlmUsage(Base):
     __tablename__ = "llm_usage"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    kind = Column(String, nullable=False)  # classification | summary | bulletin | playground
+    kind = Column(String, nullable=False)  # classification | summary | bulletin | playground | chat | embedding
     model = Column(String)
     input_tokens = Column(Integer, nullable=False, default=0)
     output_tokens = Column(Integer, nullable=False, default=0)
@@ -245,6 +267,9 @@ class User(Base):
     newsletter_subscriptions = relationship(
         "NewsletterSubscription", back_populates="user", cascade="all, delete-orphan"
     )
+    chat_conversations = relationship(
+        "ChatConversation", back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class NewsletterSubscription(Base):
@@ -323,3 +348,44 @@ class NewsletterDelivery(Base):
 
     # Relationships
     subscription = relationship("NewsletterSubscription", back_populates="deliveries")
+
+
+class ChatConversation(Base):
+    """An Asistan conversation, owned by one user. `agent_state` is the analysis agent's state
+    (JSON) between turns — a run that stops to ask a clarifying question or wait for plan approval
+    resumes from it when the user answers."""
+    __tablename__ = "chat_conversations"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    title = Column(String, nullable=False)
+    status = Column(String, nullable=False, default="idle")  # idle | running | awaiting_clarification | awaiting_plan_approval
+    agent_state = Column(Text, nullable=True)
+    created_at = Column(UTCDateTime(), server_default=func.now())
+    updated_at = Column(UTCDateTime(), server_default=func.now(), onupdate=func.now())
+
+    # Relationships
+    user = relationship("User", back_populates="chat_conversations")
+    messages = relationship(
+        "ChatMessage", back_populates="conversation", cascade="all, delete-orphan",
+        passive_deletes=True, order_by="ChatMessage.id",
+    )
+
+
+class ChatMessage(Base):
+    """One turn of a conversation. An assistant turn keeps the run's UI events (plan, steps, tool
+    calls, charts, clarifying questions) as JSON in `events`, so the history renders like the live run."""
+    __tablename__ = "chat_messages"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    conversation_id = Column(
+        Integer, ForeignKey("chat_conversations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    role = Column(String, nullable=False)  # user | assistant
+    content = Column(Text, nullable=False, default="")
+    events = Column(Text, nullable=True)  # JSON list of run events (assistant turns)
+    cost = Column(Float, nullable=False, default=0.0)
+    created_at = Column(UTCDateTime(), server_default=func.now())
+
+    # Relationships
+    conversation = relationship("ChatConversation", back_populates="messages")

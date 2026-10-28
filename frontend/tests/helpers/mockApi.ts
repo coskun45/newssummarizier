@@ -576,6 +576,8 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
         { id: 'gpt-4o-mini', input_per_1m: 0.15, output_per_1m: 0.6 },
         { id: 'gpt-4o', input_per_1m: 2.5, output_per_1m: 10 },
       ],
+      chat_enabled_tools: 'time,sql,semantic_search,chart',
+      chat_require_plan_approval: false,
       ...overrides.settings,
     },
     prompts: overrides.prompts ?? new Map(),

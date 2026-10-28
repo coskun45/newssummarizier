@@ -31,6 +31,11 @@ python-dateutil==2.8.2
 pydantic==2.10.3
 pydantic-settings==2.1.0
 
+# Asistan: static check of the model-written SQL (one read-only SELECT on the chat_* views)
+sqlglot==25.34.1
+# Asistan vector search: pgvector's SQLAlchemy `vector` type (pulls in numpy)
+pgvector==0.3.6
+
 # Word bulletin report generation
 python-docx==1.1.2
 

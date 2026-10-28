@@ -83,6 +83,21 @@ class Settings(BaseSettings):
     app_public_url: str = "http://localhost:5174"
     newsletter_timezone: str = "Europe/Berlin"  # send_hour/send_weekday are in this zone
 
+    # Asistan (analysis chat): models and per-run limits of the clarify → plan → execute agent.
+    chat_model: str = "gpt-6-luna"  # planning, step execution, final report
+    chat_fast_model: str = "gpt-6-luna"  # understanding the question, reflecting after each step
+    chat_max_clarify_rounds: int = 2  # clarifying question rounds before the agent assumes and plans
+    chat_max_steps: int = 6  # plan steps (replans included)
+    chat_max_tool_calls_per_step: int = 4
+    chat_max_cost_per_run: float = 0.5  # USD; over it the agent stops and reports what it has
+    chat_sql_timeout_ms: int = 5000
+    chat_sql_max_rows: int = 200
+    # Vector search: the full text of summarized articles is embedded in overlapping chunks
+    embedding_model: str = "text-embedding-3-large"
+    embedding_dimensions: int = 1536  # shortened large embeddings: indexable as a plain pgvector `vector`
+    embedding_chunk_tokens: int = 400  # full-text chunk size
+    embedding_chunk_overlap: int = 50
+
     # CORS
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
 

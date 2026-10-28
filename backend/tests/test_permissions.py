@@ -13,6 +13,7 @@ ADMIN_ONLY = [
     ("post", "/api/articles/unimportant/delete-all", None),
     ("post", "/api/articles/reprocess", {"article_ids": [1]}),
     ("post", "/api/playground/run", {"article_id": 1, "stages": ["classification"]}),
+    ("post", "/api/chat/embeddings/backfill", None),
     ("delete", "/api/bulletin/generated/1", None),
     ("get", "/api/newsletter/admin/subscriptions", None),
     ("post", "/api/groups/", {"kind": "feed", "name": "Avrupa"}),

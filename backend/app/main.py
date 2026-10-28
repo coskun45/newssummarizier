@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.db.database import init_db
 from app.api.deps import get_current_user
-from app.api.routes import rss, articles, summaries, settings as settings_routes, topics, prompts, bulletin, playground, newsletter, groups
+from app.api.routes import rss, articles, summaries, settings as settings_routes, topics, prompts, bulletin, playground, newsletter, groups, chat
 from app.api.routes import auth as auth_routes
 from app.tasks.scheduler import start_scheduler, stop_scheduler
 import logging
@@ -37,6 +37,7 @@ async def lifespan(app: FastAPI):
         stale = crud.reset_interrupted_articles(db)
         fixed = crud.fix_summarized_status(db)
         backfilled = crud.backfill_llm_usage_from_summaries(db)
+        crud.reset_running_chat_conversations(db)
     if backfilled:
         logger.info(f"Carried {backfilled} summary cost(s) over into llm_usage")
     if stale:
@@ -125,3 +126,4 @@ app.include_router(prompts.router, prefix="/api/prompts", tags=["prompts"], depe
 app.include_router(bulletin.router, prefix="/api/bulletin", tags=["bulletin"], dependencies=auth_dep)
 app.include_router(playground.router, prefix="/api/playground", tags=["playground"], dependencies=auth_dep)
 app.include_router(newsletter.router, prefix="/api/newsletter", tags=["newsletter"], dependencies=auth_dep)
+app.include_router(chat.router, prefix="/api/chat", tags=["chat"], dependencies=auth_dep)
