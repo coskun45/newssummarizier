@@ -531,6 +531,8 @@ export interface EmbeddingStatus {
     embedded: number;
     /** Full-text chunk vectors. */
     chunks: number;
+    /** Summarized articles with no text at all (no scraped page, no RSS text): never vectorizable. */
+    no_text: number;
     job: EmbeddingJob;
 }
 

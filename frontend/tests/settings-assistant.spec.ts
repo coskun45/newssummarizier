@@ -51,7 +51,7 @@ test('vector search status shows coverage and admins vectorize the missing artic
   await openAssistantSettings(page);
 
   const vectors = page.getByRole('region', { name: 'Vektör arama' });
-  await expect(vectors).toContainText('40 / 44 özetli haberin tam metni vektörleştirildi');
+  await expect(vectors).toContainText('40 / 44 özetli haber vektörleştirildi');
   await vectors.getByRole('button', { name: 'Eksik 4 haberi vektörleştir' }).click();
 
   await expect(vectors).toContainText('44 / 44');
@@ -70,4 +70,26 @@ test('regular users see the settings read-only', async ({ page }) => {
   await expect(page.getByRole('checkbox', { name: /Veritabanı/ })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Kaydet' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /vektörleştir/ })).toHaveCount(0);
+});
+
+test('articles without any text are not counted as missing, and an empty run says so', async ({ page }) => {
+  // Server case: 2.095 articles from paywalled / robots.txt-blocked sources have no scraped page;
+  // most carry their story in the RSS text (now embedded), a few have no text at all.
+  await loginAs(page, ADMIN_USER);
+  await mockApi(page, { articles: [] });
+  const chat = await mockChat(page, [], {
+    embedding: makeEmbeddingStatus({ summarized: 3871, embedded: 3864, no_text: 7, chunks: 20000 }),
+  });
+  await openAssistantSettings(page);
+
+  const vectors = page.getByRole('region', { name: 'Vektör arama' });
+  await expect(vectors).toContainText('3864 / 3864 özetli haber vektörleştirildi');
+  await expect(vectors).toContainText('7 haberin hiç metni yok');
+  await expect(vectors.getByRole('button', { name: 'Tüm haberler vektörleştirildi' })).toBeDisabled();
+
+  // A finished run that found nothing to do must say so instead of looking like nothing happened.
+  chat.embedding = { ...chat.embedding, job: { status: 'done', total: 0, done: 0, failed: 0, cost: 0, error: null } };
+  await page.reload();
+  await openAssistantSettings(page);
+  await expect(vectors).toContainText('vektörleştirilecek yeni haber yoktu');
 });

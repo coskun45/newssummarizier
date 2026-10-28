@@ -64,7 +64,9 @@ function AssistantSettings({ isAdmin }: AssistantSettingsProps) {
 
   const job = embedding?.job;
   const running = job?.status === 'running';
-  const missing = embedding ? embedding.summarized - embedding.embedded : 0;
+  // Only what a backfill can embed: articles with no text at all (no page, no RSS text) never can.
+  const embeddable = embedding ? embedding.summarized - embedding.no_text : 0;
+  const missing = embedding ? Math.max(0, embeddable - embedding.embedded) : 0;
 
   return (
     <div className="settings-category assistant-settings">
@@ -138,12 +140,14 @@ function AssistantSettings({ isAdmin }: AssistantSettingsProps) {
         {embedding && (
           <>
             <p className="assistant-embedding-stats">
-              <strong>{embedding.embedded}</strong> / {embedding.summarized} özetli haberin tam metni vektörleştirildi
+              <strong>{embedding.embedded}</strong> / {embeddable} özetli haber vektörleştirildi
               ({embedding.chunks} metin parçası, {embedding.model}, {embedding.dimensions} boyut).
             </p>
             <p className="assistant-tool-description">
-              Yeni haberler özetlendiğinde otomatik vektörleştirilir. Önceden özetlenmiş haberler için toplu
-              vektörleştirme başlatılabilir.
+              Haberin sayfası çekilebildiyse tam metni, çekilemediyse (ödeme duvarı, robots.txt) RSS metni
+              vektörleştirilir. Yeni haberler özetlendiğinde otomatik vektörleştirilir; önceden özetlenmiş
+              haberler için toplu vektörleştirme başlatılabilir.
+              {embedding.no_text > 0 && ` ${embedding.no_text} haberin hiç metni yok; bunlar aramaya dahil edilemez.`}
             </p>
             {running && job && (
               <div className="assistant-progress" role="status">
@@ -151,7 +155,12 @@ function AssistantSettings({ isAdmin }: AssistantSettingsProps) {
                 <span>Vektörleştiriliyor: {job.done} / {job.total}</span>
               </div>
             )}
-            {job?.status === 'done' && (
+            {job?.status === 'done' && job.total === 0 && !job.error && (
+              <p className="assistant-tool-description" role="status">
+                Son toplu işlem: vektörleştirilecek yeni haber yoktu.
+              </p>
+            )}
+            {job?.status === 'done' && (job.total > 0 || job.error) && (
               <p className="assistant-tool-description" role="status">
                 Son toplu işlem: {job.done - job.failed} haber vektörleştirildi
                 {job.failed > 0 ? `, ${job.failed} başarısız` : ''} (maliyet ${job.cost.toFixed(4)}).

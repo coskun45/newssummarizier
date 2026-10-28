@@ -136,6 +136,31 @@ def test_an_article_without_text_is_not_embedded(vectors, db_session):
     assert _embed(db_session, article.id)["chunks"] == 0 and vectors.calls == []
 
 
+def test_without_full_text_the_rss_text_is_embedded_as_plain_text(vectors, db_session):
+    # Paywalled / robots.txt-blocked sources (WSJ, Independent Türkçe…) never get a scraped page,
+    # but their RSS item often carries the whole story — the summary was written from it too.
+    feed = _make_feed(db_session)
+    article = _make_article(db_session, feed.id, title="Kriz", status="summarized", cleaned_content="",
+                            raw_content="<p>Enerji <b>krizi</b> derinleşiyor&nbsp;ve fiyatlar artıyor.</p>")
+
+    outcome = _embed(db_session, article.id)
+
+    assert outcome["chunks"] == 1
+    sent = vectors.calls[0][0]
+    assert "Enerji krizi derinleşiyor ve fiyatlar artıyor." in sent and "<" not in sent
+
+
+def test_a_page_scraped_later_replaces_the_rss_embedding(vectors, db_session):
+    feed = _make_feed(db_session)
+    article = _make_article(db_session, feed.id, title="T", status="summarized", raw_content="RSS metni")
+    _embed(db_session, article.id)
+    crud.update_article_content(db_session, article.id, cleaned_content="Tam sayfa metni")
+
+    assert _embed(db_session, article.id)["chunks"] == 1
+    texts = [r.text for r in db_session.query(models.ArticleChunkEmbedding).filter_by(article_id=article.id)]
+    assert texts == ["Tam sayfa metni"]
+
+
 def test_nothing_is_embedded_without_pgvector(vectors, db_session, monkeypatch):
     monkeypatch.setitem(database.vector_support, "available", False)
     feed = _make_feed(db_session)
@@ -248,15 +273,16 @@ def test_backfill_embeds_the_missing_articles(vectors, db_session):
     _embed(db_session, done.id)
     missing = [_summarized(db_session, feed, f"Eksik {i}", "Özet", content="y") for i in range(2)]
     _make_article(db_session, feed.id, status="filtered", cleaned_content="z")  # not summarized
+    rss_only = _make_article(db_session, feed.id, title="RSS", status="summarized", raw_content="RSS metni")
     _summarized(db_session, feed, "Metinsiz", "Özet", content="")  # nothing to embed
 
     assert background.register_embedding_backfill()
     asyncio.run(background.embed_missing_articles_task())
 
     status = background.get_embedding_backfill_status()
-    assert (status["status"], status["total"], status["done"], status["failed"]) == ("done", 2, 2, 0)
+    assert (status["status"], status["total"], status["done"], status["failed"]) == ("done", 3, 3, 0)
     embedded = {r.article_id for r in db_session.query(models.ArticleChunkEmbedding)}
-    assert embedded == {done.id, *(a.id for a in missing)}
+    assert embedded == {done.id, rss_only.id, *(a.id for a in missing)}
 
 
 def test_embedding_status_endpoint(client, auth_headers, vectors, db_session):
@@ -264,11 +290,14 @@ def test_embedding_status_endpoint(client, auth_headers, vectors, db_session):
     article = _summarized(db_session, feed, "T", "Özet", content="Inhalt")
     _summarized(db_session, feed, "U", "Özet", content="Inhalt")
     _embed(db_session, article.id)
+    _make_article(db_session, feed.id, title="RSS", status="summarized", raw_content="RSS metni")
+    _summarized(db_session, feed, "Metinsiz", "Özet", content="")
 
     body = client.get("/api/chat/embeddings/status", headers=auth_headers).json()
 
     assert body["available"] is True
-    assert (body["summarized"], body["embedded"]) == (2, 1) and body["chunks"] >= 1
+    # The UI's "eksik" = summarized - embedded - no_text: only what a backfill can actually embed.
+    assert (body["summarized"], body["embedded"], body["no_text"]) == (4, 1, 1) and body["chunks"] >= 1
     assert body["model"] == "text-embedding-3-large" and body["dimensions"] == 1536
     assert body["job"]["status"] == "idle"
 

@@ -344,7 +344,7 @@ Aşağıdaki tablo öne çıkanlardır; tam liste `.env.example`'dadır. Contain
 | `CHAT_MAX_COST_PER_RUN` | `0.5` | Bir analiz çalıştırmasının bütçesi (USD); aşılınca ajan durur ve elindekini raporlar |
 | `CHAT_SQL_TIMEOUT_MS` / `CHAT_SQL_MAX_ROWS` | `5000` / `200` | Asistan'ın salt-okunur SQL sorgusu için süre ve satır sınırı |
 | `EMBEDDING_MODEL` / `EMBEDDING_DIMENSIONS` | `text-embedding-3-large` / `1536` | Vektör arama için embedding modeli ve vektör boyutu (boyut değişirse vektörler yeniden üretilmeli) |
-| `EMBEDDING_CHUNK_TOKENS` / `EMBEDDING_CHUNK_OVERLAP` | `400` / `50` | Haber tam metninin vektörleştirilirken bölündüğü parça boyutu ve örtüşme (token) |
+| `EMBEDDING_CHUNK_TOKENS` / `EMBEDDING_CHUNK_OVERLAP` | `400` / `50` | Haber metninin (tam metin, yoksa RSS metni) vektörleştirilirken bölündüğü parça boyutu ve örtüşme (token) |
 
 ### Sürümleme
 

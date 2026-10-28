@@ -14,7 +14,7 @@ from app.core.config import settings
 from app.core.exceptions import SummarizationError, TopicCategorizationError, CostLimitExceededError
 from app.db.database import SessionLocal, release_connection
 from app.db import crud
-from app.agents.tools import extract_article_content, truncate_content
+from app.agents.tools import extract_article_content, strip_html, truncate_content
 
 logger = logging.getLogger(__name__)
 
@@ -1532,6 +1532,14 @@ async def embed_texts(texts: List[str], kind: str = "embedding",
     return vectors, total_cost
 
 
+def article_search_text(article) -> str:
+    """The text vector search embeds: the scraped page, else the RSS item's text as plain text.
+    Paywalled or robots.txt-blocked sources (WSJ, Independent Türkçe…) never get a page, but their
+    RSS item often carries most of the story — it is what their summary was written from. When the
+    page is scraped later the text (and so the source hash) changes and the article is re-embedded."""
+    return (article.cleaned_content or "").strip() or strip_html(article.raw_content or "")
+
+
 async def embed_article(db, article_id: int) -> Dict[str, Any]:
     """(Re-)embed a summarized article's full text in chunks, unless it is unchanged since the
     last time. Returns {chunks, cost} (chunks = how many were embedded now); does nothing for an
@@ -1544,7 +1552,7 @@ async def embed_article(db, article_id: int) -> Dict[str, Any]:
     article = crud.get_article(db, article_id)
     if article is None or article.status != "summarized":
         return result
-    content = (article.cleaned_content or "").strip()
+    content = article_search_text(article)
     if not content:
         return result
     content_hash = _source_hash(f"{article.title}\n{content}")

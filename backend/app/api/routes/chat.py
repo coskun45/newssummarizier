@@ -211,6 +211,7 @@ class EmbeddingStatus(BaseModel):
     summarized: int  # summarized articles (what gets embedded)
     embedded: int  # of those, with a summary embedding of the current model
     chunks: int  # full-text chunk embeddings
+    no_text: int  # summarized articles with no text at all (no page, no RSS text): never embeddable
     job: EmbeddingJob
 
 

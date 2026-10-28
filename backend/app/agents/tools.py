@@ -9,10 +9,13 @@ import aiohttp
 import logging
 import urllib.error
 import urllib.request
+import re
+from html import unescape
 from datetime import timezone
 from typing import List, Dict, Any, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 from urllib.robotparser import RobotFileParser
+from bs4 import BeautifulSoup
 from dateutil import parser as date_parser
 from app.core.config import settings
 from app.core.exceptions import RSSFetchError, ScrapingError
@@ -375,6 +378,26 @@ async def extract_article_content(url: str) -> Tuple[Optional[str], Optional[str
     except Exception as e:
         logger.error(f"Failed to extract content from {url}: {e}")
         raise ScrapingError(f"Content extraction failed: {str(e)}")
+
+
+_WHITESPACE_RE = re.compile(r"\s+")
+
+
+def strip_html(text: str) -> str:
+    """Collapse embedded HTML markup down to plain text.
+
+    raw_content is the RSS <description>, which for several feeds (e.g.
+    Aydinlik) is itself an HTML fragment (<a>/<img>/<h4>/<div> tags) rather
+    than plain text. cleaned_content falls back to that same raw_content
+    verbatim when article scraping fails (see agents/nodes.py), so without
+    this the markup — and HTML entities like &#039; — leaked straight into
+    the rendered bulletin as visible text.
+
+    Uses a real HTML parser (not a "<[^>]+>" regex) so literal bracketed text
+    that isn't actually markup, e.g. "büyüme <10 yaş grubunda> daha hızlı",
+    isn't mistaken for a tag and deleted."""
+    plain = BeautifulSoup(text, "html.parser").get_text(separator=" ")
+    return _WHITESPACE_RE.sub(" ", unescape(plain)).strip()
 
 
 def truncate_content(content: str, max_tokens: int = 4000) -> str:

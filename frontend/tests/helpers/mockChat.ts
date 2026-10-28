@@ -49,6 +49,7 @@ export function makeEmbeddingStatus(overrides: Partial<EmbeddingStatus> = {}): E
     summarized: 44,
     embedded: 40,
     chunks: 200,
+    no_text: 0,
     job: { status: 'idle', total: 0, done: 0, failed: 0, cost: 0, error: null },
     ...overrides,
   };
@@ -126,10 +127,10 @@ export async function mockChat(
     if (method === 'GET' && path === '/embeddings/status') return json(state.embedding);
     if (method === 'POST' && path === '/embeddings/backfill') {
       state.backfillStarted += 1;
-      const missing = state.embedding.summarized - state.embedding.embedded;
+      const missing = state.embedding.summarized - state.embedding.no_text - state.embedding.embedded;
       state.embedding = {
         ...state.embedding,
-        embedded: state.embedding.summarized,
+        embedded: state.embedding.summarized - state.embedding.no_text,
         job: { status: 'done', total: missing, done: missing, failed: 0, cost: 0.0012, error: null },
       };
       return json(state.embedding);

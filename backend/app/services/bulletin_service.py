@@ -24,15 +24,13 @@ import json
 import logging
 import re
 from datetime import datetime, timezone
-from html import unescape
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Sequence, get_args
 from urllib.parse import urlparse
 
-from bs4 import BeautifulSoup
 from sqlalchemy.orm import Session
 
-from app.agents.tools import truncate_content
+from app.agents.tools import strip_html, truncate_content
 from app.core.config import settings
 from app.core.exceptions import BulletinGenerationError, CostLimitExceededError
 from app.db import crud, models
@@ -184,21 +182,8 @@ def _feed_titles(feeds: List[models.Feed]) -> List[str]:
 _WHITESPACE_RUN_RE = re.compile(r"\s+")
 
 
-def _strip_html(text: str) -> str:
-    """Collapse embedded HTML markup down to plain text.
-
-    raw_content is the RSS <description>, which for several feeds (e.g.
-    Aydinlik) is itself an HTML fragment (<a>/<img>/<h4>/<div> tags) rather
-    than plain text. cleaned_content falls back to that same raw_content
-    verbatim when article scraping fails (see agents/nodes.py), so without
-    this the markup — and HTML entities like &#039; — leaked straight into
-    the rendered bulletin as visible text.
-
-    Uses a real HTML parser (not a "<[^>]+>" regex) so literal bracketed text
-    that isn't actually markup, e.g. "büyüme <10 yaş grubunda> daha hızlı",
-    isn't mistaken for a tag and deleted."""
-    plain = BeautifulSoup(text, "html.parser").get_text(separator=" ")
-    return _WHITESPACE_RUN_RE.sub(" ", unescape(plain)).strip()
+# Shared with the Asistan's embeddings (RSS text of unscraped articles): app.agents.tools.
+_strip_html = strip_html
 
 
 def _article_content(article: models.Article) -> str:

@@ -74,8 +74,13 @@ understand → (clarify) → make_plan → (approve_plan) → execute_step ⇄ r
   not in `events` (per-token array copies made streaming quadratic).
 
 ## Vector search
-- **Only the full text is embedded**, in chunks (`ArticleChunkEmbedding`, title in front of each chunk;
-  only `summarized` articles). The pipeline step (`embed_article_safely` in `process_article`) never
+- **The article's text is embedded**, in chunks (`ArticleChunkEmbedding`, title in front of each chunk;
+  only `summarized` articles): the scraped page, else the RSS text as plain text
+  (`summary_service.article_search_text`). Paywalled / robots.txt-blocked sources (WSJ, NYT, Bloomberg,
+  Independent Türkçe… — ~54% of summarized articles on the server) never get a page; embedding only
+  `cleaned_content` left them out of search while the UI counted them as "missing" forever. Never get
+  around robots.txt or paywalls to fill this gap. `crud._has_search_text` is the shared "has text"
+  rule (backfill work list + `no_text` in the status); keep it in step with `article_search_text`. The pipeline step (`embed_article_safely` in `process_article`) never
   fails an article; the backfill (`tasks/background.embed_missing_articles_task`) catches up.
 - `EmbeddingVector` is portable: pgvector `vector(dim)` on PostgreSQL, JSON text on SQLite and on a
   PostgreSQL without pgvector (tables must exist so article deletes cascading into them work);

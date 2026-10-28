@@ -2022,14 +2022,20 @@ def replace_article_chunk_embeddings(
     db.commit()
 
 
+def _has_search_text():
+    """An article has text to embed: a scraped page, or (paywalled / robots.txt-blocked sources)
+    the RSS item's text — see summary_service.article_search_text."""
+    return or_(func.length(func.trim(func.coalesce(models.Article.cleaned_content, ""))) > 0,
+               func.length(func.trim(func.coalesce(models.Article.raw_content, ""))) > 0)
+
+
 def get_article_ids_missing_embeddings(db: Session, model: str, limit: Optional[int] = None) -> List[int]:
     """Summarized articles with text but no chunk embeddings of `model` (newest first) — the
     backfill's work list. A changed text is caught by the hash when an article is embedded."""
     embedded = select(models.ArticleChunkEmbedding.article_id).where(models.ArticleChunkEmbedding.model == model)
     query = (
         db.query(models.Article.id)
-        .filter(models.Article.status == "summarized", models.Article.id.notin_(embedded),
-                func.length(func.trim(func.coalesce(models.Article.cleaned_content, ""))) > 0)
+        .filter(models.Article.status == "summarized", models.Article.id.notin_(embedded), _has_search_text())
         .order_by(desc(models.Article.id))
     )
     if limit:
@@ -2048,7 +2054,12 @@ def get_embedding_stats(db: Session, model: str) -> Dict[str, int]:
     chunks = db.query(func.count(models.ArticleChunkEmbedding.id)).filter(
         models.ArticleChunkEmbedding.model == model
     ).scalar()
-    return {"summarized": summarized or 0, "embedded": embedded or 0, "chunks": chunks or 0}
+    # Summarized articles with no text at all can never be embedded: not "missing" in the UI.
+    no_text = db.query(func.count(models.Article.id)).filter(
+        models.Article.status == "summarized", ~_has_search_text()
+    ).scalar()
+    return {"summarized": summarized or 0, "embedded": embedded or 0, "chunks": chunks or 0,
+            "no_text": no_text or 0}
 
 
 def _search_scope(

@@ -183,7 +183,7 @@
         {
           "id": "assistant-vector-search",
           "title": "Asistan: vektör arama",
-          "description": "Özetlenen haberlerin tam metni parçalara bölünerek vektörleştirilir; asistan konu, olay ve ayrıntı sorularında ilgili haberleri anlam benzerliği ve kelime eşleşmesiyle birlikte bulur. Yeni haberler özetlenince otomatik vektörleştirilir, eskiler için toplu vektörleştirme başlatılabilir."
+          "description": "Özetlenen haberlerin metni parçalara bölünerek vektörleştirilir: sayfası çekilebilen haberlerde tam metin, ödeme duvarı veya robots.txt nedeniyle çekilemeyenlerde RSS metni. Asistan konu, olay ve ayrıntı sorularında ilgili haberleri anlam benzerliği ve kelime eşleşmesiyle birlikte bulur. Yeni haberler özetlenince otomatik vektörleştirilir, eskiler için toplu vektörleştirme başlatılabilir; hiç metni olmayan haberler ayrıca gösterilir."
         },
         {
           "id": "assistant-settings",
