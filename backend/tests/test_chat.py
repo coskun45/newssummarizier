@@ -4,9 +4,11 @@ agents/analysis). The LLM is the FakeAgentLLM from conftest: each test scripts o
 is about.
 """
 import json
+from datetime import datetime, timedelta
 
 import pytest
 
+from app.agents.analysis.time_range import resolve_time_range
 from app.core.config import settings
 from app.db import crud, models
 from app.core.security import create_access_token, hash_password
@@ -239,6 +241,40 @@ def test_a_word_without_a_period_is_not_asked_about(client, auth_headers, chat_e
     events = _events(_send(client, auth_headers, conversation_id, "Guardian'dan gelen son 5 haber hangileri?"))
     assert "clarification" not in _types(events)
     assert next(e for e in events if e["type"] == "intent")["time_range"] is None
+
+
+def test_a_year_question_about_a_resolved_period_is_not_asked(client, auth_headers, db_session, chat_env):
+    # "Eylül ayında kaç haber?": the model asked "Hangi yılın Eylül'ü?" although a month without a
+    # year is the most recent one and the resolver already picked it.
+    september = datetime.fromisoformat(resolve_time_range("eylül")["from"]).replace(tzinfo=None) + timedelta(days=2)
+    _make_article(db_session, crud.get_feeds(db_session)[0].id, title="Eylül", priority="med",
+                  status="summarized", published_at=september)
+    chat_env.script("understand", {"restatement": "x", "time_expression": "Eylül ayında", "open_questions": [
+        {"question": "Hangi yılın Eylül ayını kastediyorsunuz?", "options": ["2026", "Başka bir yıl"]}]})
+    conversation_id = _new_conversation(client, auth_headers)
+    events = _events(_send(client, auth_headers, conversation_id, "Eylül ayında kaç önemli haber var?"))
+    assert "clarification" not in _types(events)
+    assert next(e for e in events if e["type"] == "intent")["time_range"]["label"] == "eylül"
+
+
+def test_the_report_cannot_mistake_a_table_id_for_an_article_id(client, auth_headers, chat_env):
+    # The report model saw {"id": "a1", ...} for a result table and cited it as article [#1].
+    chat_env.script("plan", {"steps": [{"goal": "Say", "tool": "sql"}]})
+    chat_env.script("execute", FakeAgentLLM.tool_call("run_sql", query="SELECT count(*) AS n FROM chat_articles"),
+                    "Bulgu.")
+    conversation_id = _new_conversation(client, auth_headers)
+    _send(client, auth_headers, conversation_id, "Kaç haber var?")
+    report_input = json.loads(next(c for c in chat_env.calls if c["purpose"] == "report")["messages"][1]["content"])
+    tables = report_input["tablolar_ve_grafikler"]
+    assert tables and all("id" not in table for table in tables)
+    assert tables[0]["tablo"] == "a1"
+
+
+def test_the_data_model_ties_importance_level_to_priority():
+    # "önem seviyelerine göre" was grouped by importance (important/unimportant): one useless bucket.
+    from app.agents.analysis import prompts
+    assert "önem seviyesi" in prompts.DATA_MODEL.split("priority", 1)[1].split("\n", 1)[0]
+    assert "importance'a göre gruplama" in prompts.DATA_MODEL
 
 
 def _understand_inputs(fake):

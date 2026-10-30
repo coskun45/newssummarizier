@@ -141,6 +141,8 @@ def test_sql_guard_accepts_joins_ctes_and_aggregates_on_the_views():
     # two periods compared: the span covering both
     ("bu hafta ile geçen hafta", "2026-10-19T00:00:00", "2026-10-28T15:00:00"),
     ("Ağustos ve Eylül", "2026-08-01T00:00:00", "2026-09-30T23:59:59"),
+    ("Ağustos ile Eylül arasında", "2026-08-01T00:00:00", "2026-09-30T23:59:59"),
+    ("1 eylül ile 15 ekim arası", "2026-09-01T00:00:00", "2026-10-15T23:59:59"),
 ])
 def test_time_resolver_turns_turkish_expressions_into_ranges(expression, start, end):
     resolved = resolve_time_range(expression, NOW)

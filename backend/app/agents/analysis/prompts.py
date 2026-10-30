@@ -5,7 +5,8 @@ what nodes.py parses, so change them together.
 
 DATA_MODEL = """VERİ (salt-okunur PostgreSQL view'ları; zamanlar UTC olarak saklanır, saat dilimi yok):
 - chat_articles(id, title, published_at, fetched_at, article_date [published_at yoksa fetched_at],
-  priority ['high'=Yüksek | 'med'=Orta | 'low'=Düşük | NULL], importance ['important' | 'unimportant'=Önemsiz | NULL],
+  priority [= önem seviyesi: 'high'=Yüksek | 'med'=Orta | 'low'=Düşük | NULL],
+  importance [yalnızca Önemsiz işareti: 'important' | 'unimportant'=Önemsiz | NULL],
   is_starred [Favori], is_read, status, feed_id, feed_title [kaynak],
   is_analyzable [TRUE = önem seviyesi var, Önemsiz değil, hatalı değil])
 - chat_article_topics(article_id, topic_id, topic_name, confidence)  — bir haberin birden çok konusu olabilir
@@ -13,6 +14,8 @@ DATA_MODEL = """VERİ (salt-okunur PostgreSQL view'ları; zamanlar UTC olarak sa
 
 KURALLAR:
 - Önem seviyesi analizlerinde (sayım, oran, trend) her zaman `is_analyzable` filtresini kullan; Analiz sekmesi de böyle sayar.
+- "Önem seviyesi / önem dağılımı" = priority (Yüksek/Orta/Düşük); importance'a göre gruplama yapma (analiz
+  edilebilir haberlerin hepsi 'important'tır). "Önemli haber" = is_analyzable olan haber.
 - Tarih filtresi için article_date kullan ve zaman aracının döndürdüğü from_utc / to_utc değerleriyle karşılaştır.
 - Konu bazlı sayımlarda bir haber birden çok konuda sayılabilir; bunu belirt.
 - Bir habere atıf yaparken kimliğini [#id] biçiminde yaz (ör. [#123])."""
@@ -36,6 +39,8 @@ Görevin:
    restatement bu seçimi yansıtmalı (soruda "son 24 saat" yazsa da cevap "Son 30 gün" ise "son 30 gün").
    Kullanıcının son cevabı bir seçim değil de soru/itiraz ise (ör. "neden genişletiyorsun?"), restatement'ta
    bunun gerekçesini kısaca açıkla ve aynı seçimi open_questions ile yeniden sor; analiz başlatma.
+   Yılı yazılmamış bir ay/tarih her zaman en yakın geçmişteki odur (ör. bugün Ekim 2026 ise "Eylül" = Eylül 2026,
+   "Kasım" = Kasım 2025); hangi yıl olduğunu sorma.
 5. Varsayım yaptıysan assumptions listesine yaz.
 
 Yalnızca şu JSON'u döndür:
@@ -107,6 +112,7 @@ Kurallar:
 - İlk cümlede sorunun doğrudan cevabını ver; sonra kısa başlıklarla temel bulgular (sayılarla), gerekiyorsa
   yorum ve sınırlamalar.
 - Yalnızca bulgulardaki ve tablolardaki verilere dayan; veri yoksa uydurma, eksikliği söyle.
-- Haberlere [#id] biçiminde atıf yap (ör. [#123]).
+- Haberlere [#id] biçiminde atıf yap (ör. [#123]); id yalnızca tablolardaki haber kimliğidir (id / article_id
+  sütunu). Tablo adlarına (a1, a2) veya satır numaralarına atıf yapma; tabloda haber kimliği yoksa atıf yazma.
 - Grafikler kullanıcıya ayrıca gösteriliyor; onları yeniden çizmeye çalışma, gerekirse adlarıyla an.
 - Markdown kullan (başlık, madde işareti, kalın); tabloları en fazla 10 satırla sınırla."""

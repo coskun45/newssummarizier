@@ -9,6 +9,7 @@ stores the state and the next turn re-enters the graph from it (graph.route_entr
 """
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
@@ -216,7 +217,11 @@ async def understand_node(state: AnalysisState, config) -> Dict[str, Any]:
     elif expression:
         if "time" in tools:
             time_range = resolve_time_range(expression)
-            if time_range is None and not questions:
+            if time_range is not None:
+                # "Hangi yılın Eylül'ü?": a month without a year is the latest one, and the
+                # resolver already picked it.
+                questions = [q for q in questions if not _is_year_question(q)]
+            elif not questions:
                 questions = [{"question": f"“{expression}” ile hangi dönemi kastediyorsunuz?",
                               "options": ["Son 7 gün", "Son 30 gün", "Bu ay", "Tüm veriler"]}]
         else:
@@ -261,6 +266,11 @@ async def understand_node(state: AnalysisState, config) -> Dict[str, Any]:
 def _is_period_question(question: Dict[str, Any]) -> bool:
     """A model question that asks for the period again although the user just picked one."""
     return any(resolve_time_range(option) is not None for option in question.get("options") or [])
+
+
+def _is_year_question(question: Dict[str, Any]) -> bool:
+    """A model question that asks which year a period is in (options like "2026", "2026 Eylül")."""
+    return any(re.match(r"\d{4}\b", str(option).strip()) for option in question.get("options") or [])
 
 
 def _coverage(time_range: Optional[Dict[str, str]]) -> Dict[str, Any]:
@@ -527,13 +537,15 @@ def route_after_reflect(state: AnalysisState) -> str:
 # ---------------------------------------------------------------------------
 
 def _report_tables(artifacts: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    # Keyed "tablo", not "id": the report model cited table "a1" as article [#1].
     tables = []
     for artifact in artifacts.values():
         if artifact.get("kind") == "table":
-            tables.append({"id": artifact["id"], "purpose": artifact.get("purpose"), "columns": artifact["columns"],
-                           "rows": artifact["rows"][:30], "row_count": len(artifact["rows"])})
+            tables.append({"tablo": artifact["id"], "purpose": artifact.get("purpose"),
+                           "columns": artifact["columns"], "rows": artifact["rows"][:30],
+                           "row_count": len(artifact["rows"])})
         elif artifact.get("kind") == "chart":
-            tables.append({"id": artifact["id"], "chart": artifact.get("title")})
+            tables.append({"tablo": artifact["id"], "chart": artifact.get("title")})
     return tables
 
 

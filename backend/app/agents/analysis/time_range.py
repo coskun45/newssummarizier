@@ -70,6 +70,8 @@ def _normalize(expression: str) -> str:
     text = re.sub(r"'(?:de|da|te|ta|den|dan|ten|tan|in|ın|un|ün|nin|nın)\b(?!\s+(?:beri|bu yana|itibaren))",
                   "", text)
     text = re.sub(r"\s+", " ", text).strip(" .")
+    # "ağustos ile eylül arasında" → "ağustos ile eylül"
+    text = re.sub(r" (?:arası|arasi|arasında|arasinda|arasındaki|arasindaki)$", "", text)
     # "2026 eylül" → "eylül 2026"; "2019 yılının tamamı" → "2019"; "ağustos ayında" → "ağustos"
     text = re.sub(rf"^(\d{{4}}) ({_MONTH_RE})\b", r"\2 \1", text)
     text = re.sub(r"^(\d{4}) (?:yıl|yil|sene)\w*(?: (?:tamamı|tamami|boyunca))?$", r"\1", text)
