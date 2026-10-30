@@ -34,10 +34,13 @@ from app.core.config import settings
 from app.db import crud
 from app.db.database import SessionLocal, init_db
 from app.services import chat_service, summary_service
-from evals.assistant.scoring import DIMENSIONS, ToolRecord, TurnTrace, artifact_ids, cited_ids, score_turn
+from evals.assistant.scoring import (
+    DIMENSIONS, ToolRecord, TurnTrace, artifact_ids, cited_ids, pass_rates, score_turn,
+)
 
 HERE = Path(__file__).parent
-DATASET = HERE / "dataset.yaml"
+DATASETS = {"main": HERE / "dataset.yaml", "holdout": HERE / "holdout.yaml"}
+DATASET = DATASETS["main"]
 RESULTS = HERE / "results"
 MAX_CLARIFY_ANSWERS = 3
 
@@ -283,22 +286,42 @@ def _quote(text: str, limit: int = 700) -> str:
     return "\n".join("> " + line for line in text.splitlines()) or "> (rapor yok)"
 
 
+def _label(result: Dict[str, Any], repeat: int) -> str:
+    return result["id"] + (f" #{result['repeat']}" if repeat > 1 else "")
+
+
+def _passed_text(passed: float) -> str:
+    return f"{round(passed, 1):g}"
+
+
 def markdown_report(results: List[Dict[str, Any]], meta: Dict[str, Any]) -> str:
+    repeat = meta.get("repeat", 1)
     turns = [(r, t) for r in results for t in r["turns"]]
-    lines = [f"# Asistan değerlendirme — {meta['started']}", "",
+    rates = pass_rates(results)
+    passed = sum(e["rate"] for e in rates.values())
+    dataset = "" if meta.get("dataset", "main") == "main" else f" ({meta['dataset']})"
+    lines = [f"# Asistan değerlendirme{dataset} — {meta['started']}", "",
              f"Model: `{meta['model']}` / hızlı: `{meta['fast_model']}` · Araçlar: {', '.join(meta['tools'])} · "
-             f"Soru: {len(results)} · Geçen: {sum(r['passed'] for r in results)} · "
+             f"Soru: {len(rates)}" + (f" × {repeat} koşu" if repeat > 1 else "") +
+             f" · Geçen: {_passed_text(passed)} ({_pct(passed / len(rates) if rates else None)}) · "
              f"Maliyet: ${meta['cost']:.3f} (+ hakem ${meta['judge_cost']:.3f}) · Süre: {meta['seconds']} sn", ""]
+    if repeat > 1:
+        lines += ["Geçen = sorulardaki geçme oranlarının toplamı (2/3 koşuda geçen soru 0.67 sayılır).", ""]
 
     lines += ["## Kategori × boyut", "", "| Kategori | Soru | Geçen | " + " | ".join(DIMENSIONS) + " |",
               "|---|---|---|" + "---|" * len(DIMENSIONS)]
     categories = sorted({r["category"] for r in results})
     for category in categories + ["TOPLAM"]:
         group = [(r, t) for r, t in turns if category in ("TOPLAM", r["category"])]
-        items = {r["id"]: r for r, _ in group}
+        group_rates = [e["rate"] for e in rates.values() if category in ("TOPLAM", e["category"])]
         cells = [_pct(_avg([t["score"]["dimensions"][d] for _, t in group])) for d in DIMENSIONS]
-        lines.append(f"| {category} | {len(items)} | {sum(r['passed'] for r in items.values())} | "
+        lines.append(f"| {category} | {len(group_rates)} | {_passed_text(sum(group_rates))} | "
                      + " | ".join(cells) + " |")
+
+    if repeat > 1:
+        flaky = [(qid, e) for qid, e in rates.items() if 0 < e["passes"] < e["runs"]]
+        lines += ["", "## Kararsız sorular (bazı koşularda geçen)", ""]
+        lines += [f"- {qid}: {e['passes']}/{e['runs']}" for qid, e in flaky] or ["—"]
 
     tag_counts = Counter(re.sub(r":.*", "", tag) for _, t in turns for tag in t["score"]["tags"])
     lines += ["", "## En sık hata etiketleri", "", "| Etiket | Adet | Sorular |", "|---|---|---|"]
@@ -313,7 +336,7 @@ def markdown_report(results: List[Dict[str, Any]], meta: Dict[str, Any]) -> str:
         for number, turn in enumerate(result["turns"], 1):
             if turn["score"]["passed"]:
                 continue
-            title = f"### {result['id']}" + (f" (tur {number})" if len(result["turns"]) > 1 else "")
+            title = f"### {_label(result, repeat)}" + (f" (tur {number})" if len(result["turns"]) > 1 else "")
             dims = ", ".join(f"{k} {_pct(v)}" for k, v in turn["score"]["dimensions"].items() if v is not None)
             lines += [title, f"**Soru:** {turn['question']}", f"**Puanlar:** {dims}",
                       f"**Etiketler:** {', '.join(f'`{t}`' for t in turn['score']['tags']) or '—'}"]
@@ -350,7 +373,7 @@ def markdown_report(results: List[Dict[str, Any]], meta: Dict[str, Any]) -> str:
     lines += ["## Tüm sorular", "", "| Soru | Geçti | Genel | Araçlar | Maliyet | Süre |", "|---|---|---|---|---|---|"]
     for result in results:
         for turn in result["turns"]:
-            lines.append(f"| {result['id']} | {'✓' if turn['score']['passed'] else '✗'} | "
+            lines.append(f"| {_label(result, repeat)} | {'✓' if turn['score']['passed'] else '✗'} | "
                          f"{_pct(turn['score']['overall'])} | {' → '.join(t['tool'] for t in turn['tools']) or '—'} | "
                          f"${turn['cost']:.3f} | {turn['seconds']} sn |")
     return "\n".join(lines) + "\n"
@@ -374,7 +397,7 @@ def select(items: List[Dict[str, Any]], ids: Optional[str], category: Optional[s
 
 async def main_async(args) -> None:
     init_db()
-    items = select(load_dataset(), args.ids, args.category)
+    items = select(load_dataset(DATASETS[args.dataset]), args.ids, args.category)
     if args.gold_only:
         for item in items:
             for turn in item["turns"]:
@@ -393,37 +416,43 @@ async def main_async(args) -> None:
     started = datetime.now()
     semaphore = asyncio.Semaphore(args.concurrency)
 
-    async def one(item):
+    async def one(item, repeat):
         async with semaphore:
-            print(f"… {item['id']}", flush=True)
-            result = await run_item(item, not args.no_judge, args.timeout, existing)
+            name = item["id"] + (f" #{repeat}" if args.repeat > 1 else "")
+            print(f"… {name}", flush=True)
+            result = {**await run_item(item, not args.no_judge, args.timeout, existing), "repeat": repeat}
             mark = "✓" if result["passed"] else "✗ " + ", ".join(t for turn in result["turns"]
                                                                for t in turn["score"]["tags"])
-            print(f"{item['id']}: {mark}", flush=True)
+            print(f"{name}: {mark}", flush=True)
             return result
 
-    results = await asyncio.gather(*(one(item) for item in items))
+    results = await asyncio.gather(*(one(item, r) for item in items for r in range(1, args.repeat + 1)))
     meta = {
-        "started": started.strftime("%Y-%m-%d %H:%M"),
+        "started": started.strftime("%Y-%m-%d %H:%M"), "repeat": args.repeat, "dataset": args.dataset,
         "model": settings.chat_model, "fast_model": settings.chat_fast_model, "tools": enabled,
         "cost": sum(t["cost"] for r in results for t in r["turns"]),
         "judge_cost": sum((t["judge"] or {}).get("cost") or 0 for r in results for t in r["turns"]),
         "seconds": round((datetime.now() - started).total_seconds()),
     }
     RESULTS.mkdir(exist_ok=True)
-    stem = RESULTS / f"run-{started.strftime('%Y%m%d-%H%M%S')}"
+    prefix = "run" if args.dataset == "main" else f"run-{args.dataset}"
+    stem = RESULTS / f"{prefix}-{started.strftime('%Y%m%d-%H%M%S')}"
     stem.with_suffix(".json").write_text(
         json.dumps({"meta": meta, "results": results}, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
     stem.with_suffix(".md").write_text(markdown_report(results, meta), encoding="utf-8")
-    print(f"\n{sum(r['passed'] for r in results)}/{len(results)} geçti · ${meta['cost']:.3f} · {stem}.md")
+    print(f"\n{sum(r['passed'] for r in results)}/{len(results)} koşu geçti · ${meta['cost']:.3f} · {stem}.md")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Asistan değerlendirmesi")
+    parser.add_argument("--dataset", choices=sorted(DATASETS), default="main",
+                        help="main: geliştirme seti; holdout: düzeltmelerde hiç bakılmayan set")
     parser.add_argument("--ids", help="virgülle ayrılmış soru kimlikleri")
     parser.add_argument("--category")
     parser.add_argument("--no-judge", action="store_true", help="LLM hakemi çalıştırma")
     parser.add_argument("--gold-only", action="store_true", help="yalnızca altın cevapları yazdır")
+    parser.add_argument("--repeat", type=int, default=1,
+                        help="her soruyu N kez koştur; geçme oranı ve kararsız sorular raporlanır")
     parser.add_argument("--concurrency", type=int, default=2)
     parser.add_argument("--timeout", type=float, default=300, help="soru başına saniye")
     args = parser.parse_args()

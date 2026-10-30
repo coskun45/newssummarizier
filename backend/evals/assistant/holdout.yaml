@@ -1,0 +1,292 @@
+# Asistan değerlendirmesi — GÖRÜLMEMİŞ (holdout) set.
+#
+# dataset.yaml'daki hataları düzeltirken bu sorular hiç kullanılmadı; amaç, düzeltmelerin genel mi
+# yoksa ana sete ezber mi olduğunu ölçmek. KURAL: bu setteki bir başarısızlığa bakıp prompt/kod
+# değiştirirsen soru artık "görülmüş" olur — onu dataset.yaml'a taşı ve buraya yeni bir soru yaz.
+# Olaylar ve ifadeler ana setten ve prompt örneklerinden farklı seçildi. Şema dataset.yaml ile aynı.
+
+- id: h-cnt-01
+  category: sayim
+  question: "NATO hakkında şimdiye kadar kaç haber yayımlandı?"
+  expect:
+    clarification: forbidden
+    tools_required: [sql]
+    gold:
+      - name: nato_count
+        match: scalar
+        sql: >
+          SELECT COUNT(DISTINCT t.article_id) FROM chat_article_topics t JOIN chat_articles a ON a.id = t.article_id
+          WHERE t.topic_name = 'NATO' AND a.is_analyzable
+    rubric: "Tüm veriler üzerinden NATO konusundaki haber sayısı verilmeli."
+
+- id: h-cnt-02
+  category: sayim
+  question: "Guardian'ın bu ayki önemli haber sayısı nedir?"
+  ranges: {t: "bu ay"}
+  expect:
+    clarification: forbidden
+    time_range: t
+    tools_required: [sql]
+    tools_forbidden: [semantic_search]
+    gold:
+      - name: guardian_month
+        match: scalar
+        sql: >
+          SELECT COUNT(*) FROM chat_articles WHERE is_analyzable AND feed_title = 'Guardian'
+          AND article_date BETWEEN '{t_from}' AND '{t_to}'
+    rubric: "Bu ay (Ekim) Guardian'dan gelen önemli haber sayısı verilmeli."
+
+- id: h-cnt-03
+  category: sayim
+  question: "Eylül'ün ilk yarısında kaç tane düşük öncelikli haber çıktı?"
+  ranges: {t: "1-15 Eylül"}
+  expect:
+    clarification: optional
+    time_range: t
+    tools_required: [sql]
+    gold:
+      - name: low_count
+        match: scalar
+        sql: >
+          SELECT COUNT(*) FROM chat_articles WHERE is_analyzable AND priority = 'low'
+          AND article_date BETWEEN '{t_from}' AND '{t_to}'
+    rubric: "1-15 Eylül arasındaki düşük önemli haber sayısı verilmeli (sıfırsa açıkça söylenmeli)."
+
+- id: h-dst-01
+  category: dagilim
+  question: "Geçen ayki haberler kaynaklara göre nasıl dağılıyor?"
+  ranges: {t: "geçen ay"}
+  expect:
+    clarification: forbidden
+    time_range: t
+    tools_required: [sql]
+    tools_forbidden: [semantic_search]
+    gold:
+      - name: by_feed
+        match: rowset
+        sql: >
+          SELECT feed_title, COUNT(*) FROM chat_articles
+          WHERE is_analyzable AND article_date BETWEEN '{t_from}' AND '{t_to}' GROUP BY 1 ORDER BY 2 DESC
+    rubric: "Eylül'deki önemli haberlerin DW ve Guardian'a göre sayıları (ve tercihen oranları) verilmeli."
+
+- id: h-dst-02
+  category: dagilim
+  question: "Ekim'de çıkan haberlerde hangi öncelik seviyesi ağırlıkta?"
+  ranges: {t: "Ekim"}
+  expect:
+    clarification: forbidden
+    time_range: t
+    tools_required: [sql]
+    gold:
+      - name: by_priority
+        match: rowset
+        sql: >
+          SELECT priority, COUNT(*) FROM chat_articles
+          WHERE is_analyzable AND article_date BETWEEN '{t_from}' AND '{t_to}' GROUP BY 1 ORDER BY 2 DESC
+    rubric: "Ekim'deki Yüksek/Orta/Düşük sayıları verilmeli ve ağırlıklı seviye söylenmeli."
+
+- id: h-trd-01
+  category: trend
+  question: "Eylül boyunca her gün kaç yüksek öncelikli haber geldiğini çiz."
+  ranges: {t: "Eylül"}
+  expect:
+    time_range: t
+    tools_required: [sql, chart]
+    tools_forbidden: [semantic_search]
+    gold:
+      - name: daily_high
+        match: chart
+        sql: >
+          SELECT DATE(article_date), COUNT(*) FROM chat_articles WHERE is_analyzable AND priority = 'high'
+          AND article_date BETWEEN '{t_from}' AND '{t_to}' GROUP BY 1 ORDER BY 1
+    rubric: "Eylül'ün günlük yüksek önemli haber sayıları grafikte; en yoğun gün raporda."
+
+- id: h-trd-02
+  category: trend
+  question: "Son iki haftada kaynak başına günlük haber sayısını grafikle göster."
+  ranges: {t: "son 2 hafta"}
+  expect:
+    time_range: t
+    tools_required: [sql, chart]
+    gold:
+      - name: daily_feed
+        match: chart
+        sql: >
+          SELECT DATE(article_date), feed_title, COUNT(*) FROM chat_articles WHERE is_analyzable
+          AND article_date BETWEEN '{t_from}' AND '{t_to}' GROUP BY 1, 2 ORDER BY 1, 2
+    rubric: "Son 14 günün kaynak başına günlük önemli haber sayıları grafikte gösterilmeli."
+
+- id: h-lst-01
+  category: listeleme
+  question: "Geçen haftanın en kritik 3 haberi hangileriydi?"
+  ranges: {t: "geçen hafta"}
+  expect:
+    clarification: forbidden
+    time_range: t
+    tools_required: [sql]
+    tools_forbidden: [semantic_search]
+    gold:
+      - name: top3
+        match: top_ids
+        sql: >
+          SELECT id FROM chat_articles WHERE is_analyzable AND article_date BETWEEN '{t_from}' AND '{t_to}'
+          ORDER BY CASE priority WHEN 'high' THEN 1 WHEN 'med' THEN 2 ELSE 3 END, article_date DESC LIMIT 3
+    rubric: "Geçen haftanın önem sırasına göre ilk 3 haberi [#id] ile listelenmeli."
+
+- id: h-lst-02
+  category: listeleme
+  question: "DW'nin en yeni 4 önemli haberini göster."
+  expect:
+    clarification: forbidden
+    tools_required: [sql]
+    tools_forbidden: [semantic_search]
+    gold:
+      - name: dw_latest
+        match: top_ids
+        sql: >
+          SELECT id FROM chat_articles WHERE is_analyzable AND feed_title = 'DW - Deutsche Welle'
+          ORDER BY article_date DESC LIMIT 4
+    rubric: "DW'nin tarihçe en yeni 4 önemli haberi [#id] ve tarihleriyle listelenmeli."
+
+- id: h-lst-03
+  category: listeleme
+  question: "Favorilerime eklediğim haberleri listeler misin?"
+  expect:
+    clarification: forbidden
+    tools_required: [sql]
+    tools_forbidden: [semantic_search]
+    gold:
+      - name: starred
+        match: top_ids
+        sql: "SELECT id FROM chat_articles WHERE is_starred ORDER BY article_date DESC"
+    rubric: "Favori haberlerin tamamı [#id] ile listelenmeli."
+
+- id: h-cmp-01
+  category: karsilastirma
+  question: "Eylül ile Ekim'i yüksek ve orta öncelikli haber sayıları bakımından kıyasla."
+  ranges: {a: "Eylül", b: "Ekim"}
+  expect:
+    tools_required: [sql]
+    tools_forbidden: [semantic_search]
+    gold:
+      - name: september
+        match: rowset
+        sql: >
+          SELECT priority, COUNT(*) FROM chat_articles WHERE is_analyzable AND priority IN ('high', 'med')
+          AND article_date BETWEEN '{a_from}' AND '{a_to}' GROUP BY 1 ORDER BY 1
+      - name: october
+        match: rowset
+        sql: >
+          SELECT priority, COUNT(*) FROM chat_articles WHERE is_analyzable AND priority IN ('high', 'med')
+          AND article_date BETWEEN '{b_from}' AND '{b_to}' GROUP BY 1 ORDER BY 1
+    rubric: "Eylül ve Ekim'in yüksek ve orta önemli haber sayıları yan yana verilmeli; Ekim'in sürdüğü belirtilebilir."
+
+- id: h-sem-01
+  category: semantik
+  question: "Grönland meselesinde ABD ile Danimarka nasıl bir anlaşmaya vardı?"
+  expect:
+    tools_required: [semantic_search]
+    gold:
+      - name: relevant
+        match: id_recall
+        min_cited: 1
+        sql: "SELECT id FROM chat_articles WHERE id = 402"
+    rubric: "ABD'nin Danimarka ve Grönland ile Kuzey Kutbu güvenlik anlaşması (#402) anlatılmalı."
+
+- id: h-sem-02
+  category: semantik
+  question: "Fransa'daki protestolar hakkında neler yazıldı?"
+  expect:
+    tools_required: [semantic_search]
+    gold:
+      - name: relevant
+        match: id_recall
+        min_cited: 1
+        sql: "SELECT id FROM chat_articles WHERE id = 529"
+    rubric: "Fransa'daki yaşam maliyeti/eğitim protestoları ve 1000'den fazla gözaltı (#529) anlatılmalı."
+
+- id: h-sem-03
+  category: semantik
+  question: "Kaliforniya'daki seçimlerle ilgili tartışmalar neler?"
+  expect:
+    tools_required: [semantic_search]
+    gold:
+      - name: relevant
+        match: id_recall
+        min_cited: 1
+        sql: "SELECT id FROM chat_articles WHERE id IN (580, 522)"
+    rubric: "Posta oylarının sayılmasını durdurma girişimini engelleyen mahkeme kararı (#580) ve Kaliforniya'nın siyasi dönüşümü (#522) anlatılmalı."
+
+- id: h-sem-04
+  category: semantik
+  question: "İsrail seçim kampanyasında yapay zeka nasıl kullanılıyor?"
+  expect:
+    tools_required: [semantic_search]
+    gold:
+      - name: relevant
+        match: id_recall
+        min_cited: 1
+        sql: "SELECT id FROM chat_articles WHERE id = 597"
+    rubric: "Deepfake, bot ve dezenformasyon kullanımı (#597) anlatılmalı."
+
+- id: h-hyb-01
+  category: hibrit
+  question: "Suriye ile ilgili haberler hangi kaynaklardan geliyor ve öncelik seviyeleri ne?"
+  expect:
+    tools_required: [semantic_search]
+    gold:
+      - name: relevant
+        match: id_recall
+        min_cited: 0
+        sql: "SELECT id FROM chat_articles WHERE id IN (21, 49, 60, 569)"
+      - name: by_feed
+        match: rowset
+        sql: "SELECT feed_title, COUNT(*) FROM chat_articles WHERE id IN (21, 49, 60, 569) GROUP BY 1"
+      - name: by_priority
+        match: rowset
+        sql: "SELECT priority, COUNT(*) FROM chat_articles WHERE id IN (21, 49, 60, 569) GROUP BY 1"
+    rubric: "Suriye haberleri (#21 SDF/Kürtler, #49 İsrail-Türkiye gerilimi, #60 İsrail'in Suriye'deki varlığı, #569 Ürdün'ün Suriye'deki saldırıları) bulunmalı; kaynak (DW 3, Guardian 1) ve öncelik (Orta 3, Düşük 1) dağılımı verilmeli."
+
+- id: h-hyb-02
+  category: hibrit
+  question: "Rusya'ya uygulanan yaptırımlarla ilgili haberlerin öncelik seviyeleri ve tarihleri nedir?"
+  expect:
+    tools_required: [semantic_search]
+    gold:
+      - name: relevant
+        match: id_recall
+        min_cited: 1
+        sql: "SELECT id FROM chat_articles WHERE id = 377"
+    rubric: "ABD Kongresi'nin Rusya yaptırım paketi (#377, 17 Eylül, Yüksek) verilmeli; İran yaptırımları Rusya haberi sayılmamalı."
+
+- id: h-clr-01
+  category: netlestirme
+  question: "Gündemde ne var?"
+  ranges: {t: "son 7 gün"}
+  expect:
+    clarification: forbidden
+    time_range: t
+    tools_required: [sql]
+    gold:
+      - name: week
+        match: id_recall
+        min_cited: 2
+        in_tools: false
+        sql: >
+          SELECT id FROM chat_articles WHERE is_analyzable AND article_date BETWEEN '{t_from}' AND '{t_to}'
+    report_must_match: ["son 7 gün|7 gün|son bir hafta"]
+    rubric: "Soru sormadan son 7 gün incelenmeli ve bu söylenmeli; öne çıkan haberler [#id] ile özetlenmeli."
+
+- id: h-edg-01
+  category: sinir
+  question: "2024 yılında kaç önemli haber var?"
+  ranges: {t: "2024"}
+  clarification_answers: ["2024 yılının tamamı"]
+  expect:
+    gold:
+      - name: count
+        match: scalar
+        in_tools: false
+        sql: "SELECT COUNT(*) FROM chat_articles WHERE is_analyzable AND article_date BETWEEN '{t_from}' AND '{t_to}'"
+    report_must_match: ["2024"]
+    rubric: "2024'te hiç önemli haber olmadığı açıkça söylenmeli; başka dönemin haberleri sunulmamalı."

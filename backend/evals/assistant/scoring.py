@@ -379,3 +379,17 @@ def score_turn(trace: TurnTrace, expect: Dict[str, Any], gold_results: Dict[str,
         "tags": tags,
         "checks": [{"name": c.name, "score": round(c.score, 3), "tag": c.tag, "detail": c.detail} for c in checks],
     }
+
+
+def pass_rates(results: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """Per question over repeated runs (`--repeat`): {id: {category, passes, runs, rate}}, in first-seen
+    order. A question that passes in some runs and fails in others is flaky — one run can't tell a fix
+    from noise."""
+    rates: Dict[str, Dict[str, Any]] = {}
+    for result in results:
+        entry = rates.setdefault(result["id"], {"category": result["category"], "passes": 0, "runs": 0})
+        entry["runs"] += 1
+        entry["passes"] += bool(result["passed"])
+    for entry in rates.values():
+        entry["rate"] = entry["passes"] / entry["runs"]
+    return rates

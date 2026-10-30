@@ -1,8 +1,10 @@
 """Scoring of the Asistan eval (evals/assistant/scoring.py) — pure functions, no DB or LLM."""
 import re
 
+import pytest
+
 from evals.assistant import scoring
-from evals.assistant.run_eval import load_dataset
+from evals.assistant.run_eval import DATASETS, load_dataset
 from evals.assistant.scoring import ToolRecord, TurnTrace, score_turn
 
 
@@ -141,10 +143,36 @@ def test_report_patterns():
     assert [c.score for c in checks] == [1.0, 0.0]
 
 
-def test_dataset_is_well_formed():
-    items = load_dataset()
+def test_pass_rates_over_repeated_runs():
+    results = [{"id": "a", "category": "x", "passed": True}, {"id": "a", "category": "x", "passed": False},
+               {"id": "a", "category": "x", "passed": True}, {"id": "b", "category": "y", "passed": False}]
+    rates = scoring.pass_rates(results)
+    assert list(rates) == ["a", "b"]
+    assert (rates["a"]["passes"], rates["a"]["runs"]) == (2, 3) and round(rates["a"]["rate"], 2) == 0.67
+    assert rates["b"]["rate"] == 0
+
+
+def test_markdown_report_lists_flaky_questions():
+    from evals.assistant.run_eval import markdown_report
+    turn = {"question": "q", "score": {"passed": True, "dimensions": {d: 1.0 for d in scoring.DIMENSIONS},
+                                       "overall": 1.0, "tags": [], "checks": []},
+            "tools": [], "cost": 0.0, "seconds": 1}
+    failed = {**turn, "score": {**turn["score"], "passed": False}, "error": None, "clarifications": [],
+              "expected_range": None, "time_range": None, "gold": {}, "judge": None, "report": ""}
+    results = [{"id": "a", "category": "x", "passed": True, "repeat": 1, "turns": [turn]},
+               {"id": "a", "category": "x", "passed": False, "repeat": 2, "turns": [failed]}]
+    meta = {"started": "t", "model": "m", "fast_model": "m", "tools": [], "cost": 0.0, "judge_cost": 0.0,
+            "seconds": 1, "repeat": 2}
+    report = markdown_report(results, meta)
+    assert "Soru: 1 × 2 koşu" in report and "Geçen: 0.5 (50%)" in report
+    assert "- a: 1/2" in report and "### a #2" in report
+
+
+@pytest.mark.parametrize("name, minimum", [("main", 30), ("holdout", 15)])
+def test_dataset_is_well_formed(name, minimum):
+    items = load_dataset(DATASETS[name])
     ids = [item["id"] for item in items]
-    assert len(ids) == len(set(ids)) >= 30
+    assert len(ids) == len(set(ids)) >= minimum
     matches = {"scalar", "rowset", "top_ids", "id_recall", "must_cite", "chart"}
     for item in items:
         for turn in item["turns"]:
@@ -157,3 +185,11 @@ def test_dataset_is_well_formed():
                 assert set(gold) <= {"name", "match", "sql", "min_cited", "in_tools"}, item["id"]
                 placeholders = {p.split("_")[0] for p in re.findall(r"\{(\w+)\}", gold["sql"])}
                 assert placeholders <= set(turn.get("ranges") or {}), item["id"]
+
+
+def test_holdout_questions_are_not_in_the_main_set():
+    main = {item["id"] for item in load_dataset(DATASETS["main"])}
+    main_questions = {turn["question"] for item in load_dataset(DATASETS["main"]) for turn in item["turns"]}
+    for item in load_dataset(DATASETS["holdout"]):
+        assert item["id"] not in main
+        assert all(turn["question"] not in main_questions for turn in item["turns"])

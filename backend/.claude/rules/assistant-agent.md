@@ -127,4 +127,9 @@ understand → (clarify) → make_plan → (approve_plan) → execute_step ⇄ r
   `pytest -q`). Gold answers are SQL in `dataset.yaml`, computed at run time with the agent's own
   `resolve_time_range` — never hardcode counts. After changing prompts/nodes/tools, re-run the affected
   categories and compare with the previous `results/run-*.md`.
+- **Two sets: `dataset.yaml` (find + fix) and `holdout.yaml` (measure only, `--dataset holdout`).** A fix is
+  general only if the holdout score holds too. Never tune against a holdout failure — move that question to
+  `dataset.yaml` and write a new holdout one. Use `--repeat 3`: one run moves ±2 questions on model noise.
+- **Prompt examples must not come from either eval set** (their questions, events or phrasings): the model
+  then learns the test, not the rule. Use neutral examples the DB doesn't contain ("Japonya ekonomisi").
 - The runner wraps `nodes.execute_tool` to record tool calls; if you rename/move it, update `run_eval.py`.
