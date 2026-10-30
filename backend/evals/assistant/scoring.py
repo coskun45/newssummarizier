@@ -209,18 +209,15 @@ def _cells(rows: Iterable[Sequence[Any]]) -> Set[str]:
     return {norm(v) for row in rows for v in row if v is not None}
 
 
-def gold_scalar(trace: TurnTrace, name: str, gold_rows: List[List[Any]], in_tools_required: bool = True):
+def gold_scalar(trace: TurnTrace, name: str, gold_rows: List[List[Any]]):
     """The value must be a cell of an SQL result, or the row count of one (a count answered by
-    listing the rows); `in_tools_required: false` for answers that need no query (an empty period
-    is known from the coverage check before planning)."""
+    listing the rows)."""
     value = norm(gold_rows[0][0]) if gold_rows and gold_rows[0] else "0"
     tables = _tables(trace, "sql")
     in_tools = any(value in _cells(t.get("rows") or []) or value == norm(len(t.get("rows") or []))
                    for t in tables)
     in_report = value in report_numbers(trace.report) or (value == "0" and bool(_ZERO_WORDS.search(trace.report)))
-    tool_check = (Check(f"{name}:tool", float(in_tools), None if in_tools else f"value_not_in_tools:{name}", value)
-                  if in_tools_required else None)
-    return (tool_check,
+    return (Check(f"{name}:tool", float(in_tools), None if in_tools else f"value_not_in_tools:{name}", value),
             Check(f"{name}:answer", float(in_report), None if in_report else f"value_not_in_report:{name}", value))
 
 
@@ -304,10 +301,17 @@ def gold_chart(trace: TurnTrace, name: str, gold_rows: List[List[Any]]):
 
 
 def score_gold(trace: TurnTrace, gold: Dict[str, Any], gold_rows: List[List[Any]]):
+    tool_check, answer_check = _score_gold(trace, gold, gold_rows)
+    # `in_tools: false`: the value may come from the report's own arithmetic (totals of a
+    # breakdown) or need no query at all (an empty period known from the coverage check).
+    return (tool_check if gold.get("in_tools", True) else None), answer_check
+
+
+def _score_gold(trace: TurnTrace, gold: Dict[str, Any], gold_rows: List[List[Any]]):
     match = gold["match"]
     name = gold["name"]
     if match == "scalar":
-        return gold_scalar(trace, name, gold_rows, gold.get("in_tools", True))
+        return gold_scalar(trace, name, gold_rows)
     if match == "rowset":
         return gold_rowset(trace, name, gold_rows)
     if match == "top_ids":

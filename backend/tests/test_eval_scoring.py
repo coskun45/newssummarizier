@@ -78,7 +78,8 @@ def test_scalar_accepts_a_row_count_and_can_skip_the_tool_check():
     t = trace([sql_record(["id", "title"], [[334, "a"], [305, "b"]])], "Favorilerde 2 yüksek önemli haber var.")
     tool, answer = scoring.gold_scalar(t, "n", [[2]])
     assert tool.score == answer.score == 1.0
-    tool, answer = scoring.gold_scalar(trace([], "2019'da hiç haber yok."), "n", [[0]], in_tools_required=False)
+    gold = {"name": "n", "match": "scalar", "sql": "", "in_tools": False}
+    tool, answer = scoring.score_gold(trace([], "2019'da hiç haber yok."), gold, [[0]])
     assert tool is None and answer.score == 1.0
 
 

@@ -336,6 +336,7 @@
           GROUP BY 1, 2 ORDER BY 1, 2
       - name: feed_total
         match: rowset
+        in_tools: false  # totals may be summed from the breakdown
         sql: >
           SELECT feed_title, COUNT(*) FROM chat_articles
           WHERE is_analyzable AND article_date BETWEEN '{t_from}' AND '{t_to}' GROUP BY 1 ORDER BY 1
