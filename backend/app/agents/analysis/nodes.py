@@ -9,7 +9,6 @@ stores the state and the next turn re-enters the graph from it (graph.route_entr
 """
 import json
 import logging
-import re
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
@@ -206,7 +205,10 @@ async def understand_node(state: AnalysisState, config) -> Dict[str, Any]:
     for key, known in (("topics", topics), ("feeds", feeds)):
         chosen = intent.get(key) if isinstance(intent.get(key), list) else []
         intent[key] = [] if len(known) > 1 and set(chosen) >= set(known) else chosen
-    questions = _questions(intent.get("open_questions"))
+    # A period is never the model's to ask about ("Hangi dönem?", "Hangi yılın Eylül'ü?"): a named one
+    # is resolved below (code asks when it can't be), none means the default week for a general
+    # question or all data — the model's question only delayed the answer.
+    questions = [q for q in _questions(intent.get("open_questions")) if not _is_period_question(q)]
     limitations = list(state.get("limitations") or [])
 
     time_range = state.get("time_range")
@@ -215,7 +217,6 @@ async def understand_node(state: AnalysisState, config) -> Dict[str, Any]:
     if picked:
         time_range = picked_range
         intent["time_expression"] = picked_range["label"] if picked_range else None
-        questions = [q for q in questions if not _is_period_question(q)]
     elif expression and (not mentions_period(expression) or not named_by_user(expression, _user_texts(state))):
         # "son" of "son 5 haber" is a count, not a period; and a period the user never named
         # (the model added "Son 30 gün") would hide older articles.
@@ -223,11 +224,7 @@ async def understand_node(state: AnalysisState, config) -> Dict[str, Any]:
     elif expression:
         if "time" in tools:
             time_range = resolve_time_range(expression)
-            if time_range is not None:
-                # "Hangi yılın Eylül'ü?": a month without a year is the latest one, and the
-                # resolver already picked it.
-                questions = [q for q in questions if not _is_year_question(q)]
-            elif not questions:
+            if time_range is None and not questions:
                 questions = [{"question": f"“{expression}” ile hangi dönemi kastediyorsunuz?",
                               "options": ["Son 7 gün", "Son 30 gün", "Bu ay", "Tüm veriler"]}]
         else:
@@ -242,7 +239,6 @@ async def understand_node(state: AnalysisState, config) -> Dict[str, Any]:
         time_range = resolve_time_range(DEFAULT_PERIOD)
         intent.setdefault("assumptions", []).append(
             f"Dönem belirtilmediği için {time_range['label'].lower()} incelendi.")
-        questions = [q for q in questions if not _is_period_question(q)]
     elif time_range is None:
         intent["needs_period"] = False  # else plan/execute apply "son 7 gün" themselves
 
@@ -282,7 +278,7 @@ async def understand_node(state: AnalysisState, config) -> Dict[str, Any]:
 
 
 def _is_period_question(question: Dict[str, Any]) -> bool:
-    """A model question that asks for the period again although the user just picked one."""
+    """A model question about the period: one of its options is a period ("Son 7 gün", "2026")."""
     return any(resolve_time_range(option) is not None for option in question.get("options") or [])
 
 
@@ -294,11 +290,6 @@ def _user_texts(state: AnalysisState) -> List[str]:
     texts.append((state.get("resume") or {}).get("answer", ""))
     texts += [m.get("content", "") for m in state.get("history") or [] if m.get("role") == "user"]
     return [t for t in texts if t]
-
-
-def _is_year_question(question: Dict[str, Any]) -> bool:
-    """A model question that asks which year a period is in (options like "2026", "2026 Eylül")."""
-    return any(re.match(r"\d{4}\b", str(option).strip()) for option in question.get("options") or [])
 
 
 def _coverage(time_range: Optional[Dict[str, str]]) -> Dict[str, Any]:

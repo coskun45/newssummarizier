@@ -184,10 +184,10 @@ def test_a_disabled_tool_is_never_offered_to_the_model(client, auth_headers, db_
 # ---------------------------------------------------------------------------
 
 def test_an_ambiguous_question_asks_first_and_the_answer_resumes(client, auth_headers, chat_env):
-    question = {"question": "Hangi dönem?", "options": ["Son 7 gün", "Son 30 gün"]}
+    question = {"question": "Hangi konu?", "options": ["Ukrayna Savaşı", "NATO"]}
     chat_env.script("understand",
                     {"restatement": "Durum özeti", "open_questions": [question]},
-                    {"restatement": "Son 7 günün özeti", "time_expression": "son 7 gün", "open_questions": []})
+                    {"restatement": "NATO özeti", "topics": ["NATO"], "open_questions": []})
     conversation_id = _new_conversation(client, auth_headers)
 
     first = _events(_send(client, auth_headers, conversation_id, "Durum nasıl?"))
@@ -200,14 +200,13 @@ def test_an_ambiguous_question_asks_first_and_the_answer_resumes(client, auth_he
     assert detail["status"] == "awaiting_clarification"
     assert detail["pending"]["questions"] == [question]
 
-    second = _events(_send(client, auth_headers, conversation_id, "Son 7 gün"))
+    second = _events(_send(client, auth_headers, conversation_id, "NATO"))
 
     assert "plan" in _types(second) and second[-1]["status"] == "idle"
     resumed = json.loads([c for c in chat_env.calls if c["purpose"] == "understand"][1]["messages"][1]["content"])
     assert resumed["soru"] == "Durum nasıl?"
-    assert resumed["netleştirmeler"] == [{"questions": [question], "answer": "Son 7 gün"}]
-    intent = next(e for e in second if e["type"] == "intent")
-    assert intent["time_range"]["label"] == "Son 7 gün"
+    assert resumed["netleştirmeler"] == [{"questions": [question], "answer": "NATO"}]
+    assert next(e for e in second if e["type"] == "intent")["restatement"] == "NATO özeti"
 
 
 def test_clarification_rounds_are_capped(client, auth_headers, chat_env, monkeypatch):
@@ -241,6 +240,21 @@ def test_a_word_without_a_period_is_not_asked_about(client, auth_headers, chat_e
     events = _events(_send(client, auth_headers, conversation_id, "Guardian'dan gelen son 5 haber hangileri?"))
     assert "clarification" not in _types(events)
     assert next(e for e in events if e["type"] == "intent")["time_range"] is None
+
+
+@pytest.mark.parametrize("needs_period, time_range", [(False, None), (True, "Son 7 gün")])
+def test_the_model_does_not_ask_for_a_period(client, auth_headers, chat_env, needs_period, time_range):
+    # "Okumadığım yüksek önemli haberler neler?" got "Hangi dönem?" from the model. A period is never
+    # the model's to ask about: a named one is resolved (or asked about by code when it can't be),
+    # none means the default week for general questions or all data.
+    chat_env.script("understand", {"restatement": "x", "time_expression": None, "needs_period": needs_period,
+                                   "open_questions": [{"question": "Hangi dönemi inceleyelim?",
+                                                       "options": ["Son 7 gün", "Son 30 gün", "Tüm veriler"]}]})
+    conversation_id = _new_conversation(client, auth_headers)
+    events = _events(_send(client, auth_headers, conversation_id, "Okumadığım yüksek önemli haberler neler?"))
+    assert "clarification" not in _types(events)
+    intent = next(e for e in events if e["type"] == "intent")
+    assert (intent["time_range"] or {}).get("label") == time_range
 
 
 def test_a_period_the_user_never_named_is_ignored(client, auth_headers, chat_env):
@@ -291,6 +305,13 @@ def test_the_report_cannot_mistake_a_table_id_for_an_article_id(client, auth_hea
     tables = report_input["tablolar_ve_grafikler"]
     assert tables and all("id" not in table for table in tables)
     assert tables[0]["tablo"] == "a1"
+
+
+def test_the_latest_n_articles_are_ordered_by_date_not_importance():
+    # "Guardian'dan gelen son 5 önemli haber" listed September's high-priority articles instead of
+    # the five newest: the listing rule ordered every list by priority first.
+    from app.agents.analysis import prompts
+    assert '"son N haber"' in prompts.PLAN and "yalnızca article_date DESC" in prompts.PLAN
 
 
 def test_counts_of_a_known_topic_are_planned_in_sql_not_search():
@@ -383,14 +404,14 @@ def test_the_answer_to_a_mid_run_question_starts_a_fresh_plan(client, auth_heade
 
 
 def test_a_time_choice_in_the_clarification_answer_overrides_the_question(client, auth_headers, chat_env):
-    # The model keeps the question's "son 24 saat" even after the user picked "Son 30 gün".
-    ask = {"restatement": "En önemli haberler", "time_expression": "son 24 saat",
-           "open_questions": [{"question": "Hangi dönem?", "options": ["Son 7 gün", "Son 30 gün"]}]}
-    keep = {"restatement": "En önemli haberler", "time_expression": "son 24 saat", "open_questions": []}
-    chat_env.script("understand", ask, keep)
+    # The resolver can't read "seçimlerden beri", so the user is asked; the model keeps the
+    # question's expression even after the user picked "Son 30 gün" — the pick wins.
+    ask = {"restatement": "En önemli haberler", "time_expression": "seçimlerden beri", "open_questions": []}
+    chat_env.script("understand", ask, ask)
     conversation_id = _new_conversation(client, auth_headers)
 
-    _send(client, auth_headers, conversation_id, "Son 24 saatin en önemli 5 haberi hangileri?")
+    first = _events(_send(client, auth_headers, conversation_id, "Seçimlerden beri en önemli 5 haber hangileri?"))
+    assert first[-1]["status"] == "awaiting_clarification"
     second = _events(_send(client, auth_headers, conversation_id, "Son 30 gün"))
 
     intent = next(e for e in second if e["type"] == "intent")
@@ -399,13 +420,11 @@ def test_a_time_choice_in_the_clarification_answer_overrides_the_question(client
 
 
 def test_all_data_as_the_clarification_answer_clears_the_time_range(client, auth_headers, chat_env):
-    ask = {"restatement": "x", "time_expression": "son 24 saat",
-           "open_questions": [{"question": "Hangi dönem?", "options": ["Son 7 gün", "Tüm veriler"]}]}
-    keep = {"restatement": "x", "time_expression": "son 24 saat", "open_questions": []}
-    chat_env.script("understand", ask, keep)
+    ask = {"restatement": "x", "time_expression": "seçimlerden beri", "open_questions": []}
+    chat_env.script("understand", ask, ask)
     conversation_id = _new_conversation(client, auth_headers)
 
-    _send(client, auth_headers, conversation_id, "Son 24 saat?")
+    _send(client, auth_headers, conversation_id, "Seçimlerden beri ne oldu?")
     second = _events(_send(client, auth_headers, conversation_id, "Tüm veriler"))
 
     assert next(e for e in second if e["type"] == "intent")["time_range"] is None

@@ -40,10 +40,10 @@ Görevin:
    restatement bu seçimi yansıtmalı (soruda "son 24 saat" yazsa da cevap "Son 30 gün" ise "son 30 gün").
    Kullanıcının son cevabı bir seçim değil de soru/itiraz ise (ör. "neden genişletiyorsun?"), restatement'ta
    bunun gerekçesini kısaca açıkla ve aynı seçimi open_questions ile yeniden sor; analiz başlatma.
-   Yılı yazılmamış bir ay/tarih her zaman en yakın geçmişteki odur (ör. bugün Ekim 2026 ise "Eylül" = Eylül 2026,
-   "Kasım" = Kasım 2025); hangi yıl olduğunu sorma.
-   Kullanıcı dönem belirtmediyse: cevap bir döneme bağlıysa (gündem/durum soruları: "haberler nasıl?",
-   "en önemli gelişmeler", "neler oluyor") needs_period=true yaz ve dönemi SORMA; dönemi sistem seçer, sen
+   Yılı yazılmamış bir ay/tarih her zaman en yakın geçmişteki odur (ör. bugün Mart ise "Şubat" bu yılın Şubat'ı,
+   "Aralık" geçen yılın Aralık'ı); hangi yıl olduğunu sorma.
+   Kullanıcı dönem belirtmediyse: cevap bir döneme bağlıysa (genel durum/özet soruları, ör. "durum ne?",
+   "bana bir özet geç") needs_period=true yaz ve dönemi SORMA; dönemi sistem seçer, sen
    restatement/assumptions'a dönem yazma.
    Tüm veri üzerinden anlamlı sorularda (toplam sayı, belirli bir konu/olay/kişi/ülke hakkında arama ve
    dağılımları, favoriler) needs_period=false; bunlarda dönemi sorma, tüm verilerde ara.
@@ -70,10 +70,13 @@ Kurallar:
 - Son adım raporu yazmak DEĞİLDİR; rapor ayrıca yazılır.
 - Önceki adımların bulguları verildiyse (yeniden planlama) onları tekrar etme, eksik kalanı planla.
 - Kullanıcının plan notu varsa ona uy.
-- Listeleme, sıralama ve sayım soruları ("en önemli 5 haber", "bu haftanın haberleri", "kaç yüksek önemli haber")
+- Listeleme, sıralama ve sayım soruları ("en önemli 10 haber", "dünkü haberler", "kaç düşük önemli haber")
   SQL ile çözülür: chat_articles'ta is_analyzable ve article_date filtresiyle, önem sırasına göre
   (CASE priority WHEN 'high' THEN 1 WHEN 'med' THEN 2 ELSE 3 END) ve sonra article_date DESC ile sırala.
   Bunlar için semantic_search kullanma.
+- "son N haber", "en yeni / en son haberler" bir zaman değil sıralama ifadesidir: yalnızca article_date DESC ile
+  sırala (önem sırası değil) ve ilk N'i al; "önemli" geçiyorsa yalnızca is_analyzable filtresi eklenir. Önem
+  sırası yalnızca "en önemli" denildiğinde kullanılır.
 - semantic_search yalnızca belirli bir konu/olay/kişi/içerik arandığında kullanılır (vektör arama açıksa): önce
   ilgili haberleri bul; sayım ve dağılımları sonra SQL'de bu haberlerin id'leriyle çıkar (arama sonucu tablosu
   SQL'de okunabilir: WHERE id IN (SELECT id FROM a1)). Başlık/konu ILIKE aramasıyla yeniden arama.
@@ -123,8 +126,9 @@ RELEVANCE = """Bir haber aramasının sonuçlarını süzersin. Arama sorgusu ve
 metin parçası) verilir. Haberler Almanca/İngilizce/Türkçe olabilir.
 
 Bir haber, sorgunun konusu/olayı/kişisi/ülkesi haberin ana konusu ya da önemli bir parçasıysa İLGİLİDİR.
-Yalnızca aynı bölgeden, benzer temada veya konuyu geçerken anan haberler İLGİSİZDİR (ör. "Gazze" sorgusunda
-Batı Şeria operasyonu, "İran" sorgusunda PKK veya Suriye haberi). Emin değilsen ilgili say.
+Yalnızca aynı bölgeden, benzer temada veya konuyu geçerken anan haberler İLGİSİZDİR (ör. "Japonya ekonomisi"
+sorgusunda Güney Kore ekonomisi haberi, "Brezilya seçimleri" sorgusunda Arjantin'deki grev haberi). Emin değilsen
+ilgili say.
 
 Yalnızca şu JSON'u döndür: {{"irrelevant": [ilgisiz haberlerin id'leri]}}"""
 
