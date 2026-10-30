@@ -64,6 +64,10 @@ understand → (clarify) → make_plan → (approve_plan) → execute_step ⇄ r
   hits): `tools.with_artifact_tables` prepends `a1 AS (SELECT 31 AS id UNION ALL …)` — first in the WITH so
   the query's CTEs see it. Not `a1(id) AS (VALUES …)`: sqlglot drops the column list for SQLite and `id`
   then bound to the outer table. Only tables with an id/article_id column are exposed.
+- **Semantic search results pass a fast-model relevance check** (`tools._relevant_only`, prompt `RELEVANCE`,
+  purpose `relevance`) before they are returned/stored as the table SQL reads: vector distances of related and
+  unrelated hits overlap (measured on the eval set), so no threshold works, and the agent counted every hit.
+  A failed check keeps all hits. Tests: `FakeAgentLLM` defaults `relevance` to "keep all".
 - **Topic names are matched in Python with `crud.group_name_key`**, never SQL `lower()`: Python and
   PostgreSQL lower "İ" differently, so "ABD-İran Krizi" filters returned nothing.
 

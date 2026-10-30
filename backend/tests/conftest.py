@@ -283,6 +283,7 @@ class FakeAgentLLM:
         "plan": {"steps": [{"goal": "Önem seviyelerini say", "tool": "sql"}]},
         "execute": "Adım bulgusu.",
         "reflect": {"decision": "continue"},
+        "relevance": {"irrelevant": []},  # the semantic search's relevance check keeps every hit
     }
 
     async def run(self, messages, model, max_tokens, *, purpose, json_mode=False, tools=None, temperature=0.2):

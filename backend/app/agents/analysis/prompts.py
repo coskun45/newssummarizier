@@ -93,8 +93,8 @@ Kurallar:
 - Gerekirse birkaç araç çağrısı yap (en fazla {max_calls}); bir sorgu hata verirse hatayı okuyup düzelt.
 - Önceki adımların bulgularını ve saklanan tabloları (artifact) kullan; aynı sorguyu tekrarlama.
 - "sql" alanı olan saklanan tabloların haber id'leri SQL'de tablo adıyla okunur: WHERE id IN (SELECT id FROM a1).
-  Vektör arama sonucunu böyle kullan; id'leri elle kopyalama, başlık ILIKE ile yeniden arama. Arama sonucunda
-  soruyla ilgisiz haberler varsa bunları açıkça çıkar: ... IN (SELECT id FROM a1) AND id NOT IN (12, 34).
+  Vektör arama sonucunu böyle kullan; id'leri elle kopyalama, başlık ILIKE ile yeniden arama. Arama sonuçları
+  ilgililik açısından zaten süzülmüştür; yine de açıkça ilgisiz bir haber kaldıysa çıkar: ... AND id NOT IN (12).
 - Grafik çizerken değerleri yalnızca gerçek sorgu sonuçlarından al, uydurma.
 - Adım bitince araç çağırmadan, bu adımın bulgusunu 1-4 cümleyle Türkçe yaz (sayılarla). Veri boşsa açıkça söyle."""
 
@@ -114,6 +114,15 @@ Kullanılabilir araçlar: {tools}
 Yalnızca şu JSON'u döndür:
 {{"decision": "continue", "reason": "...", "new_steps": [{{"goal": "...", "tool": "sql"}}],
   "questions": [{{"question": "...", "options": ["...", "..."]}}]}}"""
+
+RELEVANCE = """Bir haber aramasının sonuçlarını süzersin. Arama sorgusu ve bulunan haberler (başlık, kısa özet, eşleşen
+metin parçası) verilir. Haberler Almanca/İngilizce/Türkçe olabilir.
+
+Bir haber, sorgunun konusu/olayı/kişisi/ülkesi haberin ana konusu ya da önemli bir parçasıysa İLGİLİDİR.
+Yalnızca aynı bölgeden, benzer temada veya konuyu geçerken anan haberler İLGİSİZDİR (ör. "Gazze" sorgusunda
+Batı Şeria operasyonu, "İran" sorgusunda PKK veya Suriye haberi). Emin değilsen ilgili say.
+
+Yalnızca şu JSON'u döndür: {{"irrelevant": [ilgisiz haberlerin id'leri]}}"""
 
 REPORT = """Sen bir haber analizi asistanısın. Yürütülen analiz planının bulgularından kullanıcıya Türkçe, net bir
 rapor yazarsın. Bugün: {today}.

@@ -39,8 +39,9 @@ class FakeEmbeddings:
 
 
 @pytest.fixture()
-def vectors(monkeypatch, agent_db):
-    """pgvector "available" (SQLite computes similarity in Python) and a fake embeddings API."""
+def vectors(monkeypatch, agent_db, fake_agent_llm):
+    """pgvector "available" (SQLite computes similarity in Python), a fake embeddings API and a fake
+    agent LLM (the search's relevance check keeps every hit unless a test scripts it)."""
     monkeypatch.setitem(database.vector_support, "available", True)
     monkeypatch.setitem(database.vector_support, "reason", None)
     fake = FakeEmbeddings()
@@ -255,6 +256,36 @@ def test_semantic_search_topic_filter_matches_turkish_dotted_capitals(corpus, db
     result = asyncio.run(tools.run_semantic_search_tool({"query": "savaş", "topics": [asked]}, "a1"))
     ids = [hit["id"] for hit in json.loads(result["content"])["results"]]
     assert ids == [corpus["war"].id]
+
+
+def test_semantic_search_drops_hits_the_relevance_check_rejects(corpus, fake_agent_llm):
+    # Vector distance alone can't tell "about Iran" from "mentions the region": the hybrid
+    # questions counted PKK and Syria articles as Iran news. A fast-model check removes them,
+    # also from the a1 table SQL reads afterwards.
+    fake_agent_llm.cost_per_call = 0.001
+    fake_agent_llm.script("relevance", {"irrelevant": [corpus["election"].id, corpus["war"].id]})
+    result = asyncio.run(tools.run_semantic_search_tool({"query": "enerji krizi"}, "a1"))
+
+    content = json.loads(result["content"])
+    assert [hit["id"] for hit in content["results"]] == [corpus["energy"].id]
+    assert [row[0] for row in result["artifact"]["rows"]] == [corpus["energy"].id]
+    assert content["dropped_irrelevant"] == 2
+    assert result["cost"] > 0.001  # embedding + the check
+    check = next(c for c in fake_agent_llm.calls if c["purpose"] == "relevance")
+    sent = json.loads(check["messages"][1]["content"])
+    assert sent["sorgu"] == "enerji krizi"
+    assert {hit["id"] for hit in sent["haberler"]} == {corpus["energy"].id, corpus["election"].id, corpus["war"].id}
+
+
+def test_semantic_search_keeps_every_hit_when_the_relevance_check_fails(corpus, fake_agent_llm, monkeypatch):
+    async def broken(*args, **kwargs):
+        if kwargs.get("purpose") == "relevance":
+            raise RuntimeError("model down")
+        return await fake_agent_llm.run(*args, **kwargs)
+
+    monkeypatch.setattr(summary_service, "run_agent_llm", broken)
+    result = asyncio.run(tools.run_semantic_search_tool({"query": "enerji"}, "a1"))
+    assert result["ok"] and len(json.loads(result["content"])["results"]) == 3
 
 
 def test_semantic_search_rejects_a_bad_date(corpus):

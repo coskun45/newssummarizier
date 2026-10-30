@@ -20,6 +20,7 @@ from app.core.exceptions import CostLimitExceededError
 from app.db import crud
 from app.db.database import SessionLocal, vector_support
 from app.services import summary_service
+from app.agents.analysis import prompts
 from app.agents.analysis.sql_guard import SqlRejected, validate_sql
 from app.agents.analysis.time_range import resolve_time_range
 
@@ -397,7 +398,39 @@ async def run_semantic_search_tool(args: Dict[str, Any], artifact_id: str) -> Di
     vectors, cost = await summary_service.embed_texts([query], kind="chat")
     # The DB part runs in a worker thread so the event loop keeps serving other streams.
     results = await asyncio.to_thread(_search_results, vectors[0], query, filters, k)
-    return _finish_search(artifact_id, query, results, cost)
+    results, dropped, check_cost = await _relevant_only(query, results)
+    return _finish_search(artifact_id, query, results, cost + check_cost, dropped)
+
+
+RELEVANCE_MAX_TOKENS = 300
+
+
+async def _relevant_only(query: str, results: List[Dict[str, Any]]):
+    """Drop the hits a fast-model check finds unrelated to the query. Vector distance alone can't
+    separate "about Iran" from "mentions the region" (measured on the eval set, the distances of
+    relevant and unrelated hits overlap), and the agent counted every hit. On a failed check all
+    hits stay. Returns (results, dropped count, cost)."""
+    if not results:
+        return results, 0, 0.0
+    hits = [{"id": r["id"], "title": r["title"], "summary": _short(r["summary"], 200),
+             "evidence": _short(r["evidence"], 200)} for r in results]
+    try:
+        response = await summary_service.run_agent_llm(
+            [{"role": "system", "content": prompts.RELEVANCE},
+             {"role": "user", "content": json.dumps({"sorgu": query, "haberler": hits}, ensure_ascii=False)}],
+            settings.chat_fast_model, RELEVANCE_MAX_TOKENS, purpose="relevance", json_mode=True, temperature=0.0,
+        )
+    except CostLimitExceededError:
+        raise
+    except Exception:
+        logger.exception("Asistan relevance check failed; keeping every hit")
+        return results, 0, 0.0
+    try:
+        irrelevant = {int(i) for i in json.loads(response["content"]).get("irrelevant") or []}
+    except (ValueError, TypeError, AttributeError):
+        irrelevant = set()
+    kept = [r for r in results if r["id"] not in irrelevant]
+    return kept, len(results) - len(kept), response.get("cost") or 0.0
 
 
 def _search_results(vector: List[float], query: str, filters: Dict[str, Any], k: int) -> List[Dict[str, Any]]:
@@ -432,7 +465,8 @@ def _search_results(vector: List[float], query: str, filters: Dict[str, Any], k:
     return results
 
 
-def _finish_search(artifact_id: str, query: str, results: List[Dict[str, Any]], cost: float) -> Dict[str, Any]:
+def _finish_search(artifact_id: str, query: str, results: List[Dict[str, Any]], cost: float,
+                   dropped: int = 0) -> Dict[str, Any]:
     artifact = {
         "id": artifact_id, "kind": "table", "purpose": f"Vektör arama: {query}",
         "columns": ["id", "title", "date", "priority", "feed", "score"],
@@ -440,9 +474,12 @@ def _finish_search(artifact_id: str, query: str, results: List[Dict[str, Any]], 
         "truncated": False,
     }
     content: Dict[str, Any] = {"artifact_id": artifact_id, "results": results}
+    if dropped:
+        content["dropped_irrelevant"] = dropped  # removed by the relevance check; a1 holds only these results
     if not results:
         content["note"] = "Eşleşen haber yok; filtreleri gevşetmeyi veya sorguyu değiştirmeyi deneyin."
-    return {"ok": True, "summary": f"{len(results)} haber bulundu", "artifact": artifact, "cost": cost,
+    summary = f"{len(results)} haber bulundu" + (f" ({dropped} ilgisiz elendi)" if dropped else "")
+    return {"ok": True, "summary": summary, "artifact": artifact, "cost": cost,
             "content": json.dumps(content, ensure_ascii=False)}
 
 
