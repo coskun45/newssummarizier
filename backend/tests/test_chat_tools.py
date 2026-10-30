@@ -125,6 +125,22 @@ def test_sql_guard_accepts_joins_ctes_and_aggregates_on_the_views():
     ("bu haftanın", "2026-10-26T00:00:00", "2026-10-28T15:00:00"),
     ("geçen ayda", "2026-09-01T00:00:00", "2026-09-30T23:59:59"),
     ("bugünün", "2026-10-28T00:00:00", "2026-10-28T15:00:00"),
+    # a month named with "ay" ("Ağustos ayında") and a month part with a case ending
+    ("Ağustos ayında", "2026-08-01T00:00:00", "2026-08-31T23:59:59"),
+    ("eylül ayı", "2026-09-01T00:00:00", "2026-09-30T23:59:59"),
+    ("Eylül ayındaki", "2026-09-01T00:00:00", "2026-09-30T23:59:59"),
+    ("Eylül ortasında", "2026-09-11T00:00:00", "2026-09-20T23:59:59"),
+    ("ekim başında", "2026-10-01T00:00:00", "2026-10-10T23:59:59"),
+    # the year first, or a year alone
+    ("2026 Eylül", "2026-09-01T00:00:00", "2026-09-30T23:59:59"),
+    ("2025 kasım ayı", "2025-11-01T00:00:00", "2025-11-30T23:59:59"),
+    ("2019", "2019-01-01T00:00:00", "2019-12-31T23:59:59"),
+    ("2019 yılında", "2019-01-01T00:00:00", "2019-12-31T23:59:59"),
+    ("2019 yılının tamamı", "2019-01-01T00:00:00", "2019-12-31T23:59:59"),
+    ("2026", "2026-01-01T00:00:00", "2026-10-28T15:00:00"),
+    # two periods compared: the span covering both
+    ("bu hafta ile geçen hafta", "2026-10-19T00:00:00", "2026-10-28T15:00:00"),
+    ("Ağustos ve Eylül", "2026-08-01T00:00:00", "2026-09-30T23:59:59"),
 ])
 def test_time_resolver_turns_turkish_expressions_into_ranges(expression, start, end):
     resolved = resolve_time_range(expression, NOW)

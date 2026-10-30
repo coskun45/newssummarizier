@@ -231,6 +231,16 @@ def test_an_unknown_time_expression_becomes_a_clarifying_question(client, auth_h
     assert "seçimlerden beri" in clarification["questions"][0]["question"]
 
 
+def test_a_word_without_a_period_is_not_asked_about(client, auth_headers, chat_env):
+    # "Guardian'dan gelen son 5 haber": the model took "son" for a period and the user was asked
+    # which one; it only counts articles, so the question runs over all data.
+    chat_env.script("understand", {"restatement": "x", "time_expression": "son", "open_questions": []})
+    conversation_id = _new_conversation(client, auth_headers)
+    events = _events(_send(client, auth_headers, conversation_id, "Guardian'dan gelen son 5 haber hangileri?"))
+    assert "clarification" not in _types(events)
+    assert next(e for e in events if e["type"] == "intent")["time_range"] is None
+
+
 def _understand_inputs(fake):
     return [json.loads(c["messages"][1]["content"]) for c in fake.calls if c["purpose"] == "understand"]
 

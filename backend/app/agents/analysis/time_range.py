@@ -69,7 +69,11 @@ def _normalize(expression: str) -> str:
     # "Ekim'de" → "ekim"; but keep "Eylül'den beri" whole: _SINCE reads that ending itself.
     text = re.sub(r"'(?:de|da|te|ta|den|dan|ten|tan|in|ın|un|ün|nin|nın)\b(?!\s+(?:beri|bu yana|itibaren))",
                   "", text)
-    return re.sub(r"\s+", " ", text).strip(" .")
+    text = re.sub(r"\s+", " ", text).strip(" .")
+    # "2026 eylül" → "eylül 2026"; "2019 yılının tamamı" → "2019"; "ağustos ayında" → "ağustos"
+    text = re.sub(rf"^(\d{{4}}) ({_MONTH_RE})\b", r"\2 \1", text)
+    text = re.sub(r"^(\d{4}) (?:yıl|yil|sene)\w*(?: (?:tamamı|tamami|boyunca))?$", r"\1", text)
+    return re.sub(rf"^({_MONTH_RE})((?: \d{{4}})?) ay\w*$", r"\1\2", text)
 
 
 def _number(token: Optional[str]) -> Optional[int]:
@@ -149,6 +153,21 @@ def resolve_time_range(expression: str, now: Optional[datetime] = None) -> Optio
             if resolved is not None:
                 return _result(datetime.fromisoformat(resolved["from"]), now, f"{base} → bugün")
         return None
+    resolved = _resolve_with_case(text, now, tz)
+    if resolved is None:
+        # Two periods compared ("bu hafta ile geçen hafta"): the span covering both, so the
+        # coverage check and the plan see all of it; the steps then split it.
+        parts = re.split(r" (?:ile|ve|vs\.?) ", text, maxsplit=1)
+        if len(parts) == 2:
+            first, second = (_resolve_with_case(part, now, tz) for part in parts)
+            if first and second:
+                start = min(first["from"], second["from"], key=datetime.fromisoformat)
+                end = max(first["to"], second["to"], key=datetime.fromisoformat)
+                return {"from": start, "to": end, "label": f"{first['label']} ve {second['label']}"}
+    return resolved
+
+
+def _resolve_with_case(text: str, now: datetime, tz: ZoneInfo) -> Optional[Dict[str, str]]:
     resolved = _resolve(text, now, tz)
     if resolved is None:
         # The model copies case endings from the question ("son 30 günde", "bu haftanın").
@@ -161,8 +180,17 @@ def resolve_time_range(expression: str, now: Optional[datetime] = None) -> Optio
     return resolved
 
 
+_PERIOD_WORD = re.compile(rf"\d|\b(?:{_MONTH_RE}|{_UNIT_RE}|bugün|bugun|dün|dun|beri|yana|itibaren|önce|once)")
+
+
+def mentions_period(expression: str) -> bool:
+    """Whether the expression names a period at all. "son" alone (from "son 5 haber") doesn't —
+    asking the user which period they meant is then pointless."""
+    return bool(_PERIOD_WORD.search(_normalize(expression)))
+
+
 # Locative / ablative / genitive / -ki endings, longest first (incl. the buffer "n").
-_CASE_SUFFIXES = ("ndaki", "ndeki", "daki", "deki", "taki", "teki", "ndan", "nden", "nın", "nin", "nun",
+_CASE_SUFFIXES = ("ndaki", "ndeki", "daki", "deki", "taki", "teki", "ndan", "nden", "nda", "nde", "nın", "nin", "nun",
                   "nün", "dan", "den", "tan", "ten", "ın", "in", "un", "ün", "da", "de", "ta", "te", "ki")
 
 
@@ -198,6 +226,11 @@ def _resolve(text: str, now: datetime, tz: ZoneInfo) -> Optional[Dict[str, str]]
         except ValueError:
             return None
         return _calendar_range(first, last, text, now, tz)
+
+    # "2019": the whole year (until now when it is the current one)
+    if re.fullmatch(r"\d{4}", text):
+        year = int(text)
+        return _calendar_range(date(year, 1, 1), date(year, 12, 31), text, now, tz)
 
     # "1 eylül - 15 ekim [2026]"
     match = re.fullmatch(

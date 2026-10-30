@@ -20,7 +20,7 @@ from app.db.database import SessionLocal
 from app.services import summary_service
 from app.agents.analysis import prompts
 from app.agents.analysis.state import AnalysisState, PlanStep
-from app.agents.analysis.time_range import resolve_time_range
+from app.agents.analysis.time_range import mentions_period, resolve_time_range
 from app.agents.analysis.tools import CHAT_TOOLS, execute_tool, openai_tools
 
 logger = logging.getLogger(__name__)
@@ -211,6 +211,8 @@ async def understand_node(state: AnalysisState, config) -> Dict[str, Any]:
         time_range = picked_range
         intent["time_expression"] = picked_range["label"] if picked_range else None
         questions = [q for q in questions if not _is_period_question(q)]
+    elif expression and not mentions_period(expression):
+        intent["time_expression"] = None  # "son" of "son 5 haber": a count, not a period
     elif expression:
         if "time" in tools:
             time_range = resolve_time_range(expression)

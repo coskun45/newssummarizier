@@ -6,6 +6,8 @@ paths:
   - "tests/test_chat.py"
   - "tests/test_chat_tools.py"
   - "tests/test_embeddings.py"
+  - "evals/assistant/**"
+  - "tests/test_eval_scoring.py"
 ---
 
 # Asistan (analysis chat agent + vector search)
@@ -31,7 +33,11 @@ understand → (clarify) → make_plan → (approve_plan) → execute_step ⇄ r
   `understand` also checks `crud.get_article_coverage` for the range and asks right away (naming the
   newest article's date) when it holds no news, instead of letting the plan search an empty period;
   the coverage goes to plan/execute as `veri_kapsamı`. Filters listing every known topic/feed are
-  dropped. `resolve_time_range` strips one case suffix ("son 30 günde", "bu haftanın").
+  dropped. `resolve_time_range` strips one case suffix ("son 30 günde", "bu haftanın"), reads
+  "Ağustos ayında" / "2026 Eylül" / a bare year, and turns two compared periods ("bu hafta ile geçen
+  hafta") into the span covering both. An expression with no period word (`mentions_period`: "son" of
+  "son 5 haber") is dropped, not asked about. Add every new phrasing the eval finds to
+  `test_time_resolver_turns_turkish_expressions_into_ranges`.
 - **Nodes emit UI events through `config["configurable"]["emit"]`** (`nodes._emit`). A new event type
   also needs `ChatEvent` in `frontend/src/types/index.ts` and handling in `ChatRun.tsx`'s `deriveRun`.
 
@@ -100,3 +106,10 @@ understand → (clarify) → make_plan → (approve_plan) → execute_step ⇄ r
 - **Script the LLM with `fake_agent_llm`** (`FakeAgentLLM.script(purpose, ...)`, `tool_call(...)`);
   unscripted stages get defaults. Pretend pgvector with `monkeypatch.setitem(database.vector_support, ...)`.
 - The run limiter in `routes/chat.py` is process-wide; `test_chat.py` clears `chat._run_times` per test.
+
+## Eval (`evals/assistant/`)
+- **Quality is measured with `python -m evals.assistant.run_eval`** against the real DB + OpenAI (not part of
+  `pytest -q`). Gold answers are SQL in `dataset.yaml`, computed at run time with the agent's own
+  `resolve_time_range` — never hardcode counts. After changing prompts/nodes/tools, re-run the affected
+  categories and compare with the previous `results/run-*.md`.
+- The runner wraps `nodes.execute_tool` to record tool calls; if you rename/move it, update `run_eval.py`.
