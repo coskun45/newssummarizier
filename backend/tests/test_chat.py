@@ -293,6 +293,14 @@ def test_the_report_cannot_mistake_a_table_id_for_an_article_id(client, auth_hea
     assert tables[0]["tablo"] == "a1"
 
 
+def test_counts_of_a_known_topic_are_planned_in_sql_not_search():
+    # "Ukrayna Savaşı konusunda kaç haber?" was counted from a semantic search (≤15 hits, filtered
+    # for relevance): 6 instead of 12.
+    from app.agents.analysis import prompts
+    for prompt in (prompts.PLAN, prompts.EXECUTE):
+        assert "chat_article_topics" in prompt and "tam sayım" in prompt
+
+
 def test_the_data_model_ties_importance_level_to_priority():
     # "önem seviyelerine göre" was grouped by importance (important/unimportant): one useless bucket.
     from app.agents.analysis import prompts

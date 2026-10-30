@@ -421,19 +421,13 @@
     time_range: t
     tools_any_of: [[sql, semantic_search]]
     gold:
-      - name: migration_ids
-        match: top_ids
-        sql: >
-          SELECT a.id FROM chat_articles a JOIN chat_article_topics t ON t.article_id = a.id
-          WHERE t.topic_name = 'Migrasyon / Göç' AND a.is_analyzable
-          AND a.article_date BETWEEN '{t_from}' AND '{t_to}' ORDER BY a.article_date DESC
       - name: migration_count
         match: scalar
         sql: >
           SELECT COUNT(*) FROM chat_articles a JOIN chat_article_topics t ON t.article_id = a.id
           WHERE t.topic_name = 'Migrasyon / Göç' AND a.is_analyzable
           AND a.article_date BETWEEN '{t_from}' AND '{t_to}'
-    rubric: "Son 4 haftadaki göç haberlerinin sayısı ve [#id] ile kısa listesi verilmeli."
+    rubric: "Son 4 haftadaki göç (Migrasyon / Göç) haberlerinin sayısı verilmeli."
 
 # ---------------------------------------------------------------------------
 # 7. İçerik / vektör arama

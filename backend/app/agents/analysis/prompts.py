@@ -77,6 +77,8 @@ Kurallar:
 - semantic_search yalnızca belirli bir konu/olay/kişi/içerik arandığında kullanılır (vektör arama açıksa): önce
   ilgili haberleri bul; sayım ve dağılımları sonra SQL'de bu haberlerin id'leriyle çıkar (arama sonucu tablosu
   SQL'de okunabilir: WHERE id IN (SELECT id FROM a1)). Başlık/konu ILIKE aramasıyla yeniden arama.
+- Niyette konu (topics) varsa o konunun sayım/dağılım/trend/listesi SQL'de chat_article_topics üzerinden çıkar;
+  semantic_search en fazla 15 sonuç döner ve süzülür, tam sayım vermez.
 - Niyette konu veya kaynak yoksa filtre uydurma.
 - veri_kapsamı aralıkta kaç haber olduğunu ve en yeni haberin tarihini söyler; aralıkta haber yoksa aynı aralık
   için farklı filtrelerle tekrar tekrar arama adımı ekleme.
@@ -95,6 +97,8 @@ Kurallar:
 - "sql" alanı olan saklanan tabloların haber id'leri SQL'de tablo adıyla okunur: WHERE id IN (SELECT id FROM a1).
   Vektör arama sonucunu böyle kullan; id'leri elle kopyalama, başlık ILIKE ile yeniden arama. Arama sonuçları
   ilgililik açısından zaten süzülmüştür; yine de açıkça ilgisiz bir haber kaldıysa çıkar: ... AND id NOT IN (12).
+- Bilinen bir konunun (niyet.topics) haberlerini saymak/listelemek için chat_article_topics ile SQL kullan;
+  semantic_search en fazla 15 süzülmüş sonuç döner, tam sayım vermez.
 - Grafik çizerken değerleri yalnızca gerçek sorgu sonuçlarından al, uydurma.
 - Adım bitince araç çağırmadan, bu adımın bulgusunu 1-4 cümleyle Türkçe yaz (sayılarla). Veri boşsa açıkça söyle."""
 
