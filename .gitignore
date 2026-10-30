@@ -28,3 +28,6 @@ backend/bulletin_reports/
 
 # Playwright MCP browser logs
 .playwright-mcp/
+
+# Asistan eval runs (traces + reports) — regenerate with python -m evals.assistant.run_eval
+backend/evals/assistant/results/
