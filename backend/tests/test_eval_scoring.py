@@ -47,6 +47,18 @@ def test_cited_ids_and_report_numbers_keep_ids_apart():
     assert "403" not in numbers
 
 
+def test_report_numbers_read_turkish_thousands_separators():
+    assert {"1234", "12500"} <= scoring.report_numbers("Toplam 1.234 haber, 12.500 okuma; oran %37,5.")
+
+
+def test_importing_the_runner_does_not_patch_the_agent():
+    # The recorder used to be installed at import: every pytest session that collected this file
+    # ran the agent tests through it.
+    from app.agents.analysis import nodes, tools
+    import evals.assistant.run_eval  # noqa: F401
+    assert nodes.execute_tool is tools.execute_tool
+
+
 def test_perfect_count_answer_passes():
     t = trace([sql_record(["count"], [[12]])], "Geçen ay 12 yüksek önemli haber vardı.", RANGE)
     expect = {"clarification": "forbidden", "time_range": "t", "tools_required": ["sql"],

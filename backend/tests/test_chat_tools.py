@@ -12,7 +12,7 @@ import pytest
 
 from app.agents.analysis import tools
 from app.agents.analysis.sql_guard import SqlRejected, validate_sql
-from app.agents.analysis.time_range import resolve_time_range
+from app.agents.analysis.time_range import mentions_period, named_by_user, resolve_time_range
 from app.db import crud, models
 from tests.conftest import _make_article, _make_feed
 
@@ -150,9 +150,39 @@ def test_time_resolver_turns_turkish_expressions_into_ranges(expression, start, 
     assert resolved["to"].startswith(end)
 
 
-@pytest.mark.parametrize("expression", ["", "ara sıra", "xyz'den beri", "31 şubat", "2026-10-05 - 2026-10-01"])
+@pytest.mark.parametrize("expression", ["", "ara sıra", "xyz'den beri", "31 şubat", "2026-10-05 - 2026-10-01",
+                                        "0000"])  # a year datetime can't hold must not raise
 def test_time_resolver_returns_none_when_it_does_not_understand(expression):
     assert resolve_time_range(expression, NOW) is None
+
+
+@pytest.mark.parametrize("expression, expected", [
+    ("son 5", False), ("son 5 haber", False), ("son", False),  # a count, not a period
+    ("son 5 gün", True), ("2019", True), ("1-15 ekim", True), ("geçen hafta", True), ("dünden beri", True),
+])
+def test_mentions_period_needs_a_period_word_not_just_a_number(expression, expected):
+    assert mentions_period(expression) is expected
+
+
+@pytest.mark.parametrize("expression, user, expected", [
+    # the model's own period, matched by accident on a word's first letters or a shared number
+    ("Son 30 gün", "Güney Kore ekonomisi hakkında ne var?", False),
+    ("Son 7 gün", "Gündemdeki konular neler?", False),
+    ("Son 1 ay", "Ayrıntılı bir özet ver", False),
+    ("dün", "Dünya haberleri", False),
+    ("son 5 gün", "Guardian'dan son 5 haber", False),
+    # the user's own period in other words or with case endings
+    ("bu yıl", "Bu sene kaç haber var?", True),
+    ("geçen yıl", "geçen sene neler oldu", True),
+    ("Son 7 gün", "son bir haftada ne oldu", True),
+    ("Son 30 gün", "Son 30 günde neler oldu?", True),
+    ("1-15 Ekim", "Ekim'in ilk yarısı", True),
+    ("eylül", "Eylül ayında kaç haber", True),
+    ("2019", "2019 yılında", True),
+    ("dün", "dünkü haberler", True),
+])
+def test_named_by_user_matches_whole_period_words(expression, user, expected):
+    assert named_by_user(expression, [user]) is expected
 
 
 def test_time_tool_also_returns_utc_bounds_for_sql():
@@ -227,6 +257,41 @@ def test_sql_table_reference_edges(agent_db, db_session):
     for name in ("a1", "a2", "a9"):
         result = tools.run_sql_tool({"query": f"SELECT * FROM {name}"}, "a3", artifacts)
         assert not result["ok"] and "okunamaz" in result["summary"]
+    # an existing table without article ids says why, instead of "only the views can be read"
+    result = tools.run_sql_tool({"query": "SELECT * FROM a1"}, "a3", artifacts)
+    assert "haber id" in result["summary"]
+
+
+def test_a_cut_table_is_not_readable_as_a_complete_id_set(agent_db, db_session):
+    # A 200-row cut of 350 ids, counted in a later step, silently gave 200.
+    _make_feed(db_session)
+    cut = {**_search_artifact([1, 2, 3]), "truncated": True}
+    assert tools.article_ids_of(cut) is None
+    result = tools.run_sql_tool({"query": "SELECT COUNT(*) FROM a1"}, "a2", {"a1": cut})
+    assert not result["ok"] and "kesilmiş" in result["summary"]
+
+
+def test_sql_tables_keep_the_queries_own_ctes_and_comments(agent_db, db_session):
+    _make_feed(db_session)
+    artifacts = {"a1": _search_artifact([7, 8])}
+    # the query defines its own a1: that one wins, no duplicate CTE name
+    own = tools.run_sql_tool({"query": "WITH a1 AS (SELECT 1 AS id) SELECT id FROM a1"}, "a2", artifacts)
+    assert own["ok"], own["summary"]
+    assert own["artifact"]["rows"] == [[1]]
+    # a leading comment before WITH
+    commented = tools.run_sql_tool({"query": "-- önce bul" + chr(10) + "WITH x AS (SELECT id FROM a1) SELECT COUNT(*) FROM x"},
+                                   "a3", artifacts)
+    assert commented["ok"], commented["summary"]
+    assert commented["artifact"]["rows"] == [[2]]
+
+
+def test_the_shown_sql_is_the_models_query_not_the_injected_ids(agent_db, db_session):
+    _make_feed(db_session)
+    query = "SELECT COUNT(*) FROM a1"
+    result = tools.run_sql_tool({"query": query}, "a2", {"a1": _search_artifact(list(range(1, 50)))})
+    assert result["ok"]
+    for shown in (result["sql"], result["artifact"]["sql"]):
+        assert query in shown and "UNION ALL" not in shown
 
 
 def test_sql_tool_keeps_the_full_result_as_artifact_and_shows_the_model_a_slice(agent_db, db_session):

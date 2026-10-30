@@ -15,6 +15,9 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
+import sqlglot
+from sqlglot import exp
+
 from app.core.config import settings
 from app.core.exceptions import CostLimitExceededError
 from app.db import crud
@@ -249,12 +252,13 @@ def run_time_tool(args: Dict[str, Any]) -> Dict[str, Any]:
 
 
 _ID_COLUMNS = ("id", "article_id")
-_TABLE_REF = re.compile(r"\b(a\d+)\b", re.IGNORECASE)
+_TABLE_NAME = re.compile(r"a\d+")
 
 
 def article_ids_of(artifact: Dict[str, Any]) -> Optional[List[int]]:
-    """The article ids of a table artifact (its id / article_id column), or None if it has none."""
-    if artifact.get("kind") != "table":
+    """The article ids of a table artifact (its id / article_id column), or None if it has none —
+    or if the table was cut at the row limit: a partial id list would silently undercount."""
+    if artifact.get("kind") != "table" or artifact.get("truncated"):
         return None
     columns = [str(c).lower() for c in artifact.get("columns") or []]
     index = next((columns.index(c) for c in _ID_COLUMNS if c in columns), None)
@@ -269,49 +273,79 @@ def article_ids_of(artifact: Dict[str, Any]) -> Optional[List[int]]:
     return list(dict.fromkeys(ids))
 
 
-def with_artifact_tables(query: str, artifacts: Optional[Dict[str, Dict[str, Any]]]) -> str:
+def with_artifact_tables(query: str, artifacts: Optional[Dict[str, Dict[str, Any]]]):
     """Let the query read earlier tables by name — `WHERE id IN (SELECT id FROM a1)` for the
-    articles a semantic search found — by putting each referenced table's article ids in front
-    as a CTE `a1(id)`. First in the WITH, so the query's own CTEs see it too. The ids are ints
-    from our own results; the guard still checks the whole query."""
-    ctes = []
-    for name in dict.fromkeys(m.lower() for m in _TABLE_REF.findall(query)):
-        ids = article_ids_of((artifacts or {}).get(name) or {})
+    articles a semantic search found — by adding each referenced table's article ids as a CTE
+    `a1`, first in the WITH so the query's own CTEs see it too (a CTE the query names `a1` itself
+    wins). Done on the parsed query, so comments and existing WITHs are kept intact. The ids are
+    ints from our own results; the guard still checks the whole query.
+    Returns (query to run, names injected, why a referenced earlier table can't be read)."""
+    try:
+        root = sqlglot.parse_one(query, read="postgres")
+    except sqlglot.errors.ParseError:
+        return query, [], {}  # the guard reports the parse error
+    if not isinstance(root, exp.Query):
+        return query, [], {}
+    own = {cte.alias_or_name.lower() for cte in root.find_all(exp.CTE)}
+    names = sorted({t.name.lower() for t in root.find_all(exp.Table)
+                    if _TABLE_NAME.fullmatch(t.name.lower()) and t.name.lower() not in own})
+    ctes, injected, unreadable = [], [], {}
+    for name in names:
+        artifact = (artifacts or {}).get(name)
+        if artifact is None:
+            continue  # no such table: the guard's "okunamaz" lists what can be read
+        ids = article_ids_of(artifact)
         if ids is None:
+            unreadable[name] = (
+                "satır sınırında kesilmiş, tam id listesi değil; sorguyu doğrudan view'larda yaz"
+                if artifact.get("truncated") else
+                "haber id'si (id / article_id sütunu) yok; yalnızca haber id'li tablolar okunabilir, "
+                "sayım/özet tablolarındaki değerleri sorguya kendin yaz")
             continue
         # SELECT … UNION ALL, not `a1(id) AS (VALUES …)`: sqlglot drops the column list when
         # writing SQLite, and an unnamed column made `SELECT id FROM a1` read the outer table's id.
         body = " UNION ALL ".join(f"SELECT {i} AS id" for i in ids) or "SELECT 0 AS id WHERE 1 = 0"
-        ctes.append(f"{name} AS ({body})")
+        ctes.append(exp.CTE(this=sqlglot.parse_one(body), alias=exp.TableAlias(this=exp.to_identifier(name))))
+        injected.append(name)
     if not ctes:
-        return query
-    match = re.match(r"\s*with\s+(recursive\s+)?", query, re.IGNORECASE)
-    if match:
-        return f"{match.group(0)}{', '.join(ctes)}, {query[match.end():]}"
-    return f"WITH {', '.join(ctes)} {query}"
+        return query, [], unreadable
+    existing = root.args.get("with")
+    if existing is not None:
+        existing.set("expressions", ctes + list(existing.expressions))
+    else:
+        root.set("with", exp.With(expressions=ctes))
+    return root.sql(dialect="postgres"), injected, unreadable
 
 
 def run_sql_tool(args: Dict[str, Any], artifact_id: str,
                  artifacts: Optional[Dict[str, Dict[str, Any]]] = None) -> Dict[str, Any]:
-    query = with_artifact_tables(str(args.get("query") or ""), artifacts)
+    original = str(args.get("query") or "")
+    query, injected, unreadable = with_artifact_tables(original, artifacts)
+    if unreadable:
+        reason = "; ".join(f"'{name}' okunamaz: {why}" for name, why in unreadable.items())
+        return {"ok": False, "summary": f"Sorgu reddedildi: {reason}", "sql": original,
+                "content": json.dumps({"error": f"Sorgu reddedildi: {reason}"}, ensure_ascii=False)}
+    # Shown in the trace: the model's query, not hundreds of injected ids in front of it.
+    shown = f"-- {', '.join(injected)}: önceki tablonun haber id'leri\n{original}" if injected else None
     db = SessionLocal()
     try:
         dialect = "postgres" if db.get_bind().dialect.name == "postgresql" else "sqlite"
         try:
             sql = validate_sql(query, settings.chat_sql_max_rows, dialect=dialect)
         except SqlRejected as e:
-            return {"ok": False, "summary": f"Sorgu reddedildi: {e}", "sql": query,
+            return {"ok": False, "summary": f"Sorgu reddedildi: {e}", "sql": shown or query,
                     "content": json.dumps({"error": f"Sorgu reddedildi: {e}"}, ensure_ascii=False)}
         try:
             result = crud.run_readonly_query(db, sql, settings.chat_sql_timeout_ms, settings.chat_sql_max_rows)
         except Exception as e:  # syntax/runtime error from the DB: let the model fix its query
             message = str(getattr(e, "orig", e)).strip().splitlines()[0][:300]
-            return {"ok": False, "summary": f"Sorgu hatası: {message}", "sql": sql,
+            return {"ok": False, "summary": f"Sorgu hatası: {message}", "sql": shown or sql,
                     "content": json.dumps({"error": f"Sorgu hatası: {message}"}, ensure_ascii=False)}
     finally:
         db.close()
 
     rows = [[_json_value(v) for v in row] for row in result["rows"]]
+    sql = shown or sql
     artifact = {"id": artifact_id, "kind": "table", "sql": sql, "purpose": args.get("purpose"),
                 "columns": result["columns"], "rows": rows, "truncated": result["truncated"]}
     shown = rows[:LLM_TABLE_ROWS]

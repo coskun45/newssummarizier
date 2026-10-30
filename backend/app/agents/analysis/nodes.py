@@ -211,7 +211,9 @@ async def understand_node(state: AnalysisState, config) -> Dict[str, Any]:
     questions = [q for q in _questions(intent.get("open_questions")) if not _is_period_question(q)]
     limitations = list(state.get("limitations") or [])
 
-    time_range = state.get("time_range")
+    # A default week from an earlier round is re-decided, not kept: the answer may have named a
+    # topic (all data) and the rebuilt intent no longer says the week was assumed.
+    time_range = None if (state.get("intent") or {}).get("period_defaulted") else state.get("time_range")
     expression = str(intent.get("time_expression") or "").strip()
     picked, picked_range = _answered_time_range(answered) if answered and "time" in tools else (False, None)
     if picked:
@@ -237,6 +239,7 @@ async def understand_node(state: AnalysisState, config) -> Dict[str, Any]:
         # say so (the report states its assumptions) rather than asking or summarising all data.
         # Not for a named event/topic ("Gazze'deki saldırılar"): that searches all data.
         time_range = resolve_time_range(DEFAULT_PERIOD)
+        intent["period_defaulted"] = True
         intent.setdefault("assumptions", []).append(
             f"Dönem belirtilmediği için {time_range['label'].lower()} incelendi.")
     elif time_range is None:

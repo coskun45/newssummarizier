@@ -344,6 +344,21 @@ def test_a_general_question_without_a_period_uses_the_last_7_days(client, auth_h
     assert any("son 7 gün" in a.lower() for a in report_input["varsayımlar"])
 
 
+def test_the_default_week_is_not_carried_into_the_next_round(client, auth_headers, chat_env):
+    # Round 1 defaults to the last 7 days and asks something else; the answer names a topic, which
+    # covers all data — the stored default week must not stick (nor be applied silently).
+    chat_env.script("understand",
+                    {"restatement": "x", "needs_period": True,
+                     "open_questions": [{"question": "Hangi konu?", "options": ["NATO", "Ukrayna Savaşı"]}]},
+                    {"restatement": "NATO", "needs_period": True, "topics": ["NATO"], "open_questions": []})
+    conversation_id = _new_conversation(client, auth_headers)
+    first = _events(_send(client, auth_headers, conversation_id, "Haberler nasıl?"))
+    assert first[-1]["status"] == "awaiting_clarification"
+
+    second = _events(_send(client, auth_headers, conversation_id, "NATO"))
+    assert next(e for e in second if e["type"] == "intent")["time_range"] is None
+
+
 @pytest.mark.parametrize("intent", [
     {"needs_period": False},
     # a question about a named event/topic searches all data even if the model flags a period

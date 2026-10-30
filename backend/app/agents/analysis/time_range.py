@@ -182,33 +182,51 @@ def _resolve_with_case(text: str, now: datetime, tz: ZoneInfo) -> Optional[Dict[
     return resolved
 
 
-_PERIOD_WORD = re.compile(rf"\d|\b(?:{_MONTH_RE}|{_UNIT_RE}|bugün|bugun|dün|dun|beri|yana|itibaren|önce|once)")
+_DAY_WORDS = {"bugün": "today", "bugun": "today", "dün": "yesterday", "dun": "yesterday"}
+_SINCE_WORDS = {"beri", "yana", "itibaren", "önce", "once"}
+def _period_key(word: str) -> Optional[tuple]:
+    """What period a single (normalised) word names, case endings allowed — ("month", 9) for
+    "eylülde", ("unit",) for any of gün/hafta/ay/yıl/sene/saat, ("year", 2019) — or None. Whole
+    words only: "Güney", "Gündem", "Ayrıntılı", "Dünya" name no period."""
+    if re.fullmatch(r"\d{4}", word):
+        return ("year", int(word))
+    for stem in [word] + [word[:-len(e)] for e in _WORD_ENDINGS if word.endswith(e) and len(word) > len(e)]:
+        if stem in MONTHS:
+            return ("month", MONTHS[stem])
+        if stem in _UNITS:
+            return ("unit",)  # units are interchangeable: "bu sene" = "bu yıl", "bir hafta" ≈ "7 gün"
+        if stem in _DAY_WORDS:
+            return ("day", _DAY_WORDS[stem])
+        if stem in _SINCE_WORDS:
+            return ("since", stem)
+    return None
+
+
+def _period_keys(text: str) -> set:
+    return {key for word in re.findall(r"\w+", _normalize(text)) if (key := _period_key(word))}
 
 
 def named_by_user(expression: str, user_texts) -> bool:
-    """Whether the expression's period words come from what the user wrote (the question, their
-    answers, earlier turns). The model sometimes adds a period of its own ("Son 30 gün" for a
-    question naming none), which then hides older articles. One shared word is enough:
-    "Ekim'in ilk yarısı" → "1-15 Ekim"."""
-    user = " " + _normalize(" ".join(user_texts)) + " "
-    for token in re.findall(r"\w+", _normalize(expression)):
-        if token.isdigit():
-            if re.search(rf"(?<!\d){token}(?!\d)", user):
-                return True
-        elif _PERIOD_WORD.match(token) and re.search(rf"\b{re.escape(token[:4])}", user):
-            return True
-    return False
+    """Whether the expression's period comes from what the user wrote (the question, their answers,
+    earlier turns). The model sometimes adds a period of its own ("Son 30 gün" for a question
+    naming none), which then hides older articles. One shared period word is enough ("Ekim'in ilk
+    yarısı" → "1-15 Ekim"); a shared number alone is not ("son 5 haber" doesn't make "son 5 gün")."""
+    expected = _period_keys(expression)
+    return bool(expected & _period_keys(" ".join(user_texts)))
 
 
 def mentions_period(expression: str) -> bool:
-    """Whether the expression names a period at all. "son" alone (from "son 5 haber") doesn't —
-    asking the user which period they meant is then pointless."""
-    return bool(_PERIOD_WORD.search(_normalize(expression)))
+    """Whether the expression names a period at all. "son" or "son 5" (from "son 5 haber") doesn't
+    — asking the user which period they meant is then pointless."""
+    return bool(_period_keys(expression))
 
 
 # Locative / ablative / genitive / -ki endings, longest first (incl. the buffer "n").
 _CASE_SUFFIXES = ("ndaki", "ndeki", "daki", "deki", "taki", "teki", "ndan", "nden", "nda", "nde", "nın", "nin", "nun",
                   "nün", "dan", "den", "tan", "ten", "ın", "in", "un", "ün", "da", "de", "ta", "te", "ki")
+# Endings a period word takes in a question ("günde", "ayında", "dünkü", "haftanın", "yılı").
+_WORD_ENDINGS = tuple(sorted({*_CASE_SUFFIXES, "ında", "inde", "unda", "ünde", "ının", "inin", "unun", "ünün",
+                              "lık", "lik", "luk", "lük", "kü", "ı", "i", "u", "ü", "yı", "yi"}, key=len, reverse=True))
 
 
 def _resolve(text: str, now: datetime, tz: ZoneInfo) -> Optional[Dict[str, str]]:
@@ -247,6 +265,8 @@ def _resolve(text: str, now: datetime, tz: ZoneInfo) -> Optional[Dict[str, str]]
     # "2019": the whole year (until now when it is the current one)
     if re.fullmatch(r"\d{4}", text):
         year = int(text)
+        if year < 1:
+            return None  # "0000": datetime has no year 0
         return _calendar_range(date(year, 1, 1), date(year, 12, 31), text, now, tz)
 
     # "1 eylül - 15 ekim [2026]"

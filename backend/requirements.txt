@@ -26,6 +26,7 @@ aiohttp==3.9.3
 urllib3==2.1.0
 
 # Utilities
+PyYAML==6.0.2  # evals/assistant datasets (also a langchain-core dependency; pinned so the import never breaks)
 python-dotenv==1.0.1
 python-dateutil==2.8.2
 pydantic==2.10.3

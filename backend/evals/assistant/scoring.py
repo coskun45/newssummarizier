@@ -14,7 +14,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
 # Priority values the agent may print translated (SQL CASE ... THEN 'Yüksek').
 _SYNONYMS = {"yüksek": "high", "orta": "med", "düşük": "low", "medium": "med"}
 _CITE = re.compile(r"\[?#(\d+)\]?")
-_NUMBER = re.compile(r"(?<![\w#])\d+(?:[.,]\d+)?")
+_NUMBER = re.compile(r"(?<![\w#])\d{1,3}(?:\.\d{3})+(?![.,]?\d)|(?<![\w#])\d+(?:[.,]\d+)?")
 _ZERO_WORDS = re.compile(r"\bhiç\b|\byok\b|bulunm|\bsıfır\b", re.IGNORECASE)
 _ID_COLUMNS = ("id", "article_id")
 
@@ -80,7 +80,12 @@ def cited_ids(report: str) -> List[int]:
 def report_numbers(report: str) -> Set[str]:
     """Numbers in the report (cited ids excluded), normalised."""
     text = _CITE.sub(" ", report or "")
-    return {norm(n.replace(",", ".")) for n in _NUMBER.findall(text)}
+    numbers = set()
+    for n in _NUMBER.findall(text):
+        numbers.add(norm(n.replace(",", ".")))
+        if re.fullmatch(r"\d{1,3}(?:\.\d{3})+", n):
+            numbers.add(norm(n.replace(".", "")))  # Turkish thousands separator: "1.234" = 1234
+    return numbers
 
 
 def artifact_ids(artifact: Dict[str, Any]) -> List[int]:

@@ -36,8 +36,10 @@ understand → (clarify) → make_plan → (approve_plan) → execute_step ⇄ r
   dropped. `resolve_time_range` strips one case suffix ("son 30 günde", "bu haftanın"), reads
   "Ağustos ayında" / "2026 Eylül" / a bare year, and turns two compared periods ("bu hafta ile geçen
   hafta") into the span covering both. An expression with no period word (`mentions_period`: "son" of
-  "son 5 haber") is dropped, not asked about, and so is one the user never wrote (`named_by_user` — the
-  model added "Son 30 gün" to an event question). Add every new phrasing the eval finds to
+  "son 5 haber" — a number alone is no period) is dropped, not asked about, and so is one the user never
+  wrote (`named_by_user` — the model added "Son 30 gün" to an event question). Both compare whole period
+  words with case endings (`_period_key`), never prefixes: "gün" ≠ "Güney"/"Gündem", "dün" ≠ "Dünya"; units
+  are interchangeable ("bu sene" = "bu yıl"). A defaulted week is re-decided each round (`period_defaulted`). Add every new phrasing the eval finds to
   `test_time_resolver_turns_turkish_expressions_into_ranges`.
 - **No period named but the answer needs one** (`intent.needs_period`, "Haberler nasıl?") → `DEFAULT_PERIOD`
   (son 7 gün) plus an assumption the report states — but only for general questions: with entities/topics/
@@ -63,7 +65,10 @@ understand → (clarify) → make_plan → (approve_plan) → execute_step ⇄ r
 - **SQL can read an earlier table's article ids by name** (`SELECT id FROM a1`, e.g. a semantic search's
   hits): `tools.with_artifact_tables` prepends `a1 AS (SELECT 31 AS id UNION ALL …)` — first in the WITH so
   the query's CTEs see it. Not `a1(id) AS (VALUES …)`: sqlglot drops the column list for SQLite and `id`
-  then bound to the outer table. Only tables with an id/article_id column are exposed.
+  then bound to the outer table. Only complete tables with an id/article_id column are exposed — not a
+  table cut at the row limit (`truncated`: a partial id list silently undercounts); referencing one returns a
+  reason the model can act on. The CTEs are added on the sqlglot AST (a query's own `a1` CTE wins, comments
+  survive), and the trace/artifact show the model's query, not the injected ids.
 - **Semantic search results pass a fast-model relevance check** (`tools._relevant_only`, prompt `RELEVANCE`,
   purpose `relevance`) before they are returned/stored as the table SQL reads: vector distances of related and
   unrelated hits overlap (measured on the eval set), so no threshold works, and the agent counted every hit.

@@ -60,7 +60,10 @@ async def _recording_execute_tool(*args, **kwargs):
     return result
 
 
-nodes.execute_tool = _recording_execute_tool
+def install_recorder() -> None:
+    """Route the agent's tool calls through the recorder. Called by main(), never at import: the
+    pytest suite imports this module (test_eval_scoring) and must test the real execute_tool."""
+    nodes.execute_tool = _recording_execute_tool
 
 
 # ---------------------------------------------------------------------------
@@ -397,6 +400,7 @@ def select(items: List[Dict[str, Any]], ids: Optional[str], category: Optional[s
 
 async def main_async(args) -> None:
     init_db()
+    install_recorder()
     items = select(load_dataset(DATASETS[args.dataset]), args.ids, args.category)
     if args.gold_only:
         for item in items:
