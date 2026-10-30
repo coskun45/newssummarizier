@@ -47,8 +47,8 @@ _records: contextvars.ContextVar[Optional[List[ToolRecord]]] = contextvars.Conte
 _original_execute_tool = nodes.execute_tool
 
 
-async def _recording_execute_tool(function_name, raw_arguments, allowed, artifact_id):
-    result = await _original_execute_tool(function_name, raw_arguments, allowed, artifact_id)
+async def _recording_execute_tool(*args, **kwargs):
+    result = await _original_execute_tool(*args, **kwargs)
     records = _records.get()
     if records is not None:
         records.append(ToolRecord(tool=result["tool"], ok=result["ok"], input=result.get("input") or {},

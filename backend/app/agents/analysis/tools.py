@@ -9,6 +9,7 @@ the Python sandbox and web search come in later stages) AND *enabled* in Ayarlar
 import asyncio
 import json
 import logging
+import re
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -142,8 +143,9 @@ _SCHEMAS: Dict[str, Dict[str, Any]] = {
     "sql": {
         "name": "run_sql",
         "description": "Haber verisinde salt-okunur tek bir PostgreSQL SELECT sorgusu çalıştırır. Yalnızca "
-                       "chat_articles, chat_article_topics, chat_summaries view'ları okunabilir. Sonuç en fazla "
-                       f"{settings.chat_sql_max_rows} satırdır.",
+                       "chat_articles, chat_article_topics, chat_summaries view'ları ve önceki adımların haber "
+                       "içeren tabloları (a1, a2…; tek sütun: id — ör. WHERE id IN (SELECT id FROM a1)) "
+                       f"okunabilir. Sonuç en fazla {settings.chat_sql_max_rows} satırdır.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -245,8 +247,52 @@ def run_time_tool(args: Dict[str, Any]) -> Dict[str, Any]:
             "content": json.dumps(payload, ensure_ascii=False), "data": payload}
 
 
-def run_sql_tool(args: Dict[str, Any], artifact_id: str) -> Dict[str, Any]:
-    query = str(args.get("query") or "")
+_ID_COLUMNS = ("id", "article_id")
+_TABLE_REF = re.compile(r"\b(a\d+)\b", re.IGNORECASE)
+
+
+def article_ids_of(artifact: Dict[str, Any]) -> Optional[List[int]]:
+    """The article ids of a table artifact (its id / article_id column), or None if it has none."""
+    if artifact.get("kind") != "table":
+        return None
+    columns = [str(c).lower() for c in artifact.get("columns") or []]
+    index = next((columns.index(c) for c in _ID_COLUMNS if c in columns), None)
+    if index is None:
+        return None
+    ids = []
+    for row in artifact.get("rows") or []:
+        try:
+            ids.append(int(row[index]))
+        except (TypeError, ValueError, IndexError):
+            continue
+    return list(dict.fromkeys(ids))
+
+
+def with_artifact_tables(query: str, artifacts: Optional[Dict[str, Dict[str, Any]]]) -> str:
+    """Let the query read earlier tables by name — `WHERE id IN (SELECT id FROM a1)` for the
+    articles a semantic search found — by putting each referenced table's article ids in front
+    as a CTE `a1(id)`. First in the WITH, so the query's own CTEs see it too. The ids are ints
+    from our own results; the guard still checks the whole query."""
+    ctes = []
+    for name in dict.fromkeys(m.lower() for m in _TABLE_REF.findall(query)):
+        ids = article_ids_of((artifacts or {}).get(name) or {})
+        if ids is None:
+            continue
+        # SELECT … UNION ALL, not `a1(id) AS (VALUES …)`: sqlglot drops the column list when
+        # writing SQLite, and an unnamed column made `SELECT id FROM a1` read the outer table's id.
+        body = " UNION ALL ".join(f"SELECT {i} AS id" for i in ids) or "SELECT 0 AS id WHERE 1 = 0"
+        ctes.append(f"{name} AS ({body})")
+    if not ctes:
+        return query
+    match = re.match(r"\s*with\s+(recursive\s+)?", query, re.IGNORECASE)
+    if match:
+        return f"{match.group(0)}{', '.join(ctes)}, {query[match.end():]}"
+    return f"WITH {', '.join(ctes)} {query}"
+
+
+def run_sql_tool(args: Dict[str, Any], artifact_id: str,
+                 artifacts: Optional[Dict[str, Dict[str, Any]]] = None) -> Dict[str, Any]:
+    query = with_artifact_tables(str(args.get("query") or ""), artifacts)
     db = SessionLocal()
     try:
         dialect = "postgres" if db.get_bind().dialect.name == "postgresql" else "sqlite"
@@ -433,10 +479,12 @@ def run_chart_tool(args: Dict[str, Any], artifact_id: str) -> Dict[str, Any]:
             "content": json.dumps({"ok": True, "artifact_id": artifact_id}, ensure_ascii=False)}
 
 
-async def execute_tool(function_name: str, raw_arguments: str, allowed: List[str], artifact_id: str) -> Dict[str, Any]:
+async def execute_tool(function_name: str, raw_arguments: str, allowed: List[str], artifact_id: str,
+                       artifacts: Optional[Dict[str, Dict[str, Any]]] = None) -> Dict[str, Any]:
     """Run one model-requested tool call. Never raises: an unknown/disabled tool or bad arguments
     come back as an error result the model can react to. Returns {tool, input, ok, summary,
-    content (for the model), artifact?, chart?, sql?, cost?}. Only a cost-limit stop raises."""
+    content (for the model), artifact?, chart?, sql?, cost?}. Only a cost-limit stop raises.
+    `artifacts` are the run's earlier tables, which SQL can read by name (with_artifact_tables)."""
     tool = _FUNCTION_TO_TOOL.get(function_name)
     try:
         args = json.loads(raw_arguments or "{}")
@@ -456,7 +504,7 @@ async def execute_tool(function_name: str, raw_arguments: str, allowed: List[str
                 outcome = run_time_tool(args)
             elif tool == "sql":
                 # Up to CHAT_SQL_TIMEOUT_MS of blocking DB work: off the event loop.
-                outcome = await asyncio.to_thread(run_sql_tool, args, artifact_id)
+                outcome = await asyncio.to_thread(run_sql_tool, args, artifact_id, artifacts)
             elif tool == "semantic_search":
                 outcome = await run_semantic_search_tool(args, artifact_id)
             else:

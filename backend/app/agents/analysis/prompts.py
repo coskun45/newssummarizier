@@ -28,7 +28,8 @@ Bilinen kaynaklar: {feeds}
 Görevin:
 1. Sorunun amacını tek cümlede yeniden ifade et (restatement).
 2. Analiz türünü belirle: trend | comparison | distribution | qa | list | other.
-3. Kapsamı çıkar: zaman ifadesi (kullanıcının sözcükleriyle, ör. "geçen hafta"; yoksa null), önem seviyeleri,
+3. Kapsamı çıkar: zaman ifadesi (kullanıcının sözcükleriyle, ör. "geçen hafta"; kullanıcı dönem söylemediyse
+   null — kendin dönem ekleme), önem seviyeleri,
    kişi/ülke/kurum gibi varlıklar. Konu ve kaynakları YALNIZCA kullanıcı açıkça andıysa yaz (yukarıdaki
    listelerden); genel bir soruda ("en önemli haberler") boş bırak, listenin tamamını kopyalama ve bunu varsayım
    olarak da yazma.
@@ -41,10 +42,15 @@ Görevin:
    bunun gerekçesini kısaca açıkla ve aynı seçimi open_questions ile yeniden sor; analiz başlatma.
    Yılı yazılmamış bir ay/tarih her zaman en yakın geçmişteki odur (ör. bugün Ekim 2026 ise "Eylül" = Eylül 2026,
    "Kasım" = Kasım 2025); hangi yıl olduğunu sorma.
+   Kullanıcı dönem belirtmediyse: cevap bir döneme bağlıysa (gündem/durum soruları: "haberler nasıl?",
+   "en önemli gelişmeler", "neler oluyor") needs_period=true yaz ve dönemi SORMA; dönemi sistem seçer, sen
+   restatement/assumptions'a dönem yazma.
+   Tüm veri üzerinden anlamlı sorularda (toplam sayı, belirli bir konu/olay/kişi/ülke hakkında arama ve
+   dağılımları, favoriler) needs_period=false; bunlarda dönemi sorma, tüm verilerde ara.
 5. Varsayım yaptıysan assumptions listesine yaz.
 
 Yalnızca şu JSON'u döndür:
-{{"restatement": "...", "analysis_type": "...", "time_expression": null, "priorities": [], "topics": [],
+{{"restatement": "...", "analysis_type": "...", "time_expression": null, "needs_period": false, "priorities": [], "topics": [],
   "feeds": [], "entities": [], "output": "report|chart|list", "assumptions": [],
   "open_questions": [{{"question": "...", "options": ["...", "..."]}}]}}"""
 
@@ -69,7 +75,8 @@ Kurallar:
   (CASE priority WHEN 'high' THEN 1 WHEN 'med' THEN 2 ELSE 3 END) ve sonra article_date DESC ile sırala.
   Bunlar için semantic_search kullanma.
 - semantic_search yalnızca belirli bir konu/olay/kişi/içerik arandığında kullanılır (vektör arama açıksa): önce
-  ilgili haberleri bul; sayım ve dağılımları sonra SQL'de bu haberlerin id'leriyle (WHERE id IN (...)) çıkar.
+  ilgili haberleri bul; sayım ve dağılımları sonra SQL'de bu haberlerin id'leriyle çıkar (arama sonucu tablosu
+  SQL'de okunabilir: WHERE id IN (SELECT id FROM a1)). Başlık/konu ILIKE aramasıyla yeniden arama.
 - Niyette konu veya kaynak yoksa filtre uydurma.
 - veri_kapsamı aralıkta kaç haber olduğunu ve en yeni haberin tarihini söyler; aralıkta haber yoksa aynı aralık
   için farklı filtrelerle tekrar tekrar arama adımı ekleme.
@@ -85,6 +92,9 @@ gerçekleştirirsin. Bugün: {today}.
 Kurallar:
 - Gerekirse birkaç araç çağrısı yap (en fazla {max_calls}); bir sorgu hata verirse hatayı okuyup düzelt.
 - Önceki adımların bulgularını ve saklanan tabloları (artifact) kullan; aynı sorguyu tekrarlama.
+- "sql" alanı olan saklanan tabloların haber id'leri SQL'de tablo adıyla okunur: WHERE id IN (SELECT id FROM a1).
+  Vektör arama sonucunu böyle kullan; id'leri elle kopyalama, başlık ILIKE ile yeniden arama. Arama sonucunda
+  soruyla ilgisiz haberler varsa bunları açıkça çıkar: ... IN (SELECT id FROM a1) AND id NOT IN (12, 34).
 - Grafik çizerken değerleri yalnızca gerçek sorgu sonuçlarından al, uydurma.
 - Adım bitince araç çağırmadan, bu adımın bulgusunu 1-4 cümleyle Türkçe yaz (sayılarla). Veri boşsa açıkça söyle."""
 
@@ -109,7 +119,8 @@ REPORT = """Sen bir haber analizi asistanısın. Yürütülen analiz planının 
 rapor yazarsın. Bugün: {today}.
 
 Kurallar:
-- İlk cümlede sorunun doğrudan cevabını ver; sonra kısa başlıklarla temel bulgular (sayılarla), gerekiyorsa
+- İlk cümlede sorunun doğrudan cevabını ver; varsayımlar (ör. kullanıcı dönem belirtmediği için seçilen dönem)
+  varsa bunu ilk paragrafta açıkça söyle. Sonra kısa başlıklarla temel bulgular (sayılarla), gerekiyorsa
   yorum ve sınırlamalar.
 - Yalnızca bulgulardaki ve tablolardaki verilere dayan; veri yoksa uydurma, eksikliği söyle.
 - Haberlere [#id] biçiminde atıf yap (ör. [#123]); id yalnızca tablolardaki haber kimliğidir (id / article_id

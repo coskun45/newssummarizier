@@ -243,6 +243,29 @@ def test_a_word_without_a_period_is_not_asked_about(client, auth_headers, chat_e
     assert next(e for e in events if e["type"] == "intent")["time_range"] is None
 
 
+def test_a_period_the_user_never_named_is_ignored(client, auth_headers, chat_env):
+    # "Gazze'de yaşanan saldırılar hakkında hangi haberler var?" came back with time_expression
+    # "Son 30 gün" and the search missed the September articles.
+    chat_env.script("understand", {"restatement": "x", "time_expression": "Son 30 gün", "entities": ["Gazze"],
+                                   "open_questions": []})
+    conversation_id = _new_conversation(client, auth_headers)
+    events = _events(_send(client, auth_headers, conversation_id,
+                           "Gazze'de yaşanan saldırılar hakkında hangi haberler var?"))
+    assert next(e for e in events if e["type"] == "intent")["time_range"] is None
+
+
+@pytest.mark.parametrize("question, expression", [
+    ("Son 30 günde neler oldu?", "son 30 gün"),
+    ("Geçen haftaki haberler", "geçen hafta"),
+    ("Ekim'in ilk yarısı", "1-15 Ekim"),
+])
+def test_a_period_from_the_users_words_is_kept(client, auth_headers, db_session, chat_env, question, expression):
+    chat_env.script("understand", {"restatement": "x", "time_expression": expression, "open_questions": []})
+    conversation_id = _new_conversation(client, auth_headers)
+    events = _events(_send(client, auth_headers, conversation_id, question))
+    assert next(e for e in events if e["type"] == "intent")["time_range"] is not None
+
+
 def test_a_year_question_about_a_resolved_period_is_not_asked(client, auth_headers, db_session, chat_env):
     # "Eylül ayında kaç haber?": the model asked "Hangi yılın Eylül'ü?" although a month without a
     # year is the most recent one and the resolver already picked it.
@@ -275,6 +298,51 @@ def test_the_data_model_ties_importance_level_to_priority():
     from app.agents.analysis import prompts
     assert "önem seviyesi" in prompts.DATA_MODEL.split("priority", 1)[1].split("\n", 1)[0]
     assert "importance'a göre gruplama" in prompts.DATA_MODEL
+
+
+def test_a_general_question_without_a_period_uses_the_last_7_days(client, auth_headers, chat_env):
+    # "Haberler nasıl?": no period named, but the answer depends on one → last 7 days, said openly,
+    # instead of asking (or silently summarising all data).
+    chat_env.script("understand", {"restatement": "Gündem", "time_expression": None, "needs_period": True,
+                                   "open_questions": [{"question": "Hangi dönem?", "options": ["Son 7 gün", "Bu ay"]}]})
+    conversation_id = _new_conversation(client, auth_headers)
+    events = _events(_send(client, auth_headers, conversation_id, "Haberler nasıl?"))
+    assert "clarification" not in _types(events)
+    intent = next(e for e in events if e["type"] == "intent")
+    assert intent["time_range"]["label"] == "Son 7 gün"
+    assert any("son 7 gün" in a.lower() for a in intent["assumptions"])
+    report_input = json.loads(next(c for c in chat_env.calls if c["purpose"] == "report")["messages"][1]["content"])
+    assert any("son 7 gün" in a.lower() for a in report_input["varsayımlar"])
+
+
+@pytest.mark.parametrize("intent", [
+    {"needs_period": False},
+    # a question about a named event/topic searches all data even if the model flags a period
+    {"needs_period": True, "entities": ["Gazze"]},
+    {"needs_period": True, "topics": ["DW"]},
+])
+def test_a_question_over_all_data_gets_no_default_period(client, auth_headers, chat_env, intent):
+    chat_env.script("understand", {"restatement": "x", "time_expression": None, "open_questions": [], **intent})
+    conversation_id = _new_conversation(client, auth_headers)
+    events = _events(_send(client, auth_headers, conversation_id, "Gazze'deki saldırılar hakkında ne var?"))
+    assert next(e for e in events if e["type"] == "intent")["time_range"] is None
+    # the planner must not see the flag either: it called the time tool with "son 7 gün" itself
+    assert not _plan_inputs(chat_env)[0]["niyet"].get("needs_period")
+
+
+def test_a_later_step_can_query_an_earlier_steps_articles(client, auth_headers, chat_env):
+    chat_env.script("plan", {"steps": [{"goal": "Bul", "tool": "sql"}, {"goal": "Say", "tool": "sql"}]})
+    chat_env.script("execute",
+                    FakeAgentLLM.tool_call("run_sql", query="SELECT id FROM chat_articles WHERE priority = 'high'"),
+                    "Bulundu.",
+                    FakeAgentLLM.tool_call("run_sql", query="SELECT COUNT(*) AS n FROM chat_articles "
+                                                            "WHERE id IN (SELECT id FROM a1)"),
+                    "Sayıldı.")
+    conversation_id = _new_conversation(client, auth_headers)
+    events = _events(_send(client, auth_headers, conversation_id, "Yüksek önemli haberleri say"))
+    results = [e for e in events if e["type"] == "tool_result"]
+    assert [r["ok"] for r in results] == [True, True]
+    assert results[1]["summary"] == "1 satır"
 
 
 def _understand_inputs(fake):

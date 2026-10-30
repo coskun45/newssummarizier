@@ -552,18 +552,37 @@
 - id: clr-01
   category: netlestirme
   question: "Haberler nasıl?"
-  clarification_answers: ["Son 7 gün, genel bir özet istiyorum"]
+  ranges: {t: "son 7 gün"}
   expect:
-    clarification: required
-    rubric: "Belirsiz soru için netleştirme sorulmalı; cevaptan sonra son 7 günün önemli haberleri (sayılar, öne çıkan konular, [#id] atıfları) özetlenmeli."
+    clarification: forbidden
+    time_range: t
+    tools_required: [sql]
+    gold:
+      - name: week
+        match: id_recall
+        min_cited: 2  # a summary may pick any of the week's articles; it must cite some of them
+        sql: >
+          SELECT id FROM chat_articles WHERE is_analyzable AND article_date BETWEEN '{t_from}' AND '{t_to}'
+        in_tools: false
+    report_must_match: ["son 7 gün|7 gün|son bir hafta"]
+    rubric: "Dönem belirtilmediği için soru sormadan son 7 gün incelenmeli ve bu raporda açıkça söylenmeli; dönemin önemli haberleri (sayılar, öne çıkan konular, [#id]) özetlenmeli."
 
 - id: clr-02
   category: netlestirme
   question: "En önemli gelişmeler neler?"
-  clarification_answers: ["Geçen ay"]
+  ranges: {t: "son 7 gün"}
   expect:
-    clarification: optional
-    rubric: "Dönem sorulmalı ya da varsayılan dönem açıkça yazılmalı; seçilen dönemin yüksek önemli haberleri [#id] ile özetlenmeli."
+    clarification: forbidden
+    time_range: t
+    tools_required: [sql]
+    gold:
+      - name: top_week
+        match: top_ids
+        sql: >
+          SELECT id FROM chat_articles WHERE is_analyzable AND article_date BETWEEN '{t_from}' AND '{t_to}'
+          ORDER BY CASE priority WHEN 'high' THEN 1 WHEN 'med' THEN 2 ELSE 3 END, article_date DESC LIMIT 3
+    report_must_match: ["son 7 gün|7 gün|son bir hafta"]
+    rubric: "Soru sormadan son 7 günün en önemli haberleri [#id] ile verilmeli ve dönemin varsayıldığı belirtilmeli."
 
 - id: clr-03
   category: netlestirme

@@ -194,6 +194,41 @@ def test_sql_tool_reports_rejections_and_db_errors_to_the_model(agent_db, db_ses
     assert not broken["ok"] and "hatası" in json.loads(broken["content"])["error"]
 
 
+def _search_artifact(ids):
+    return {"id": "a1", "kind": "table", "columns": ["id", "title", "score"],
+            "rows": [[i, f"t{i}", 0.1] for i in ids], "truncated": False}
+
+
+def test_sql_can_read_the_article_ids_of_an_earlier_table(agent_db, db_session):
+    # Hybrid questions: count/group the articles a semantic search found, without copying ids.
+    feed = _make_feed(db_session)
+    ids = [_make_article(db_session, feed.id, priority=p, status="summarized").id for p in ("high", "med", "med")]
+    artifacts = {"a1": _search_artifact(ids[:2])}
+
+    result = tools.run_sql_tool({"query": "SELECT priority, COUNT(*) FROM chat_articles "
+                                          "WHERE id IN (SELECT id FROM a1) GROUP BY priority ORDER BY priority"},
+                                "a2", artifacts)
+    assert result["ok"], result["summary"]
+    assert result["artifact"]["rows"] == [["high", 1], ["med", 1]]
+
+    # also when the query has its own CTEs (which may read a1 too)
+    result = tools.run_sql_tool({"query": "WITH found AS (SELECT a.id FROM chat_articles a JOIN a1 ON a1.id = a.id) "
+                                          "SELECT COUNT(*) FROM found"}, "a3", artifacts)
+    assert result["ok"] and result["artifact"]["rows"] == [[2]]
+
+
+def test_sql_table_reference_edges(agent_db, db_session):
+    _make_feed(db_session)
+    empty = tools.run_sql_tool({"query": "SELECT COUNT(*) FROM a1"}, "a2", {"a1": _search_artifact([])})
+    assert empty["ok"] and empty["artifact"]["rows"] == [[0]]
+    # a table that doesn't exist, or one without article ids (a chart, an aggregate), stays unreadable
+    artifacts = {"a1": {"id": "a1", "kind": "table", "columns": ["priority", "n"], "rows": [["high", 1]]},
+                 "a2": {"id": "a2", "kind": "chart", "title": "x"}}
+    for name in ("a1", "a2", "a9"):
+        result = tools.run_sql_tool({"query": f"SELECT * FROM {name}"}, "a3", artifacts)
+        assert not result["ok"] and "okunamaz" in result["summary"]
+
+
 def test_sql_tool_keeps_the_full_result_as_artifact_and_shows_the_model_a_slice(agent_db, db_session):
     feed = _make_feed(db_session)
     for i in range(tools.LLM_TABLE_ROWS + 5):

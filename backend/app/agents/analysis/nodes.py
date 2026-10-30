@@ -21,8 +21,8 @@ from app.db.database import SessionLocal
 from app.services import summary_service
 from app.agents.analysis import prompts
 from app.agents.analysis.state import AnalysisState, PlanStep
-from app.agents.analysis.time_range import mentions_period, resolve_time_range
-from app.agents.analysis.tools import CHAT_TOOLS, execute_tool, openai_tools
+from app.agents.analysis.time_range import mentions_period, named_by_user, resolve_time_range
+from app.agents.analysis.tools import CHAT_TOOLS, article_ids_of, execute_tool, openai_tools
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,7 @@ PLAN_MAX_TOKENS = 1500
 EXECUTE_MAX_TOKENS = 1500
 REFLECT_MAX_TOKENS = 800
 REPORT_MAX_TOKENS = 3000
+DEFAULT_PERIOD = "son 7 gün"  # for questions that need a period but name none ("Haberler nasıl?")
 PHASE_LABELS = {
     "understanding": "Soruyu anlıyorum",
     "planning": "Plan çıkarıyorum",
@@ -148,8 +149,11 @@ def _artifact_index(artifacts: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]
     index = []
     for artifact in artifacts.values():
         if artifact.get("kind") == "table":
-            index.append({"id": artifact["id"], "kind": "table", "purpose": artifact.get("purpose"),
-                          "columns": artifact.get("columns"), "row_count": len(artifact.get("rows") or [])})
+            entry = {"id": artifact["id"], "kind": "table", "purpose": artifact.get("purpose"),
+                     "columns": artifact.get("columns"), "row_count": len(artifact.get("rows") or [])}
+            if article_ids_of(artifact) is not None:
+                entry["sql"] = f"SELECT id FROM {artifact['id']}"  # its article ids, readable by run_sql
+            index.append(entry)
         else:
             index.append({"id": artifact["id"], "kind": artifact.get("kind"), "title": artifact.get("title")})
     return index
@@ -212,8 +216,10 @@ async def understand_node(state: AnalysisState, config) -> Dict[str, Any]:
         time_range = picked_range
         intent["time_expression"] = picked_range["label"] if picked_range else None
         questions = [q for q in questions if not _is_period_question(q)]
-    elif expression and not mentions_period(expression):
-        intent["time_expression"] = None  # "son" of "son 5 haber": a count, not a period
+    elif expression and (not mentions_period(expression) or not named_by_user(expression, _user_texts(state))):
+        # "son" of "son 5 haber" is a count, not a period; and a period the user never named
+        # (the model added "Son 30 gün") would hide older articles.
+        intent["time_expression"] = None
     elif expression:
         if "time" in tools:
             time_range = resolve_time_range(expression)
@@ -227,6 +233,18 @@ async def understand_node(state: AnalysisState, config) -> Dict[str, Any]:
         else:
             time_range = None
             limitations.append(f"Zaman tespiti kapalı; “{expression}” ifadesi yorumlanarak kullanıldı.")
+    general = not intent.get("entities") and not intent.get("topics") and not intent.get("feeds")
+    if (not picked and time_range is None and not intent.get("time_expression") and intent.get("needs_period")
+            and general and "time" in tools):
+        # "Haberler nasıl?": the answer depends on a period the user didn't name. Use a default and
+        # say so (the report states its assumptions) rather than asking or summarising all data.
+        # Not for a named event/topic ("Gazze'deki saldırılar"): that searches all data.
+        time_range = resolve_time_range(DEFAULT_PERIOD)
+        intent.setdefault("assumptions", []).append(
+            f"Dönem belirtilmediği için {time_range['label'].lower()} incelendi.")
+        questions = [q for q in questions if not _is_period_question(q)]
+    elif time_range is None:
+        intent["needs_period"] = False  # else plan/execute apply "son 7 gün" themselves
 
     coverage = _coverage(time_range)
     rounds = state.get("clarification_rounds", 0)
@@ -266,6 +284,16 @@ async def understand_node(state: AnalysisState, config) -> Dict[str, Any]:
 def _is_period_question(question: Dict[str, Any]) -> bool:
     """A model question that asks for the period again although the user just picked one."""
     return any(resolve_time_range(option) is not None for option in question.get("options") or [])
+
+
+def _user_texts(state: AnalysisState) -> List[str]:
+    """Everything the user wrote in this conversation: the question, clarification answers (the
+    latest one too, still in `resume`), earlier questions."""
+    texts = [state.get("question", "")]
+    texts += [c.get("answer", "") for c in state.get("clarifications") or []]
+    texts.append((state.get("resume") or {}).get("answer", ""))
+    texts += [m.get("content", "") for m in state.get("history") or [] if m.get("role") == "user"]
+    return [t for t in texts if t]
 
 
 def _is_year_question(question: Dict[str, Any]) -> bool:
@@ -423,7 +451,7 @@ async def execute_step_node(state: AnalysisState, config) -> Dict[str, Any]:
                 artifact_id = f"a{len(artifacts) + 1}"
                 await _emit(config, "tool_call", step_id=step["id"], call_id=call["id"], name=call["name"],
                             arguments=call["arguments"])
-                result = await execute_tool(call["name"], call["arguments"], tools, artifact_id)
+                result = await execute_tool(call["name"], call["arguments"], tools, artifact_id, artifacts)
                 cost = round(cost + (result.get("cost") or 0.0), 6)
                 if result.get("artifact"):
                     artifacts[artifact_id] = result["artifact"]

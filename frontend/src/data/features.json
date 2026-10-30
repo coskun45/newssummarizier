@@ -178,12 +178,12 @@
         {
           "id": "assistant-empty-period-check",
           "title": "Asistan: boş dönem uyarısı ve dönem seçimi",
-          "description": "Sorulan dönemde (ör. son 24 saat) hiç haber yoksa asistan arama yapmadan bunu hemen söyler, en yeni haberin tarihini belirtir ve Son 7 gün / Son 30 gün / Tüm veriler seçeneklerini sunar. Netleştirmede seçilen dönem sorudaki ifadenin yerine geçer; \"neden?\" gibi bir itirazda gerekçeyi açıklayıp seçimi yeniden sorar."
+          "description": "Sorulan dönemde (ör. son 24 saat) hiç haber yoksa asistan arama yapmadan bunu hemen söyler, en yeni haberin tarihini belirtir ve Son 7 gün / Son 30 gün / Tüm veriler seçeneklerini sunar. Netleştirmede seçilen dönem sorudaki ifadenin yerine geçer; \"neden?\" gibi bir itirazda gerekçeyi açıklayıp seçimi yeniden sorar. Dönem belirtilmeyen genel sorularda (\"Haberler nasıl?\") soru sormadan son 7 gün incelenir ve raporda bu açıkça belirtilir."
         },
         {
           "id": "assistant-vector-search",
           "title": "Asistan: vektör arama",
-          "description": "Özetlenen haberlerin metni parçalara bölünerek vektörleştirilir: sayfası çekilebilen haberlerde tam metin, ödeme duvarı veya robots.txt nedeniyle çekilemeyenlerde RSS metni. Asistan konu, olay ve ayrıntı sorularında ilgili haberleri anlam benzerliği ve kelime eşleşmesiyle birlikte bulur. Yeni haberler özetlenince otomatik vektörleştirilir, eskiler için toplu vektörleştirme başlatılabilir; hiç metni olmayan haberler ayrıca gösterilir."
+          "description": "Özetlenen haberlerin metni parçalara bölünerek vektörleştirilir: sayfası çekilebilen haberlerde tam metin, ödeme duvarı veya robots.txt nedeniyle çekilemeyenlerde RSS metni. Asistan konu, olay ve ayrıntı sorularında ilgili haberleri anlam benzerliği ve kelime eşleşmesiyle birlikte bulur; bulduğu haberlerin önem, kaynak ve tarih dağılımını ardından veritabanında doğrudan bu haberler üzerinden çıkarır. Yeni haberler özetlenince otomatik vektörleştirilir, eskiler için toplu vektörleştirme başlatılabilir; hiç metni olmayan haberler ayrıca gösterilir."
         },
         {
           "id": "assistant-settings",

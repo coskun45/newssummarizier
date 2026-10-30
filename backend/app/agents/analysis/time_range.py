@@ -185,6 +185,21 @@ def _resolve_with_case(text: str, now: datetime, tz: ZoneInfo) -> Optional[Dict[
 _PERIOD_WORD = re.compile(rf"\d|\b(?:{_MONTH_RE}|{_UNIT_RE}|bugün|bugun|dün|dun|beri|yana|itibaren|önce|once)")
 
 
+def named_by_user(expression: str, user_texts) -> bool:
+    """Whether the expression's period words come from what the user wrote (the question, their
+    answers, earlier turns). The model sometimes adds a period of its own ("Son 30 gün" for a
+    question naming none), which then hides older articles. One shared word is enough:
+    "Ekim'in ilk yarısı" → "1-15 Ekim"."""
+    user = " " + _normalize(" ".join(user_texts)) + " "
+    for token in re.findall(r"\w+", _normalize(expression)):
+        if token.isdigit():
+            if re.search(rf"(?<!\d){token}(?!\d)", user):
+                return True
+        elif _PERIOD_WORD.match(token) and re.search(rf"\b{re.escape(token[:4])}", user):
+            return True
+    return False
+
+
 def mentions_period(expression: str) -> bool:
     """Whether the expression names a period at all. "son" alone (from "son 5 haber") doesn't —
     asking the user which period they meant is then pointless."""

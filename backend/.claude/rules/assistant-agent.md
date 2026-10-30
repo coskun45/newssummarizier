@@ -36,8 +36,12 @@ understand → (clarify) → make_plan → (approve_plan) → execute_step ⇄ r
   dropped. `resolve_time_range` strips one case suffix ("son 30 günde", "bu haftanın"), reads
   "Ağustos ayında" / "2026 Eylül" / a bare year, and turns two compared periods ("bu hafta ile geçen
   hafta") into the span covering both. An expression with no period word (`mentions_period`: "son" of
-  "son 5 haber") is dropped, not asked about. Add every new phrasing the eval finds to
+  "son 5 haber") is dropped, not asked about, and so is one the user never wrote (`named_by_user` — the
+  model added "Son 30 gün" to an event question). Add every new phrasing the eval finds to
   `test_time_resolver_turns_turkish_expressions_into_ranges`.
+- **No period named but the answer needs one** (`intent.needs_period`, "Haberler nasıl?") → `DEFAULT_PERIOD`
+  (son 7 gün) plus an assumption the report states — but only for general questions: with entities/topics/
+  feeds the run covers all data and `needs_period` is cleared, else plan/execute apply the week themselves.
 - **Nodes emit UI events through `config["configurable"]["emit"]`** (`nodes._emit`). A new event type
   also needs `ChatEvent` in `frontend/src/types/index.ts` and handling in `ChatRun.tsx`'s `deriveRun`.
 
@@ -55,6 +59,13 @@ understand → (clarify) → make_plan → (approve_plan) → execute_step ⇄ r
 - **A new tool needs**: a `CHAT_TOOLS` entry, a `_SCHEMAS` entry, a branch in `execute_tool`, and a
   label in `frontend/src/components/Chat/ChatRun.tsx` `TOOL_LABELS`. `execute_tool` never raises except
   `CostLimitExceededError` — errors go back to the model as `{"error": ...}` so it can retry.
+
+- **SQL can read an earlier table's article ids by name** (`SELECT id FROM a1`, e.g. a semantic search's
+  hits): `tools.with_artifact_tables` prepends `a1 AS (SELECT 31 AS id UNION ALL …)` — first in the WITH so
+  the query's CTEs see it. Not `a1(id) AS (VALUES …)`: sqlglot drops the column list for SQLite and `id`
+  then bound to the outer table. Only tables with an id/article_id column are exposed.
+- **Topic names are matched in Python with `crud.group_name_key`**, never SQL `lower()`: Python and
+  PostgreSQL lower "İ" differently, so "ABD-İran Krizi" filters returned nothing.
 
 ## SQL tool security
 - **Model-written SQL may only read `CHAT_VIEWS`** (`db/database.py`). `sql_guard.validate_sql`
