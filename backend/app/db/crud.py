@@ -2063,6 +2063,7 @@ def get_embedding_stats(db: Session, model: str) -> Dict[str, int]:
 
 
 def _search_scope(
+    db: Session,
     priorities: Optional[List[str]] = None,
     date_from: Optional[datetime] = None,
     date_to: Optional[datetime] = None,
@@ -2087,12 +2088,11 @@ def _search_scope(
             or_(models.Article.importance.is_(None), models.Article.importance != "unimportant"),
         )
     if topic_names:
-        lowered = [name.lower() for name in topic_names]
-        topic_articles = (
-            select(models.ArticleTopic.article_id)
-            .join(models.Topic, models.Topic.id == models.ArticleTopic.topic_id)
-            .where(func.lower(models.Topic.name).in_(lowered))
-        )
+        # Matched in Python with group_name_key: SQL lower() and Python lower() disagree on "İ",
+        # so "ABD-İran Krizi" matched no topic and a topic-filtered search returned nothing.
+        wanted = {group_name_key(name) for name in topic_names}
+        topic_ids = [t.id for t in db.query(models.Topic.id, models.Topic.name) if group_name_key(t.name) in wanted]
+        topic_articles = select(models.ArticleTopic.article_id).where(models.ArticleTopic.topic_id.in_(topic_ids))
         query = query.where(models.Article.id.in_(topic_articles))
     return query
 
@@ -2132,7 +2132,7 @@ def semantic_candidates(
 ) -> Dict[str, list]:
     """The two ranked lists the hybrid search fuses: full-text chunks by embedding similarity and
     by keyword match. Each list is best first, as (article_id, chunk_id, text, score)."""
-    scope = _search_scope(**filters)
+    scope = _search_scope(db, **filters)
     chunk = models.ArticleChunkEmbedding
     chunks = _nearest(db, chunk, [chunk.article_id, chunk.id, chunk.text], query_vector, scope, limit)
     return {

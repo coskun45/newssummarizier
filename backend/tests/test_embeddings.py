@@ -242,6 +242,21 @@ def test_semantic_search_applies_its_filters(corpus, db_session):
     assert corpus["energy"].id not in ids and ids
 
 
+@pytest.mark.parametrize("asked", ["ABD-İran Krizi", "abd-iran krizi", "ABD-IRAN KRİZİ"])
+def test_semantic_search_topic_filter_matches_turkish_dotted_capitals(corpus, db_session, asked):
+    # Python lowers "İ" to "i" + U+0307, PostgreSQL to "i": every topic with an "İ" in its name
+    # ("ABD-İran Krizi") matched nothing, so a topic-filtered search returned no results.
+    topic = models.Topic(name="ABD-İran Krizi", description="x")
+    db_session.add(topic)
+    db_session.commit()
+    db_session.add(models.ArticleTopic(article_id=corpus["war"].id, topic_id=topic.id, confidence=1.0))
+    db_session.commit()
+
+    result = asyncio.run(tools.run_semantic_search_tool({"query": "savaş", "topics": [asked]}, "a1"))
+    ids = [hit["id"] for hit in json.loads(result["content"])["results"]]
+    assert ids == [corpus["war"].id]
+
+
 def test_semantic_search_rejects_a_bad_date(corpus):
     result = asyncio.run(tools.run_semantic_search_tool({"query": "x", "date_from_utc": "dün"}, "a1"))
     assert not result["ok"]
