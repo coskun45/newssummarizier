@@ -7,7 +7,7 @@ import re
 import time
 import tiktoken
 import logging
-from typing import Dict, Any, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, Any, List, Optional, Sequence, Tuple
 from urllib.parse import urlparse
 from openai import AsyncOpenAI
 from app.core.config import settings
@@ -54,7 +54,8 @@ PRICING = {
     "gpt-4": {"input": 0.03, "output": 0.06}
 }
 
-# Models offered in Ayarlar for classification and summaries, in display order.
+# Models offered in Ayarlar for classification and summaries, and on the Asistan page for its main
+# model, in display order.
 SELECTABLE_MODELS = ("gpt-6-luna", "gpt-6.1-sol", "gpt-5.4-mini", "gpt-5-mini", "gpt-4.1-mini", "gpt-4o-mini", "gpt-4o")
 
 
@@ -180,10 +181,15 @@ def calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
     return input_cost + output_cost
 
 
+def _billed_tokens(usage, field: str, estimate: Callable[[], int]) -> int:
+    """A token count the API billed (`usage.<field>`); `estimate` is only called if it's missing."""
+    reported = getattr(usage, field, None)
+    return reported if isinstance(reported, int) else estimate()
+
+
 def _input_tokens(response, estimate: int) -> int:
-    """The prompt token count the API billed; the local tiktoken estimate only if it's missing."""
-    reported = getattr(getattr(response, "usage", None), "prompt_tokens", None)
-    return reported if isinstance(reported, int) else estimate
+    """The prompt token count the API billed (chat completions); the tiktoken estimate if missing."""
+    return _billed_tokens(getattr(response, "usage", None), "prompt_tokens", lambda: estimate)
 
 
 def record_llm_usage(kind: str, model: str, input_tokens: int, output_tokens: int, cost: float,
@@ -1391,6 +1397,52 @@ def _message_tokens(messages: Sequence[Dict[str, Any]], model: str) -> int:
     return count_tokens(json.dumps(messages, ensure_ascii=False, default=str), model)
 
 
+def responses_params(model: str, temperature: float, max_tokens: int) -> Dict[str, Any]:
+    """`completion_params` for the Responses API: the same rules, its parameter names."""
+    params = completion_params(model, temperature, max_tokens)
+    result: Dict[str, Any] = {"max_output_tokens": params["max_completion_tokens"]}
+    if "reasoning_effort" in params:
+        result["reasoning"] = {"effort": params["reasoning_effort"]}
+    if "temperature" in params:
+        result["temperature"] = params["temperature"]
+    return result
+
+
+def agent_response_options(model: str) -> Dict[str, Any]:
+    """The Asistan runs on the Responses API: a thinking model (gpt-6.1-sol) can't use function tools
+    on chat completions at all. Stateless — nothing is stored at OpenAI; the encrypted reasoning items
+    come back in `output_items` and are sent again with the tool results, so the model keeps its
+    train of thought across tool turns. A model without reasoning rejects that `include` (400)."""
+    options: Dict[str, Any] = {"store": False}
+    pricing = model_pricing(model)
+    if pricing is None or pricing.get("reasoning_effort"):
+        options["include"] = ["reasoning.encrypted_content"]
+    return options
+
+
+def _agent_finish_reason(response, tool_calls: List[Dict[str, Any]]) -> str:
+    """Chat-completions style finish reason, so `empty_answer_error` and the callers keep working:
+    "length" when the output budget ran out, another incomplete reason ("content_filter") as is."""
+    reason = getattr(getattr(response, "incomplete_details", None), "reason", None)
+    if reason:
+        return "length" if reason == "max_output_tokens" else reason
+    return "tool_calls" if tool_calls else "stop"
+
+
+def _response_error(response) -> str:
+    return getattr(getattr(response, "error", None), "message", None) or "response failed"
+
+
+def _stream_error(event) -> Optional[str]:
+    """The message of a failed-stream event. The SDK raises only for events with a top-level "error"
+    key; "response.failed" and "error" events don't have one and would end the stream quietly."""
+    if event.type == "error":
+        return getattr(event, "message", None) or "stream error"
+    if event.type == "response.failed":
+        return _response_error(getattr(event, "response", None))
+    return None
+
+
 async def run_agent_llm(
     messages: List[Dict[str, Any]],
     model: str,
@@ -1401,32 +1453,39 @@ async def run_agent_llm(
     tools: Optional[List[Dict[str, Any]]] = None,
     temperature: float = 0.2,
 ) -> Dict[str, Any]:
-    """One agent LLM call. `purpose` names the agent stage (understand / plan / execute / reflect)
-    for logs and test doubles. Returns the answer text, the requested tool calls
-    ([{id, name, arguments}]) and the call's cost. Raises CostLimitExceededError before calling
-    when a limit is reached; API errors propagate."""
+    """One agent LLM call (Responses API). `messages` are role messages and earlier output/tool
+    items; `purpose` names the agent stage (understand / plan / execute / reflect) for logs and test
+    doubles. Returns the answer text, the requested tool calls ([{id, name, arguments}]), the raw
+    `output_items` to send back with the tool results, and the call's cost. Raises
+    CostLimitExceededError before calling when a limit is reached; API errors propagate."""
     await check_cost_limits()
     kwargs: Dict[str, Any] = {}
     if json_mode:
-        kwargs["response_format"] = {"type": "json_object"}
+        kwargs["text"] = {"format": {"type": "json_object"}}
     if tools:
         kwargs["tools"] = tools
-    response = await get_openai_client().chat.completions.create(
-        model=model, messages=messages, **kwargs, **completion_params(model, temperature, max_tokens),
+    response = await get_openai_client().responses.create(
+        model=model, input=messages, **agent_response_options(model), **kwargs,
+        **responses_params(model, temperature, max_tokens),
     )
-    choice = response.choices[0]
-    input_tokens = _input_tokens(response, _message_tokens(messages, model))
-    output_tokens = getattr(response.usage, "completion_tokens", 0) or 0
+    output_items = [item.model_dump(exclude_none=True) for item in response.output or []]
+    usage = getattr(response, "usage", None)
+    input_tokens = _billed_tokens(usage, "input_tokens", lambda: _message_tokens(messages, model))
+    output_tokens = _billed_tokens(usage, "output_tokens", lambda: 0)
     cost = calculate_cost(model, input_tokens, output_tokens)
     record_llm_usage("chat", model, input_tokens, output_tokens, cost)
+    # Unlike a stream's failure event this arrives as a normal answer, with no output.
+    if getattr(response, "status", None) == "failed":
+        raise RuntimeError(f"OpenAI response failed: {_response_error(response)}")
     tool_calls = [
-        {"id": call.id, "name": call.function.name, "arguments": call.function.arguments}
-        for call in (choice.message.tool_calls or [])
+        {"id": item["call_id"], "name": item["name"], "arguments": item.get("arguments") or "{}"}
+        for item in output_items if item.get("type") == "function_call"
     ]
     return {
-        "content": choice.message.content or "",
+        "content": response.output_text or "",
         "tool_calls": tool_calls,
-        "finish_reason": choice.finish_reason,
+        "output_items": output_items,
+        "finish_reason": _agent_finish_reason(response, tool_calls),
         "cost": cost,
         "purpose": purpose,
     }
@@ -1440,33 +1499,26 @@ async def stream_agent_llm(
     purpose: str,
     temperature: float = 0.3,
 ):
-    """Streamed agent LLM call (the final report). Yields ("token", text) pieces as they arrive and
-    last ("cost", usd). The usage chunk at the end of the stream gives the billed tokens; if it is
+    """Streamed agent LLM call (the final report, Responses API). Yields ("token", text) pieces as
+    they arrive and last ("cost", usd). The completed event gives the billed tokens; if it is
     missing, tokens are estimated locally."""
     await check_cost_limits()
-    stream = await get_openai_client().chat.completions.create(
-        model=model,
-        messages=messages,
-        stream=True,
-        stream_options={"include_usage": True},
-        **completion_params(model, temperature, max_tokens),
+    stream = await get_openai_client().responses.create(
+        model=model, input=messages, stream=True, **agent_response_options(model),
+        **responses_params(model, temperature, max_tokens),
     )
     parts: List[str] = []
     usage = None
-    async for chunk in stream:
-        if getattr(chunk, "usage", None):
-            usage = chunk.usage
-        for choice in chunk.choices or []:
-            text = getattr(choice.delta, "content", None)
-            if text:
-                parts.append(text)
-                yield ("token", text)
-    input_tokens = getattr(usage, "prompt_tokens", None)
-    if not isinstance(input_tokens, int):
-        input_tokens = _message_tokens(messages, model)
-    output_tokens = getattr(usage, "completion_tokens", None)
-    if not isinstance(output_tokens, int):
-        output_tokens = count_tokens("".join(parts), model)
+    async for event in stream:
+        if event.type == "response.output_text.delta" and event.delta:
+            parts.append(event.delta)
+            yield ("token", event.delta)
+        elif event.type in ("response.completed", "response.incomplete"):
+            usage = getattr(event.response, "usage", None)
+        elif error := _stream_error(event):
+            raise RuntimeError(f"OpenAI report stream failed: {error}")
+    input_tokens = _billed_tokens(usage, "input_tokens", lambda: _message_tokens(messages, model))
+    output_tokens = _billed_tokens(usage, "output_tokens", lambda: count_tokens("".join(parts), model))
     cost = calculate_cost(model, input_tokens, output_tokens)
     record_llm_usage("chat", model, input_tokens, output_tokens, cost)
     yield ("cost", cost)

@@ -30,6 +30,18 @@ understand → (clarify) → make_plan → (approve_plan) → execute_step ⇄ r
 - **Deterministic beats the model for scope the user picked**: a clarification answer that resolves
   as a period (`_answered_time_range`, "Tüm veriler" = no range) overrides the model's
   `time_expression` — the model kept the question's "son 24 saat" after the user chose "Son 30 gün".
+  **Every stage after understand takes `soru` + the period from `nodes._period_scope(state)`, never
+  `state["question"]`** (plan, execute, reflect, report): once the user picked a period, `soru` is the
+  restatement and `seçilen_dönem` names the pick ("Tüm veriler" has no range), with the one shared
+  `prompts.PERIOD_RULE`. The raw question's "son 24 saat" made the stages call the picked week an error,
+  re-ask, replan back to 24 hours and refuse the results. The pick (`intent["period_picked"]`, a label)
+  and its range hold in later rounds until the user picks again — compare labels, never range dicts
+  (`to` of "Son 7 gün" moves every second). Reflect drops its own period questions after a pick.
+- **An expression the resolver can't read is asked about with the model's reading first**: understand's
+  `time_guess` ({from, to}) becomes the first option via `nodes._guessed_period`, only as a label the
+  resolver reads back to exactly those days (else ISO, else not offered), so picking it applies what was
+  shown. The fixed options alone ("Son 7 gün"…) never held "Eylül'ün ilk yarısı". Teach the resolver a
+  pattern when it recurs; the guess is the fallback, not the parser.
   `understand` also checks `crud.get_article_coverage` for the range and asks right away (naming the
   newest article's date) when it holds no news, instead of letting the plan search an empty period;
   the coverage goes to plan/execute as `veri_kapsamı`. Filters listing every known topic/feed are
@@ -51,6 +63,19 @@ understand → (clarify) → make_plan → (approve_plan) → execute_step ⇄ r
 - **ALL agent OpenAI calls go through `summary_service.run_agent_llm` / `stream_agent_llm`** (book
   `llm_usage` kind `chat`, check cost limits first); embeddings through `summary_service.embed_texts`
   (kind `embedding`). Never call the SDK from `app/agents/analysis/`.
+- **The Asistan runs on the Responses API (`/v1/responses`), the rest of the app on chat completions.**
+  A thinking model (gpt-6.1-sol) rejects function tools on chat completions at every reasoning effort
+  (the error's "set it to 'none'" hint is wrong — that model has no "none"; checked live 2026-10-31).
+  Calls are stateless (`store=False`, `agent_response_options`; encrypted reasoning only from models that
+  reason, the others reject that `include` with a 400): the execute loop sends back
+  `output_items` (minus dropped `function_call`s — each one needs exactly one `function_call_output`)
+  plus the tool results. Tool schemas are the flat Responses format with `strict: false` (`tools.openai_tools`;
+  that API defaults to strict, making optional arguments required). A status "failed" answer has no HTTP
+  error, so `run_agent_llm` raises for it like `stream_agent_llm` does for the event. A model added
+  to `SELECTABLE_MODELS` is offered on the Asistan page too — check it live with tools there first.
+- **Main model per turn:** `state["chat_model"]` (picked on the Asistan page, sent as `model` with each
+  message) else `CHAT_MODEL`, via `nodes._chat_model(state)` for plan / execute / report; understand,
+  reflect and the relevance check always use `CHAT_FAST_MODEL`.
 - Per-run budget (`CHAT_MAX_COST_PER_RUN`) is enforced in `execute_step`/`reflect`; a tool that costs
   (semantic search embeds the query) returns `cost` in its result so the node adds it.
 

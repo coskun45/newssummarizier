@@ -338,7 +338,7 @@ Aşağıdaki tablo öne çıkanlardır; tam liste `.env.example`'dadır. Contain
 | `SMTP_USE_TLS` | `true` | 587'de STARTTLS; port `465` ise otomatik SSL kullanılır |
 | `APP_PUBLIC_URL` | `http://localhost:5174` | Maillerdeki onay / abonelikten çık linklerinin başı — sunucuda uygulamanın dışarıdan erişilen adresi (deploy `http://<sunucu-ip>` yapar) |
 | `NEWSLETTER_TIMEZONE` | `Europe/Berlin` | Abonelik gönderim saati/gününün yorumlandığı saat dilimi (IANA adı; yaz/kış saati otomatik) |
-| `CHAT_MODEL` / `CHAT_FAST_MODEL` | `gpt-6-luna` / `gpt-6-luna` | Asistan: plan, adım yürütme ve rapor modeli / soruyu anlama ve adım değerlendirme modeli |
+| `CHAT_MODEL` / `CHAT_FAST_MODEL` | `gpt-6-luna` / `gpt-6-luna` | Asistan: plan, adım yürütme ve rapor modeli (Asistan sayfasında model seçilmezse) / soruyu anlama ve adım değerlendirme modeli |
 | `CHAT_MAX_CLARIFY_ROUNDS` | `2` | Asistan'ın netleştirici soru turu; sonra varsayımla planlar |
 | `CHAT_MAX_STEPS` / `CHAT_MAX_TOOL_CALLS_PER_STEP` | `6` / `4` | Analiz planı adım sınırı (yeniden planlama dahil) / adım başına araç çağrısı |
 | `CHAT_MAX_COST_PER_RUN` | `0.5` | Bir analiz çalıştırmasının bütçesi (USD); aşılınca ajan durur ve elindekini raporlar |

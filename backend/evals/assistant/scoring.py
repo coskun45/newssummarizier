@@ -143,6 +143,10 @@ def check_clarification(trace: TurnTrace, expect: Dict[str, Any]) -> Optional[Ch
         return Check("clarification", 0.0, "missed_clarification", asked)
     if mode == "forbidden" and asked:
         return Check("clarification", 0.0, "unnecessary_clarification", trace.clarifications)
+    if mode == "once" and asked != 1:
+        # Exactly one round: asking again about what the user already answered is the failure.
+        return Check("clarification", 0.0, "repeated_clarification" if asked else "missed_clarification",
+                     trace.clarifications)
     if mode == "optional":
         return None
     return Check("clarification", 1.0, None, asked)

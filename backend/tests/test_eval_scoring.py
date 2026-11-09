@@ -32,6 +32,14 @@ def trace(tools=(), report="", time_range=None, clarifications=()):
 RANGE = {"from": "2026-09-01T00:00:00+02:00", "to": "2026-09-30T23:59:59+02:00"}
 
 
+@pytest.mark.parametrize("asked, failure", [(0, "missed_clarification"), (1, None), (2, "repeated_clarification")])
+def test_clarification_once_wants_exactly_one_round(asked, failure):
+    # A period the user already picked must not be asked again (clr-04).
+    check = scoring.check_clarification(trace(clarifications=[{"questions": [], "answer": "x"}] * asked),
+                                        {"clarification": "once"})
+    assert check.tag == failure and check.score == (1.0 if failure is None else 0.0)
+
+
 def test_norm_maps_numbers_and_priority_words():
     assert scoring.norm(12.0) == "12"
     assert scoring.norm("12") == "12"
@@ -190,7 +198,7 @@ def test_dataset_is_well_formed(name, minimum):
         for turn in item["turns"]:
             expect = turn["expect"]
             assert turn["question"] and expect.get("rubric"), item["id"]
-            assert expect.get("clarification", "optional") in ("required", "forbidden", "optional")
+            assert expect.get("clarification", "optional") in ("required", "once", "forbidden", "optional")
             assert not expect.get("time_range") or expect["time_range"] in (turn.get("ranges") or {}), item["id"]
             for gold in expect.get("gold") or []:
                 assert gold["match"] in matches, item["id"]

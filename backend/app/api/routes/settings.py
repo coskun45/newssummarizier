@@ -89,10 +89,11 @@ class ModelOption(BaseModel):
 
 
 class DefaultModels(BaseModel):
-    """The env models (DEFAULT_MODEL / DETAILED_MODEL) used while nothing is chosen in Ayarlar."""
+    """The env models (DEFAULT_MODEL / DETAILED_MODEL / CHAT_MODEL) used while nothing is chosen."""
     classification: str
     summary: str  # brief + standard
     detailed_summary: str
+    chat: str  # CHAT_MODEL: the Asistan's main model while none is picked on its page
 
 
 class SettingsResponse(BaseModel):
@@ -122,6 +123,7 @@ def _current_settings(db: Session) -> SettingsResponse:
             classification=app_settings.default_model,
             summary=app_settings.default_model,
             detailed_summary=app_settings.detailed_model,
+            chat=app_settings.chat_model,
         ),
         available_models=available_models(),
         chat_enabled_tools=",".join(get_enabled_chat_tools(db)),

@@ -38,19 +38,19 @@
 
 - id: h-cnt-03
   category: sayim
-  question: "Eylül'ün ilk yarısında kaç tane düşük öncelikli haber çıktı?"
-  ranges: {t: "1-15 Eylül"}
+  question: "Ağustos'un ikinci yarısında kaç yüksek öncelikli haber yayımlandı?"
+  ranges: {t: "16-31 Ağustos"}
   expect:
     clarification: optional
     time_range: t
     tools_required: [sql]
     gold:
-      - name: low_count
+      - name: high_count
         match: scalar
         sql: >
-          SELECT COUNT(*) FROM chat_articles WHERE is_analyzable AND priority = 'low'
+          SELECT COUNT(*) FROM chat_articles WHERE is_analyzable AND priority = 'high'
           AND article_date BETWEEN '{t_from}' AND '{t_to}'
-    rubric: "1-15 Eylül arasındaki düşük önemli haber sayısı verilmeli (sıfırsa açıkça söylenmeli)."
+    rubric: "16-31 Ağustos arasındaki yüksek önemli haber sayısı verilmeli (sıfırsa açıkça söylenmeli)."
 
 - id: h-dst-01
   category: dagilim
@@ -87,19 +87,19 @@
 
 - id: h-trd-01
   category: trend
-  question: "Eylül boyunca her gün kaç yüksek öncelikli haber geldiğini çiz."
-  ranges: {t: "Eylül"}
+  question: "Ağustos ayı süresince günlük orta öncelikli haber sayısını grafik olarak göster."
+  ranges: {t: "Ağustos"}
   expect:
     time_range: t
     tools_required: [sql, chart]
     tools_forbidden: [semantic_search]
     gold:
-      - name: daily_high
+      - name: daily_med
         match: chart
         sql: >
-          SELECT DATE(article_date), COUNT(*) FROM chat_articles WHERE is_analyzable AND priority = 'high'
+          SELECT DATE(article_date), COUNT(*) FROM chat_articles WHERE is_analyzable AND priority = 'med'
           AND article_date BETWEEN '{t_from}' AND '{t_to}' GROUP BY 1 ORDER BY 1
-    rubric: "Eylül'ün günlük yüksek önemli haber sayıları grafikte; en yoğun gün raporda."
+    rubric: "Ağustos'un günlük orta önemli haber sayıları grafikte; en yoğun gün raporda."
 
 - id: h-trd-02
   category: trend

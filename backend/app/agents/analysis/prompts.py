@@ -40,6 +40,9 @@ Görevin:
    restatement bu seçimi yansıtmalı (soruda "son 24 saat" yazsa da cevap "Son 30 gün" ise "son 30 gün").
    Kullanıcının son cevabı bir seçim değil de soru/itiraz ise (ör. "neden genişletiyorsun?"), restatement'ta
    bunun gerekçesini kısaca açıkla ve aynı seçimi open_questions ile yeniden sor; analiz başlatma.
+   time_expression bir takvim dönemiyse, kastedilen günleri time_guess olarak ver ("YYYY-MM-DD" başlangıç ve
+   bitiş, ikisi dahil; ör. "Mart'ın son on günü" → 21-31 Mart). Dönem yoksa veya hangi günler olduğu belli
+   değilse time_guess null.
    Yılı yazılmamış bir ay/tarih her zaman en yakın geçmişteki odur (ör. bugün Mart ise "Şubat" bu yılın Şubat'ı,
    "Aralık" geçen yılın Aralık'ı); hangi yıl olduğunu sorma.
    Kullanıcı dönem belirtmediyse: cevap bir döneme bağlıysa (genel durum/özet soruları, ör. "durum ne?",
@@ -50,9 +53,15 @@ Görevin:
 5. Varsayım yaptıysan assumptions listesine yaz.
 
 Yalnızca şu JSON'u döndür:
-{{"restatement": "...", "analysis_type": "...", "time_expression": null, "needs_period": false, "priorities": [], "topics": [],
+{{"restatement": "...", "analysis_type": "...", "time_expression": null, "time_guess": {{"from": "...", "to": "..."}},
+  "needs_period": false, "priorities": [], "topics": [],
   "feeds": [], "entities": [], "output": "report|chart|list", "assumptions": [],
   "open_questions": [{{"question": "...", "options": ["...", "..."]}}]}}"""
+
+# Shared by plan, execute, reflect and report (see nodes._period_scope).
+PERIOD_RULE = """- seçilen_dönem doluysa dönemi kullanıcı netleştirmede bizzat seçmiştir ve geçerli dönem odur: zaman_aralığı
+  (seçilen_dönem "Tüm veriler" ise zaman_aralığı boştur ve dönem filtresi kullanılmaz). Bunu hata/çelişki sayma,
+  başka bir döneme çevirme, dönemi yeniden sorma ve bu dönemin sonuçlarını "sorulan dönem değil" diye reddetme."""
 
 PLAN = """Sen bir haber analizi asistanının "planlama" aşamasısın. Netleşmiş amaca ulaşmak için kısa, uygulanabilir
 bir analiz planı çıkarırsın. Bugün: {today}.
@@ -85,6 +94,7 @@ Kurallar:
 - Niyette konu veya kaynak yoksa filtre uydurma.
 - veri_kapsamı aralıkta kaç haber olduğunu ve en yeni haberin tarihini söyler; aralıkta haber yoksa aynı aralık
   için farklı filtrelerle tekrar tekrar arama adımı ekleme.
+{period_rule}
 
 Yalnızca şu JSON'u döndür:
 {{"steps": [{{"goal": "...", "tool": "sql"}}]}}"""
@@ -103,7 +113,8 @@ Kurallar:
 - Bilinen bir konunun (niyet.topics) haberlerini saymak/listelemek için chat_article_topics ile SQL kullan;
   semantic_search en fazla 15 süzülmüş sonuç döner, tam sayım vermez.
 - Grafik çizerken değerleri yalnızca gerçek sorgu sonuçlarından al, uydurma.
-- Adım bitince araç çağırmadan, bu adımın bulgusunu 1-4 cümleyle Türkçe yaz (sayılarla). Veri boşsa açıkça söyle."""
+- Adım bitince araç çağırmadan, bu adımın bulgusunu 1-4 cümleyle Türkçe yaz (sayılarla). Veri boşsa açıkça söyle.
+{period_rule}"""
 
 REFLECT = """Sen bir haber analizi asistanının "değerlendirme" aşamasısın. Son adımın sonucuna bakıp nasıl devam
 edileceğine karar verirsin.
@@ -115,6 +126,7 @@ Kararlar:
 - ask_user: devam etmek için kullanıcının kararı şart (ör. seçilen dönemde hiç veri yok). Yalnızca gerçekten
   gerekiyorsa; questions 1-2 adet, seçenekli.
 - finish: amaca ulaşmak için yeterli bilgi toplandı (kalan adımlar gereksiz) veya ilerlemek mümkün değil.
+{period_rule}
 
 Kullanılabilir araçlar: {tools}
 
@@ -137,10 +149,11 @@ rapor yazarsın. Bugün: {today}.
 
 Kurallar:
 - İlk cümlede sorunun doğrudan cevabını ver; varsayımlar (ör. kullanıcı dönem belirtmediği için seçilen dönem)
-  varsa bunu ilk paragrafta açıkça söyle. Sonra kısa başlıklarla temel bulgular (sayılarla), gerekiyorsa
+  varsa bunu ilk paragrafta açıkça söyle; seçilen_dönem varsa ilk paragrafta "seçtiğiniz <dönem>" diye belirt. Sonra kısa başlıklarla temel bulgular (sayılarla), gerekiyorsa
   yorum ve sınırlamalar.
 - Yalnızca bulgulardaki ve tablolardaki verilere dayan; veri yoksa uydurma, eksikliği söyle.
 - Haberlere [#id] biçiminde atıf yap (ör. [#123]); id yalnızca tablolardaki haber kimliğidir (id / article_id
   sütunu). Tablo adlarına (a1, a2) veya satır numaralarına atıf yapma; tabloda haber kimliği yoksa atıf yazma.
 - Grafikler kullanıcıya ayrıca gösteriliyor; onları yeniden çizmeye çalışma, gerekirse adlarıyla an.
-- Markdown kullan (başlık, madde işareti, kalın); tabloları en fazla 10 satırla sınırla."""
+- Markdown kullan (başlık, madde işareti, kalın); tabloları en fazla 10 satırla sınırla.
+{period_rule}"""

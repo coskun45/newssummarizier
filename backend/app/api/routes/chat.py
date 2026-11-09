@@ -13,7 +13,7 @@ from typing import Any, Deque, Dict, List, Literal, Optional
 from anyio import from_thread
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_admin
@@ -22,6 +22,7 @@ from app.db import crud, models
 from app.db.database import get_db, vector_support
 from app.agents.analysis.tools import tool_catalog
 from app.services import chat_service
+from app.services.summary_service import SELECTABLE_MODELS
 
 router = APIRouter()
 
@@ -79,6 +80,18 @@ class MessageCreate(BaseModel):
     content: str = Field("", max_length=4000)
     # "approve_plan" with empty content starts the waiting plan; with content it revises it.
     action: Literal["message", "approve_plan"] = "message"
+    # Main model (plan, execution, report) picked on the Asistan page; one of SELECTABLE_MODELS.
+    # None / "" = CHAT_MODEL.
+    model: Optional[str] = None
+
+    @field_validator("model")
+    @classmethod
+    def _model(cls, value: Optional[str]) -> Optional[str]:
+        if not value:
+            return None
+        if value not in SELECTABLE_MODELS:
+            raise ValueError(f"Bilinmeyen model: {value}")
+        return value
 
 
 class ToolInfo(BaseModel):
@@ -188,7 +201,7 @@ def send_message(
     crud.add_chat_message(db, conversation.id, "user", user_text)
 
     return StreamingResponse(
-        chat_service.stream_turn(conversation.id, previous_status, content, body.action),
+        chat_service.stream_turn(conversation.id, previous_status, content, body.action, body.model),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

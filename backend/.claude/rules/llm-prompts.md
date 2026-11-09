@@ -78,7 +78,8 @@ it). This rule covers the prompts it sends, the Playground dry-run, and cost tra
   ...)`** — classification, summary, bulletin and playground alike, failed/retried attempts
   included. The limits and `/stats/costs` sum the `llm_usage` table only (`crud.get_total_cost`), so
   a call that isn't booked is invisible to the limits. Take input tokens from
-  `response.usage.prompt_tokens` (`_input_tokens`), tiktoken is only the fallback.
+  the billed usage (`_billed_tokens`: `usage.prompt_tokens` on chat completions, `usage.input_tokens`
+  on the Asistan's Responses API), tiktoken is only the fallback.
 - **A new summary type** = `DEFAULT_SUMMARY_INSTRUCTIONS` entry (`SUMMARY_TYPES` derives from it) +
   `_summary_type_config` + a `max_tokens_output_*` setting (config → `.env.example` → README) +
   frontend types and Ayarlar › Özet Türleri.

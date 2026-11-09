@@ -41,6 +41,7 @@ def test_get_settings_returns_defaults_when_empty(client, auth_headers):
         "classification": settings.default_model,
         "summary": settings.default_model,
         "detailed_summary": settings.detailed_model,
+        "chat": settings.chat_model,
     }
 
 

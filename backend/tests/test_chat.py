@@ -30,9 +30,11 @@ def _new_conversation(client, headers):
     return response.json()["id"]
 
 
-def _send(client, headers, conversation_id, content="", action="message"):
-    return client.post(f"/api/chat/conversations/{conversation_id}/messages",
-                       json={"content": content, "action": action}, headers=headers)
+def _send(client, headers, conversation_id, content="", action="message", model=None):
+    body = {"content": content, "action": action}
+    if model is not None:
+        body["model"] = model
+    return client.post(f"/api/chat/conversations/{conversation_id}/messages", json=body, headers=headers)
 
 
 @pytest.fixture(autouse=True)
@@ -171,7 +173,7 @@ def test_a_disabled_tool_is_never_offered_to_the_model(client, auth_headers, db_
 
     events = _events(_send(client, auth_headers, conversation_id, "Dağılım?"))
 
-    offered = {t["function"]["name"] for c in chat_env.calls if c["purpose"] == "execute" for t in c["tools"] or []}
+    offered = {t["name"] for c in chat_env.calls if c["purpose"] == "execute" for t in c["tools"] or []}
     assert offered == {"run_sql"}
     plan = next(e for e in events if e["type"] == "plan")
     assert [s["tool"] for s in plan["steps"]] == ["sql"]  # the chart step was dropped
@@ -478,6 +480,177 @@ def test_an_empty_time_range_is_asked_about_before_planning(client, auth_headers
     assert _plan_inputs(fake_agent_llm)[0]["veri_kapsamı"]["aralıktaki_haber_sayısı"] == 1
 
 
+def _inputs(fake, purpose):
+    return [json.loads(c["messages"][1]["content"]) for c in fake.calls if c["purpose"] == purpose]
+
+
+def test_a_period_picked_after_an_empty_one_is_kept_to_the_report(client, auth_headers, db_session, agent_db,
+                                                                   fake_agent_llm):
+    # "Son 24 saat" was empty, the user picked "Son 7 gün". Later stages only saw the question's
+    # "son 24 saat": reflect asked for the period again, then replanned back to 24 hours, and the
+    # report refused the 7-day results as "not what was asked".
+    from datetime import datetime, timedelta
+    feed = _make_feed(db_session, title="DW")
+    _make_article(db_session, feed.id, title="Eski", priority="med", status="summarized",
+                  published_at=datetime.utcnow() - timedelta(days=4))
+    fake_agent_llm.script("understand",
+                          {"restatement": "Son 24 saatin en önemli 5 haberi", "time_expression": "son 24 saat",
+                           "open_questions": []},
+                          {"restatement": "Son 7 günün en önemli 5 haberi", "time_expression": "son 24 saat",
+                           "open_questions": []})
+    fake_agent_llm.script("reflect", {"decision": "ask_user", "questions": [
+        {"question": "Haberleri hangi zaman aralığı için listeleyeyim?", "options": ["Son 24 saat", "Son 7 gün"]}]})
+    conversation_id = _new_conversation(client, auth_headers)
+    _send(client, auth_headers, conversation_id, "Son 24 saatin en önemli 5 haberi hangileri?")
+
+    events = _events(_send(client, auth_headers, conversation_id, "Son 7 gün"))
+
+    # The period the user picked is not asked about again: the run goes on to the report.
+    assert "clarification" not in _types(events) and events[-1]["status"] == "idle"
+    for purpose in ("execute", "reflect", "report"):
+        scope = _inputs(fake_agent_llm, purpose)[-1]
+        assert scope["zaman_aralığı"]["label"] == "Son 7 gün", purpose
+        assert scope["seçilen_dönem"] == "Son 7 gün", purpose
+
+
+def _empty_day_then_week(fake, db_session, *understand_answers):
+    """'Son 24 saat' holds no news; the user will pick 'Son 7 gün' (or something else)."""
+    from datetime import datetime, timedelta
+    feed = _make_feed(db_session, title="DW")
+    _make_article(db_session, feed.id, title="Eski", priority="med", status="summarized",
+                  published_at=datetime.utcnow() - timedelta(days=4))
+    fake.script("understand",
+                {"restatement": "Son 24 saatin en önemli 5 haberi", "time_expression": "son 24 saat",
+                 "open_questions": []},
+                *understand_answers)
+
+
+def test_every_stage_gets_the_picked_period_instead_of_the_questions(client, auth_headers, db_session, agent_db,
+                                                                     fake_agent_llm):
+    # The plan stage got neither the flag nor a question without the old period (missed in the
+    # first fix): the stages see the restatement, which reflects the user's pick.
+    _empty_day_then_week(fake_agent_llm, db_session,
+                         {"restatement": "Son 7 günün en önemli 5 haberi", "time_expression": "son 7 gün",
+                          "open_questions": []})
+    conversation_id = _new_conversation(client, auth_headers)
+    _send(client, auth_headers, conversation_id, "Son 24 saatin en önemli 5 haberi hangileri?")
+
+    _events(_send(client, auth_headers, conversation_id, "Son 7 gün"))
+
+    for purpose in ("plan", "execute", "reflect", "report"):
+        scope = _inputs(fake_agent_llm, purpose)[-1]
+        assert scope["soru"] == "Son 7 günün en önemli 5 haberi", purpose
+        assert scope["seçilen_dönem"] == "Son 7 gün", purpose
+
+
+def test_a_picked_period_holds_when_a_later_answer_is_not_about_the_period(client, auth_headers, db_session,
+                                                                          agent_db, fake_agent_llm):
+    # After the pick, reflect asks something else; the answer re-runs understand and the model echoes
+    # the question's "son 24 saat" — the run must stay on the picked week.
+    _empty_day_then_week(fake_agent_llm, db_session,
+                         {"restatement": "Son 7 günün en önemli 5 haberi", "time_expression": "son 7 gün",
+                          "open_questions": []},
+                         {"restatement": "Son 24 saatin en önemli 5 haberi", "time_expression": "son 24 saat",
+                          "open_questions": []})
+    fake_agent_llm.script("reflect", {"decision": "ask_user", "questions": [
+        {"question": "Yalnızca DW mi?", "options": ["Evet", "Hayır"]}]})
+    conversation_id = _new_conversation(client, auth_headers)
+    _send(client, auth_headers, conversation_id, "Son 24 saatin en önemli 5 haberi hangileri?")
+    assert _events(_send(client, auth_headers, conversation_id, "Son 7 gün"))[-1]["status"] == "awaiting_clarification"
+
+    events = _events(_send(client, auth_headers, conversation_id, "Hayır"))
+
+    assert next(e for e in events if e["type"] == "intent")["time_range"]["label"] == "Son 7 gün"
+    assert "clarification" not in _types(events) and events[-1]["status"] == "idle"
+    assert _inputs(fake_agent_llm, "report")[-1]["seçilen_dönem"] == "Son 7 gün"
+
+
+def test_all_data_picked_is_named_for_the_stages(client, auth_headers, db_session, agent_db, fake_agent_llm):
+    # "Tüm veriler" has no range: a null zaman_aralığı alone left the model with the question's 24 hours.
+    _empty_day_then_week(fake_agent_llm, db_session,
+                         {"restatement": "Tüm zamanların en önemli 5 haberi", "time_expression": None,
+                          "open_questions": []})
+    conversation_id = _new_conversation(client, auth_headers)
+    _send(client, auth_headers, conversation_id, "Son 24 saatin en önemli 5 haberi hangileri?")
+
+    _events(_send(client, auth_headers, conversation_id, "Tüm veriler"))
+
+    scope = _inputs(fake_agent_llm, "execute")[-1]
+    assert scope["zaman_aralığı"] is None and scope["seçilen_dönem"] == "Tüm veriler"
+
+
+def test_an_unknown_period_is_offered_as_the_models_reading_first(client, auth_headers, chat_env):
+    # The resolver can't read "Mayıs'ın ilk yarısı"; the offered periods (Son 7 gün, Son 30 gün...)
+    # didn't include May at all, so the user had no right answer to pick.
+    chat_env.script("understand",
+                    {"restatement": "Mayıs'ın ilk yarısındaki haber sayısı", "time_expression": "Mayıs'ın ilk yarısı",
+                     "time_guess": {"from": "2026-05-01", "to": "2026-05-15"}, "open_questions": []},
+                    {"restatement": "1-15 Mayıs 2026 haber sayısı", "time_expression": "1-15 Mayıs 2026",
+                     "open_questions": []})
+    conversation_id = _new_conversation(client, auth_headers)
+
+    first = _events(_send(client, auth_headers, conversation_id, "Mayıs'ın ilk yarısında kaç haber var?"))
+
+    options = next(e for e in first if e["type"] == "clarification")["questions"][0]["options"]
+    assert options == ["1-15 Mayıs 2026", "Son 7 gün", "Son 30 gün", "Bu ay", "Tüm veriler"]
+
+    second = _events(_send(client, auth_headers, conversation_id, options[0]))
+
+    time_range = next(e for e in second if e["type"] == "intent")["time_range"]
+    assert (time_range["from"][:10], time_range["to"][:10]) == ("2026-05-01", "2026-05-15")
+
+
+@pytest.mark.parametrize("guess", [
+    None,
+    {"from": "2026-05-15", "to": "2026-05-01"},  # backwards
+    {"from": "2999-01-01", "to": "2999-01-31"},  # future
+    {"from": "Mayıs", "to": "?"},
+    "2026-05-01",
+])
+def test_a_bad_model_reading_is_not_offered(client, auth_headers, chat_env, guess):
+    chat_env.script("understand", {"restatement": "x", "time_expression": "Mayıs'ın ilk yarısı",
+                                   "time_guess": guess, "open_questions": []})
+    conversation_id = _new_conversation(client, auth_headers)
+
+    events = _events(_send(client, auth_headers, conversation_id, "Mayıs'ın ilk yarısında kaç haber var?"))
+
+    options = next(e for e in events if e["type"] == "clarification")["questions"][0]["options"]
+    assert options == ["Son 7 gün", "Son 30 gün", "Bu ay", "Tüm veriler"]
+
+
+@pytest.mark.parametrize("start, end, label", [
+    ("2026-05-01", "2026-05-31", "Mayıs 2026"),
+    ("2026-05-07", "2026-05-07", "7 Mayıs 2026"),
+    ("2026-04-21", "2026-05-10", "21 Nisan - 10 Mayıs 2026"),
+    ("2025-12-20", "2026-01-10", "2025-12-20 - 2026-01-10"),  # across years: the resolver reads ISO
+])
+def test_a_model_reading_is_labelled_so_it_resolves_to_the_same_days(start, end, label):
+    from app.agents.analysis import nodes
+    assert nodes._guessed_period({"from": start, "to": end}) == label
+    resolved = resolve_time_range(label)
+    assert (resolved["from"][:10], resolved["to"][:10]) == (start, end)
+
+
+def test_a_model_reading_ending_in_the_future_ends_today():
+    from datetime import date, timedelta
+    from app.agents.analysis import nodes
+    start = date.today() - timedelta(days=3)
+    label = nodes._guessed_period({"from": start.isoformat(), "to": (date.today() + timedelta(days=9)).isoformat()})
+    resolved = resolve_time_range(label)
+    assert resolved["from"][:10] == start.isoformat() and resolved["to"][:10] == date.today().isoformat()
+
+
+def test_reflect_may_still_ask_about_a_period_the_user_did_not_pick(client, auth_headers, chat_env):
+    chat_env.script("reflect", {"decision": "ask_user", "questions": [
+        {"question": "Aralığı genişletelim mi?", "options": ["Son 7 gün", "Son 30 gün"]}]})
+    conversation_id = _new_conversation(client, auth_headers)
+
+    events = _events(_send(client, auth_headers, conversation_id, "Soru"))
+
+    assert events[-1]["status"] == "awaiting_clarification"
+    assert _inputs(chat_env, "reflect")[-1]["seçilen_dönem"] is None
+
+
 def test_filters_listing_every_known_topic_and_feed_are_dropped(client, auth_headers, db_session, chat_env):
     from tests.conftest import _make_topic
     _make_feed(db_session, "https://example.com/guardian", title="Guardian")
@@ -543,6 +716,57 @@ def test_without_plan_approval_the_plan_runs_directly(client, auth_headers, chat
     conversation_id = _new_conversation(client, auth_headers)
     events = _events(_send(client, auth_headers, conversation_id, "Dağılım?"))
     assert "plan_approval" not in _types(events) and "step_started" in _types(events)
+
+
+# ---------------------------------------------------------------------------
+# Model picked on the Asistan page
+# ---------------------------------------------------------------------------
+
+def _models_by_purpose(fake):
+    return {c["purpose"]: c["model"] for c in fake.calls}
+
+
+def test_the_picked_model_runs_plan_execution_and_report(client, auth_headers, chat_env, monkeypatch):
+    monkeypatch.setattr(settings, "chat_model", "gpt-6-luna")
+    monkeypatch.setattr(settings, "chat_fast_model", "gpt-4o-mini")
+    conversation_id = _new_conversation(client, auth_headers)
+
+    events = _events(_send(client, auth_headers, conversation_id, "Dağılım?", model="gpt-4o"))
+
+    assert events[-1]["status"] == "idle"
+    used = _models_by_purpose(chat_env)
+    assert {used[p] for p in ("plan", "execute", "report")} == {"gpt-4o"}
+    # The fast model stays the env's: understanding and reflecting are not the main model's job.
+    assert {used[p] for p in ("understand", "reflect")} == {"gpt-4o-mini"}
+
+
+@pytest.mark.parametrize("model", [None, ""])
+def test_without_a_picked_model_chat_model_is_used(client, auth_headers, chat_env, monkeypatch, model):
+    monkeypatch.setattr(settings, "chat_model", "gpt-5-mini")
+    conversation_id = _new_conversation(client, auth_headers)
+
+    _events(_send(client, auth_headers, conversation_id, "Dağılım?", model=model))
+
+    assert {_models_by_purpose(chat_env)[p] for p in ("plan", "execute", "report")} == {"gpt-5-mini"}
+
+
+def test_an_unknown_model_is_rejected(client, auth_headers, chat_env):
+    conversation_id = _new_conversation(client, auth_headers)
+    response = _send(client, auth_headers, conversation_id, "Dağılım?", model="gpt-9-unknown")
+    assert response.status_code == 422
+    # Rejected before the run claims the conversation: it is free for the next message.
+    assert _send(client, auth_headers, conversation_id, "Dağılım?").status_code == 200
+
+
+def test_approving_a_plan_runs_it_on_the_model_picked_then(client, auth_headers, db_session, chat_env):
+    crud.set_setting(db_session, "chat_require_plan_approval", "true")
+    conversation_id = _new_conversation(client, auth_headers)
+    _events(_send(client, auth_headers, conversation_id, "Dağılım?", model="gpt-4o-mini"))
+    assert _models_by_purpose(chat_env)["plan"] == "gpt-4o-mini"
+
+    _events(_send(client, auth_headers, conversation_id, action="approve_plan", model="gpt-4.1-mini"))
+
+    assert {c["model"] for c in chat_env.calls if c["purpose"] in ("execute", "report")} == {"gpt-4.1-mini"}
 
 
 # ---------------------------------------------------------------------------
@@ -653,10 +877,10 @@ def test_parallel_tool_calls_beyond_the_step_limit_are_not_run(client, auth_head
 
     assert len([e for e in events if e["type"] == "tool_call"]) == 2
     execute = [c for c in chat_env.calls if c["purpose"] == "execute"][1]
-    assistant = next(m for m in execute["messages"] if m["role"] == "assistant")
-    tool_replies = [m for m in execute["messages"] if m["role"] == "tool"]
-    # Every tool_call the model is shown has exactly one reply (the API rejects anything else).
-    assert [c["id"] for c in assistant["tool_calls"]] == [m["tool_call_id"] for m in tool_replies]
+    shown = [m["call_id"] for m in execute["messages"] if m.get("type") == "function_call"]
+    replies = [m["call_id"] for m in execute["messages"] if m.get("type") == "function_call_output"]
+    # Every function_call the model is shown has exactly one output (the API rejects anything else).
+    assert shown == replies == ["call_0", "call_1"]
 
 
 def test_startup_frees_conversations_left_running(db_session, test_user):

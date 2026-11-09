@@ -569,7 +569,7 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
       max_article_age_hours: 72, // backend default
       classification_model: null, // nothing chosen in Ayarlar yet
       summary_model: null,
-      default_models: { classification: 'gpt-6-luna', summary: 'gpt-6-luna', detailed_summary: 'gpt-6-luna' },
+      default_models: { classification: 'gpt-6-luna', summary: 'gpt-6-luna', detailed_summary: 'gpt-6-luna', chat: 'gpt-6-luna' },
       available_models: [
         { id: 'gpt-6-luna', input_per_1m: 0.1, output_per_1m: 0.5 },
         { id: 'gpt-6.1-sol', input_per_1m: 2, output_per_1m: 10 },

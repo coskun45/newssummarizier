@@ -7,9 +7,10 @@ out through the `emit` coroutine passed in `config["configurable"]`, which chat_
 the browser. "Waiting for the user" is a node that sets `pending` and ends the run; chat_service
 stores the state and the next turn re-enters the graph from it (graph.route_entry).
 """
+import calendar
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
@@ -35,6 +36,7 @@ EXECUTE_MAX_TOKENS = 1500
 REFLECT_MAX_TOKENS = 800
 REPORT_MAX_TOKENS = 3000
 DEFAULT_PERIOD = "son 7 gün"  # for questions that need a period but name none ("Haberler nasıl?")
+ALL_DATA_LABEL = "Tüm veriler"  # the pick that has no range
 PHASE_LABELS = {
     "understanding": "Soruyu anlıyorum",
     "planning": "Plan çıkarıyorum",
@@ -68,6 +70,22 @@ def _parse_json(text: str) -> Dict[str, Any]:
         except ValueError:
             value = {}
     return value if isinstance(value, dict) else {}
+
+
+def _chat_model(state: AnalysisState) -> str:
+    """Model for plan, step execution and the report: the one picked on the Asistan page, else CHAT_MODEL."""
+    return state.get("chat_model") or settings.chat_model
+
+
+def _period_scope(state: AnalysisState) -> Dict[str, Any]:
+    """What every stage after understand gets about the question and its period. Once the user picked a
+    period in a clarification ("son 24 saat" was empty, they chose "Son 7 gün"), the stages get the
+    restatement (which reflects the pick) instead of the question, and the pick by name ("Tüm veriler"
+    has no range) — the question's own time words made them "correct" the period back."""
+    intent = state.get("intent") or {}
+    picked = intent.get("period_picked") or None
+    question = (intent.get("restatement") or state.get("question", "")) if picked else state.get("question", "")
+    return {"soru": question, "zaman_aralığı": state.get("time_range"), "seçilen_dönem": picked}
 
 
 def _tool_lines(tools: List[str]) -> str:
@@ -124,6 +142,51 @@ def _answered_time_range(clarification: Dict[str, Any]) -> Tuple[bool, Optional[
         if resolved is not None:
             return True, resolved
     return False, None
+
+
+MONTH_NAMES = ("Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim",
+               "Kasım", "Aralık")
+PERIOD_OPTIONS = ["Son 7 gün", "Son 30 gün", "Bu ay", "Tüm veriler"]  # when an expression can't be resolved
+
+
+def _period_label(first: date, last: date) -> str:
+    """"Mayıs 2026", "7 Mayıs 2026", "1-15 Mayıs 2026", "21 Nisan - 10 Mayıs 2026"; ISO across years."""
+    if first.year != last.year:
+        return f"{first.isoformat()} - {last.isoformat()}"
+    year, m1, m2 = first.year, MONTH_NAMES[first.month - 1], MONTH_NAMES[last.month - 1]
+    if first.month != last.month:
+        return f"{first.day} {m1} - {last.day} {m2} {year}"
+    if first == last:
+        return f"{first.day} {m1} {year}"
+    return f"{first.day}-{last.day} {m1} {year}"
+
+
+def _resolves_to(label: str, first: date, last: date) -> bool:
+    resolved = resolve_time_range(label)
+    return bool(resolved) and (resolved["from"][:10], resolved["to"][:10]) == (first.isoformat(), last.isoformat())
+
+
+def _guessed_period(guess: Any) -> Optional[str]:
+    """The model's reading of an expression the resolver can't read (`time_guess`, "Mayıs'ın ilk
+    yarısı" → 1-15 May), as an option label — or None when it isn't a sane past period. The label is
+    one the resolver reads back to exactly those days, so picking it applies what was offered."""
+    if not isinstance(guess, dict):
+        return None
+    try:
+        first = date.fromisoformat(str(guess.get("from"))[:10])
+        last = date.fromisoformat(str(guess.get("to"))[:10])
+    except ValueError:
+        return None
+    today = datetime.now(ZoneInfo(settings.newsletter_timezone)).date()
+    last = min(last, today)
+    if first > last:
+        return None
+    labels = [_period_label(first, last), f"{first.isoformat()} - {last.isoformat()}"]
+    whole_month = (first.day == 1 and (first.year, first.month) == (last.year, last.month)
+                   and last.day == calendar.monthrange(last.year, last.month)[1])
+    if whole_month:
+        labels.insert(0, f"{MONTH_NAMES[first.month - 1]} {first.year}")
+    return next((label for label in labels if _resolves_to(label, first, last)), None)
 
 
 def _to_naive_utc(iso: str) -> datetime:
@@ -216,9 +279,15 @@ async def understand_node(state: AnalysisState, config) -> Dict[str, Any]:
     time_range = None if (state.get("intent") or {}).get("period_defaulted") else state.get("time_range")
     expression = str(intent.get("time_expression") or "").strip()
     picked, picked_range = _answered_time_range(answered) if answered and "time" in tools else (False, None)
+    # A period picked in an earlier round holds until the user picks another: an answer to some other
+    # question re-runs this stage, and the model tends to echo the question's own period again.
+    kept = (state.get("intent") or {}).get("period_picked") if not picked else None
     if picked:
         time_range = picked_range
         intent["time_expression"] = picked_range["label"] if picked_range else None
+    elif kept:
+        time_range = state.get("time_range")
+        intent["time_expression"] = time_range["label"] if time_range else None
     elif expression and (not mentions_period(expression) or not named_by_user(expression, _user_texts(state))):
         # "son" of "son 5 haber" is a count, not a period; and a period the user never named
         # (the model added "Son 30 gün") would hide older articles.
@@ -227,13 +296,14 @@ async def understand_node(state: AnalysisState, config) -> Dict[str, Any]:
         if "time" in tools:
             time_range = resolve_time_range(expression)
             if time_range is None and not questions:
+                guessed = _guessed_period(intent.get("time_guess"))
                 questions = [{"question": f"“{expression}” ile hangi dönemi kastediyorsunuz?",
-                              "options": ["Son 7 gün", "Son 30 gün", "Bu ay", "Tüm veriler"]}]
+                              "options": ([guessed] if guessed else []) + PERIOD_OPTIONS}]
         else:
             time_range = None
             limitations.append(f"Zaman tespiti kapalı; “{expression}” ifadesi yorumlanarak kullanıldı.")
     general = not intent.get("entities") and not intent.get("topics") and not intent.get("feeds")
-    if (not picked and time_range is None and not intent.get("time_expression") and intent.get("needs_period")
+    if (not picked and not kept and time_range is None and not intent.get("time_expression") and intent.get("needs_period")
             and general and "time" in tools):
         # "Haberler nasıl?": the answer depends on a period the user didn't name. Use a default and
         # say so (the report states its assumptions) rather than asking or summarising all data.
@@ -261,6 +331,11 @@ async def understand_node(state: AnalysisState, config) -> Dict[str, Any]:
         elif empty not in limitations:
             limitations.append(empty)
     intent["open_questions"] = questions
+    # The period the user picked in a clarification, by name ("Son 7 gün", "Tüm veriler"); see _period_scope.
+    if picked:
+        intent["period_picked"] = picked_range["label"] if picked_range else ALL_DATA_LABEL
+    elif kept:
+        intent["period_picked"] = kept
 
     await _emit(config, "intent", restatement=intent["restatement"],
                 time_range=time_range, assumptions=intent.get("assumptions") or [])
@@ -347,11 +422,11 @@ async def plan_node(state: AnalysisState, config) -> Dict[str, Any]:
     tools = state.get("tools") or []
     previous = [s for s in state.get("plan") or [] if s.get("status") in ("done", "failed")]
     system = prompts.PLAN.format(today=_today(), tools=_tool_lines(tools), data_model=prompts.DATA_MODEL,
+                                 period_rule=prompts.PERIOD_RULE,
                                  max_steps=settings.chat_max_steps)
     user = {
-        "soru": state.get("question", ""),
+        **_period_scope(state),
         "niyet": state.get("intent") or {},
-        "zaman_aralığı": state.get("time_range"),
         "veri_kapsamı": state.get("coverage"),
         "netleştirmeler": state.get("clarifications") or [],
         "önceki_adımlar": _plan_view(previous),
@@ -359,7 +434,7 @@ async def plan_node(state: AnalysisState, config) -> Dict[str, Any]:
     }
     response = await summary_service.run_agent_llm(
         [{"role": "system", "content": system}, {"role": "user", "content": json.dumps(user, ensure_ascii=False)}],
-        settings.chat_model, PLAN_MAX_TOKENS, purpose="plan", json_mode=True,
+        _chat_model(state), PLAN_MAX_TOKENS, purpose="plan", json_mode=True,
     )
     limitations = list(state.get("limitations") or [])
     room = max(1, settings.chat_max_steps - len(previous))
@@ -402,12 +477,11 @@ async def execute_step_node(state: AnalysisState, config) -> Dict[str, Any]:
     await _phase(config, "executing", step=index + 1, total=len(plan))
     await _emit(config, "step_started", step_id=step["id"], goal=step["goal"], tool=step["tool"])
 
-    system = prompts.EXECUTE.format(today=_today(), data_model=prompts.DATA_MODEL,
+    system = prompts.EXECUTE.format(today=_today(), data_model=prompts.DATA_MODEL, period_rule=prompts.PERIOD_RULE,
                                     max_calls=settings.chat_max_tool_calls_per_step)
     context = {
-        "soru": state.get("question", ""),
+        **_period_scope(state),
         "niyet": state.get("intent") or {},
-        "zaman_aralığı": state.get("time_range"),
         "veri_kapsamı": state.get("coverage"),
         "plan": _plan_view(plan),
         "saklanan_tablolar": _artifact_index(artifacts),
@@ -426,7 +500,7 @@ async def execute_step_node(state: AnalysisState, config) -> Dict[str, Any]:
     try:
         while True:
             response = await summary_service.run_agent_llm(
-                messages, settings.chat_model, EXECUTE_MAX_TOKENS, purpose="execute",
+                messages, _chat_model(state), EXECUTE_MAX_TOKENS, purpose="execute",
                 tools=schemas if calls_left > 0 and schemas else None,
             )
             cost = round(cost + (response.get("cost") or 0.0), 6)
@@ -436,11 +510,10 @@ async def execute_step_node(state: AnalysisState, config) -> Dict[str, Any]:
             if not calls:
                 finding = response["content"].strip()
                 break
-            messages.append({
-                "role": "assistant", "content": response["content"] or None,
-                "tool_calls": [{"id": c["id"], "type": "function",
-                                "function": {"name": c["name"], "arguments": c["arguments"]}} for c in calls],
-            })
+            # The model's output goes back as is (its reasoning included), minus the dropped calls.
+            kept = {c["id"] for c in calls}
+            messages.extend(item for item in response.get("output_items") or []
+                            if item.get("type") != "function_call" or item.get("call_id") in kept)
             for call in calls:
                 artifact_id = f"a{len(artifacts) + 1}"
                 await _emit(config, "tool_call", step_id=step["id"], call_id=call["id"], name=call["name"],
@@ -455,7 +528,7 @@ async def execute_step_node(state: AnalysisState, config) -> Dict[str, Any]:
                             ok=result["ok"], summary=result["summary"], sql=result.get("sql"),
                             artifact_id=artifact_id if result.get("artifact") else None)
                 summaries.append(result["summary"])
-                messages.append({"role": "tool", "tool_call_id": call["id"], "content": result["content"]})
+                messages.append({"type": "function_call_output", "call_id": call["id"], "output": result["content"]})
             calls_left -= len(calls)
             if cost >= settings.chat_max_cost_per_run:
                 finding = "Çalıştırma başına bütçe doldu; adım yarıda kaldı. Araç sonuçları: " + "; ".join(summaries)
@@ -500,7 +573,7 @@ async def reflect_node(state: AnalysisState, config) -> Dict[str, Any]:
 
     tools = state.get("tools") or []
     user = {
-        "soru": state.get("question", ""),
+        **_period_scope(state),
         "niyet": state.get("intent") or {},
         "plan": _plan_view(plan),
         "son_adım": _plan_view([plan[index]])[0] if index < len(plan) else None,
@@ -509,7 +582,7 @@ async def reflect_node(state: AnalysisState, config) -> Dict[str, Any]:
     }
     try:
         response = await summary_service.run_agent_llm(
-            [{"role": "system", "content": prompts.REFLECT.format(tools=", ".join(tools))},
+            [{"role": "system", "content": prompts.REFLECT.format(tools=", ".join(tools), period_rule=prompts.PERIOD_RULE)},
              {"role": "user", "content": json.dumps(user, ensure_ascii=False)}],
             settings.chat_fast_model, REFLECT_MAX_TOKENS, purpose="reflect", json_mode=True,
         )
@@ -532,6 +605,8 @@ async def reflect_node(state: AnalysisState, config) -> Dict[str, Any]:
 
     if decision == "ask_user" and user["kullanıcıya_soru_sorulabilir"]:
         questions = _questions(answer.get("questions"))
+        if user["seçilen_dönem"]:
+            questions = [q for q in questions if not _is_period_question(q)]  # already answered
         if questions:
             return {**update, "plan": _skip_from(plan, next_index), "current_step": len(plan),
                     "ask_questions": questions}
@@ -575,23 +650,22 @@ async def synthesize_node(state: AnalysisState, config) -> Dict[str, Any]:
     await _phase(config, "reporting")
     intent = state.get("intent") or {}
     user = {
-        "soru": state.get("question", ""),
+        **_period_scope(state),
         "anlaşılan_amaç": intent.get("restatement"),
         "varsayımlar": intent.get("assumptions") or [],
-        "zaman_aralığı": state.get("time_range"),
         "plan_ve_bulgular": _plan_view(state.get("plan") or []),
         "tablolar_ve_grafikler": _report_tables(state.get("artifacts") or {}),
         "sınırlamalar": state.get("limitations") or [],
     }
     messages = [
-        {"role": "system", "content": prompts.REPORT.format(today=_today())},
+        {"role": "system", "content": prompts.REPORT.format(today=_today(), period_rule=prompts.PERIOD_RULE)},
         {"role": "user", "content": json.dumps(user, ensure_ascii=False)},
     ]
     parts: List[str] = []
     cost = state.get("cost", 0.0)
     try:
         async for kind, value in summary_service.stream_agent_llm(
-            messages, settings.chat_model, REPORT_MAX_TOKENS, purpose="report",
+            messages, _chat_model(state), REPORT_MAX_TOKENS, purpose="report",
         ):
             if kind == "token":
                 parts.append(value)

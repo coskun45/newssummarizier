@@ -215,8 +215,9 @@ LLM_TABLE_ROWS = 50  # rows of a SQL result shown to the model; the full result 
 
 
 def openai_tools(tool_names: List[str]) -> List[Dict[str, Any]]:
-    """Function schemas for the given tools (those that have an executor)."""
-    return [{"type": "function", "function": _SCHEMAS[name]} for name in tool_names if name in _SCHEMAS]
+    """Function schemas (Responses API format) for the given tools (those that have an executor).
+    Not strict, which is that API's default: strict makes every optional argument a required one."""
+    return [{"type": "function", "strict": False, **_SCHEMAS[name]} for name in tool_names if name in _SCHEMAS]
 
 
 # ---------------------------------------------------------------------------

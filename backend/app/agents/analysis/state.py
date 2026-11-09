@@ -19,6 +19,7 @@ class AnalysisState(TypedDict, total=False):
     history: List[Dict[str, str]]  # earlier turns ({role, content}) for context
     tools: List[str]  # tools enabled when the run started; fixed for the whole run
     require_plan_approval: bool
+    chat_model: Optional[str]  # main model picked on the Asistan page for this turn; None = CHAT_MODEL
 
     clarifications: List[Dict[str, Any]]  # [{questions, answer}]
     clarification_rounds: int

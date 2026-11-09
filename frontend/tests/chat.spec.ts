@@ -271,3 +271,110 @@ test('a running analysis keeps going while another tab is open', async ({ page }
   await expect(page.getByText('Analiz durduruldu.')).toHaveCount(0);
   expect(aborted).toEqual([]);
 });
+
+test('the model picked in the composer is sent with every message and kept after a reload', async ({ page }) => {
+  await loginAs(page);
+  await mockApi(page, { articles: [] });
+  const chat = await mockChat(page, [reportRun('Bitti.'), reportRun('Yine bitti.'), reportRun('Son.')]);
+  await openAssistant(page);
+
+  const picker = page.getByRole('combobox', { name: 'Model' });
+  await expect(picker).toHaveValue('');
+  await expect(picker.getByRole('option', { name: 'Varsayılan (gpt-6-luna)' })).toHaveCount(1);
+
+  // The server default sends no model, so CHAT_MODEL applies.
+  await ask(page, 'Dağılım?');
+  await expect(page.getByText('Bitti.')).toBeVisible();
+
+  await picker.selectOption('gpt-4o');
+  await ask(page, 'Peki geçen ay?');
+  await expect(page.getByText('Yine bitti.')).toBeVisible();
+  expect(chat.sent).toEqual([
+    { content: 'Dağılım?', action: 'message' },
+    { content: 'Peki geçen ay?', action: 'message', model: 'gpt-4o' },
+  ]);
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Asistan', exact: true }).click();
+  await expect(page.getByRole('combobox', { name: 'Model' })).toHaveValue('gpt-4o');
+
+  await page.getByRole('combobox', { name: 'Model' }).selectOption('');
+  await ask(page, 'Son soru');
+  await expect(page.getByText('Son.')).toBeVisible();
+  expect(chat.sent[2]).toEqual({ content: 'Son soru', action: 'message' });
+});
+
+test('a stored model is only sent once the offered models confirm it', async ({ page }) => {
+  // With /settings failing, the stored id was sent unchecked: a model no longer offered made every
+  // message fail (422) and the picker, hidden without the list, could not reset it.
+  await loginAs(page);
+  await page.addInitScript(() => localStorage.setItem('chat_model', 'gpt-removed'));
+  await mockApi(page, { articles: [] });
+  await page.route('**/api/settings/**', (route) => route.fulfill({ status: 500, json: { detail: 'boom' } }));
+  const chat = await mockChat(page, [reportRun('Bitti.')]);
+  await openAssistant(page);
+
+  await ask(page, 'Dağılım?');
+
+  await expect(page.getByText('Bitti.')).toBeVisible();
+  expect(chat.sent).toEqual([{ content: 'Dağılım?', action: 'message' }]);
+});
+
+test('a stored model waits for the offered models instead of being dropped from a quick message', async ({ page }) => {
+  await loginAs(page);
+  await page.addInitScript(() => localStorage.setItem('chat_model', 'gpt-4o'));
+  await mockApi(page, { articles: [] });
+  let release = () => {};
+  const listLoaded = new Promise<void>((resolve) => { release = resolve; });
+  await page.route('**/api/settings/**', async (route) => {
+    await listLoaded;
+    await route.fallback();
+  });
+  const chat = await mockChat(page, [reportRun('Bitti.')]);
+  await openAssistant(page);
+
+  await page.getByLabel('Mesaj').fill('Dağılım?');
+  const sendButton = page.getByRole('button', { name: 'Gönder' });
+  await expect(sendButton).toBeDisabled();
+
+  release();
+  await expect(sendButton).toBeEnabled();
+  await sendButton.click();
+
+  await expect(page.getByText('Bitti.')).toBeVisible();
+  expect(chat.sent).toEqual([{ content: 'Dağılım?', action: 'message', model: 'gpt-4o' }]);
+});
+
+test('a clarification answer and a plan approval run on the model picked at that moment', async ({ page }) => {
+  const clarify: ScriptedTurn = {
+    status: 'awaiting_clarification',
+    events: [{ type: 'clarification', restatement: 'Genel durum.', questions: [{ question: 'Hangi dönem?', options: ['Son 7 gün'] }] }],
+  };
+  const waiting: ScriptedTurn = {
+    status: 'awaiting_plan_approval',
+    events: [
+      { type: 'plan', steps: [step(1, 'Konuları say', 'sql')], requires_approval: true },
+      { type: 'plan_approval', steps: [step(1, 'Konuları say', 'sql')] },
+    ],
+  };
+  await loginAs(page);
+  await mockApi(page, { articles: [] });
+  const chat = await mockChat(page, [clarify, waiting, reportRun('Üç konu öne çıkıyor.')]);
+  await openAssistant(page);
+
+  await ask(page, 'Durum nasıl?');
+  const picker = page.getByRole('combobox', { name: 'Model' });
+  const card = page.getByRole('region', { name: 'Netleştirme soruları' });
+  await expect(card.getByText('Hangi dönem?')).toBeVisible();
+
+  await picker.selectOption('gpt-6.1-sol');
+  await card.getByRole('button', { name: 'Son 7 gün' }).click();
+  await card.getByRole('button', { name: 'Cevapla' }).click();
+  await expect(page.getByRole('button', { name: 'Planı başlat' })).toBeVisible();
+  expect(chat.sent[1]).toEqual({ content: 'Son 7 gün', action: 'message', model: 'gpt-6.1-sol' });
+
+  await picker.selectOption('gpt-4o');
+  await page.getByRole('button', { name: 'Planı başlat' }).click();
+  await expect(page.getByText('Üç konu öne çıkıyor.')).toBeVisible();
+  expect(chat.sent[2]).toEqual({ content: '', action: 'approve_plan', model: 'gpt-4o' });
+});

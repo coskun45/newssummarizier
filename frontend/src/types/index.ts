@@ -124,6 +124,8 @@ export interface DefaultModels {
     /** Kısa + standart özet. */
     summary: string;
     detailed_summary: string;
+    /** CHAT_MODEL: the Asistan's main model while none is picked on its page. */
+    chat: string;
 }
 
 export interface UserSettings {
@@ -622,4 +624,6 @@ export interface ChatSendRequest {
     content: string;
     /** "approve_plan" with empty content starts the waiting plan; with content it revises it. */
     action: 'message' | 'approve_plan';
+    /** Main model (plan, execution, report) picked on the Asistan page; left out = CHAT_MODEL. */
+    model?: string;
 }

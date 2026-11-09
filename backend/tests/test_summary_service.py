@@ -961,3 +961,194 @@ def test_failed_image_write_keeps_the_scraped_content(reprocess_env, monkeypatch
     assert contents and all(c == "full page body" for c in contents)
     db_session.expire_all()
     assert article.cleaned_content == "full page body"
+
+
+# ---------------------------------------------------------------------------
+# run_agent_llm / stream_agent_llm — the Asistan on the Responses API
+# ---------------------------------------------------------------------------
+
+def _agent_openai(monkeypatch, db_session, responses=(), stream_events=()):
+    """A fake client. Like the real API (checked live 2026-10-31), chat completions rejects function
+    tools for gpt-6.1-sol whatever the reasoning effort; the Responses API takes them."""
+    from types import SimpleNamespace
+    from sqlalchemy.orm import sessionmaker
+    from tests.conftest import fake_response
+
+    calls = []
+    queue = list(responses)
+
+    async def chat_create(**kwargs):
+        calls.append({"api": "chat", **kwargs})
+        if kwargs.get("tools") and kwargs["model"] == "gpt-6.1-sol":
+            raise RuntimeError("Function tools with reasoning_effort are not supported for gpt-6.1-sol "
+                               "in /v1/chat/completions. To use function tools, use /v1/responses")
+        message = SimpleNamespace(content="Bulgu.", tool_calls=None)
+        return SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason="stop")],
+                               usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5))
+
+    async def responses_create(**kwargs):
+        calls.append({"api": "responses", **kwargs})
+        if kwargs.get("stream"):
+            async def events():
+                for event in stream_events:
+                    yield event
+            return events()
+        return queue.pop(0) if queue else fake_response(text="Bulgu.")
+
+    monkeypatch.setattr(summary_service, "get_openai_client", lambda: SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=chat_create)),
+        responses=SimpleNamespace(create=responses_create)))
+    monkeypatch.setattr(summary_service, "SessionLocal",
+                        sessionmaker(bind=db_session.get_bind(), expire_on_commit=False))
+    return calls
+
+
+_TOOLS = [{"type": "function", "name": "run_sql", "parameters": {"type": "object", "properties": {}}}]
+_MESSAGES = [{"role": "user", "content": "Dağılım?"}]
+
+
+def test_a_tool_call_on_gpt_6_1_sol_works_and_keeps_its_reasoning(monkeypatch, db_session):
+    # The execute step gives the model tools; on chat completions gpt-6.1-sol answered every step
+    # with a 400, so no step ever ran when it was picked on the Asistan page.
+    calls = _agent_openai(monkeypatch, db_session)
+
+    response = asyncio.run(summary_service.run_agent_llm(_MESSAGES, "gpt-6.1-sol", 300, purpose="execute", tools=_TOOLS))
+
+    assert response["content"] == "Bulgu." and response["finish_reason"] == "stop"
+    sent = calls[0]
+    assert sent["api"] == "responses" and sent["input"] == _MESSAGES and sent["tools"] == _TOOLS
+    assert sent["reasoning"] == {"effort": "low"} and "temperature" not in sent
+    assert sent["max_output_tokens"] == 300 + summary_service.REASONING_TOKEN_ALLOWANCE
+    # Stateless: nothing stored at OpenAI, the reasoning comes back encrypted to be sent again.
+    assert sent["store"] is False and sent["include"] == ["reasoning.encrypted_content"]
+
+
+@pytest.mark.parametrize("model, encrypted", [
+    ("gpt-4o", False), ("gpt-4o-mini", False), ("gpt-4.1-mini", False),
+    ("gpt-6-luna", True), ("gpt-5-mini", True), ("gpt-6.1-sol", True),
+    ("gpt-9-unpriced", True),
+])
+def test_encrypted_reasoning_is_requested_only_from_models_that_reason(monkeypatch, db_session, model, encrypted):
+    # A model without reasoning answers `include: reasoning.encrypted_content` with a 400, so picking
+    # gpt-4o on the Asistan page failed every stage. A model not in PRICING keeps it: most likely new.
+    calls = _agent_openai(monkeypatch, db_session)
+
+    async def run():
+        await summary_service.run_agent_llm(_MESSAGES, model, 300, purpose="plan")
+        return [part async for part in summary_service.stream_agent_llm(_MESSAGES, model, 300, purpose="report")]
+
+    asyncio.run(run())
+
+    assert len(calls) == 2
+    for sent in calls:
+        assert sent["store"] is False and ("include" in sent) is encrypted
+
+
+def test_a_failed_response_raises_instead_of_reading_as_an_empty_answer(monkeypatch, db_session):
+    # Without `stream` a failed response is still a normal HTTP answer: status "failed", no output.
+    # The run went on with no intent and no plan and reported "Bulgu yok".
+    from app.db import models
+    from tests.conftest import fake_response
+    _agent_openai(monkeypatch, db_session, [fake_response(failed="server_error")])
+
+    with pytest.raises(RuntimeError, match="server_error"):
+        asyncio.run(summary_service.run_agent_llm(_MESSAGES, "gpt-6-luna", 300, purpose="plan"))
+
+    assert db_session.query(models.LlmUsage).count() == 1  # a failed attempt is booked too
+
+
+def test_billed_usage_skips_the_local_token_estimate(monkeypatch, db_session):
+    # The input now holds the encrypted reasoning blobs, and tiktoken runs on the event loop.
+    from types import SimpleNamespace
+    from tests.conftest import fake_response
+    completed = SimpleNamespace(type="response.completed", response=fake_response())
+    _agent_openai(monkeypatch, db_session, stream_events=[completed])
+
+    def fail(*args, **kwargs):
+        raise AssertionError("tiktoken ran although the API reported the usage")
+
+    monkeypatch.setattr(summary_service, "count_tokens", fail)
+
+    async def run():
+        await summary_service.run_agent_llm(_MESSAGES, "gpt-6-luna", 300, purpose="plan")
+        return [part async for part in summary_service.stream_agent_llm(_MESSAGES, "gpt-6-luna", 300, purpose="report")]
+
+    assert asyncio.run(run())[-1][0] == "cost"
+
+
+def test_responses_params_follow_the_completion_rules():
+    assert summary_service.responses_params("gpt-4o-mini", 0.1, 300) == {"max_output_tokens": 300, "temperature": 0.1}
+    assert summary_service.responses_params("gpt-6-luna", 0.1, 300) == {
+        "max_output_tokens": 300, "reasoning": {"effort": "none"}, "temperature": 0.1}
+
+
+def test_run_agent_llm_returns_tool_calls_and_the_items_to_send_back(monkeypatch, db_session):
+    from tests.conftest import fake_response
+    reasoning = {"type": "reasoning", "id": "rs_1", "encrypted_content": "gAAA", "summary": []}
+    call = {"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "run_sql", "arguments": '{"query": "SELECT 1"}'}
+    _agent_openai(monkeypatch, db_session, [fake_response([reasoning, call])])
+
+    response = asyncio.run(summary_service.run_agent_llm(_MESSAGES, "gpt-5-mini", 300, purpose="execute", tools=_TOOLS))
+
+    assert response["tool_calls"] == [{"id": "call_1", "name": "run_sql", "arguments": '{"query": "SELECT 1"}'}]
+    assert response["output_items"] == [reasoning, call] and response["finish_reason"] == "tool_calls"
+
+
+def test_json_mode_and_a_cut_off_answer(monkeypatch, db_session):
+    from tests.conftest import fake_response
+    calls = _agent_openai(monkeypatch, db_session, [fake_response(text="", incomplete="max_output_tokens")])
+
+    response = asyncio.run(summary_service.run_agent_llm(_MESSAGES, "gpt-6-luna", 50, purpose="plan", json_mode=True))
+
+    assert calls[0]["text"] == {"format": {"type": "json_object"}}
+    assert response["finish_reason"] == "length" and summary_service.is_empty_answer(response["content"])
+
+
+@pytest.mark.parametrize("event", [
+    {"type": "response.failed", "response": {"error": {"message": "server_error"}}},
+    {"type": "error", "message": "rate limited"},
+])
+def test_a_failed_report_stream_raises(monkeypatch, db_session, event):
+    # The SDK raises only for events with a top-level "error" key; a failed response ended the stream
+    # quietly, the report stayed empty and the findings fallback never ran.
+    from types import SimpleNamespace
+    response = SimpleNamespace(**{k: SimpleNamespace(**v) if isinstance(v, dict) else v
+                                  for k, v in event.get("response", {}).items()})
+    payload = {**event, "response": response} if "response" in event else event
+    _agent_openai(monkeypatch, db_session, stream_events=[
+        SimpleNamespace(type="response.output_text.delta", delta="Ra"), SimpleNamespace(**payload)])
+
+    async def collect():
+        return [part async for part in summary_service.stream_agent_llm(_MESSAGES, "gpt-6-luna", 300, purpose="report")]
+
+    with pytest.raises(RuntimeError):
+        asyncio.run(collect())
+
+
+def test_a_content_filtered_answer_says_so(monkeypatch, db_session):
+    from tests.conftest import fake_response
+    _agent_openai(monkeypatch, db_session, [fake_response(text="", incomplete="content_filter")])
+
+    response = asyncio.run(summary_service.run_agent_llm(_MESSAGES, "gpt-6-luna", 50, purpose="plan"))
+
+    assert response["finish_reason"] == "content_filter"
+
+
+def test_stream_agent_llm_yields_text_deltas_and_the_billed_cost(monkeypatch, db_session):
+    from types import SimpleNamespace
+    usage = SimpleNamespace(input_tokens=1000, output_tokens=200)
+    calls = _agent_openai(monkeypatch, db_session, stream_events=[
+        SimpleNamespace(type="response.created"),
+        SimpleNamespace(type="response.output_text.delta", delta="Rap"),
+        SimpleNamespace(type="response.output_text.delta", delta="or."),
+        SimpleNamespace(type="response.completed", response=SimpleNamespace(usage=usage)),
+    ])
+
+    async def collect():
+        return [part async for part in summary_service.stream_agent_llm(_MESSAGES, "gpt-6-luna", 300, purpose="report")]
+
+    parts = asyncio.run(collect())
+
+    assert parts[:2] == [("token", "Rap"), ("token", "or.")]
+    assert parts[2] == ("cost", pytest.approx(summary_service.calculate_cost("gpt-6-luna", 1000, 200)))
+    assert calls[0]["api"] == "responses" and calls[0]["stream"] is True

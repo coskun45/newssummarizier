@@ -23,6 +23,7 @@ import {
   useChatTools,
   useCreateChatConversation,
   useDeleteChatConversation,
+  useSettings,
 } from '../../hooks/useApi';
 import type { ChatConversation, ChatConversationSummary, ChatSendRequest } from '../../types';
 import ChatRun from './ChatRun';
@@ -42,6 +43,8 @@ const EXAMPLE_QUESTIONS: { text: string; icon: Icon }[] = [
 /** Within this many pixels of the bottom the thread keeps following new output. */
 const STICK_THRESHOLD = 80;
 const MAX_LENGTH = 4000;
+/** localStorage key of the model picked in the composer; absent = the server default. */
+const MODEL_STORAGE_KEY = 'chat_model';
 
 const GROUP_ORDER = ['Bugün', 'Dün', 'Son 7 gün', 'Son 30 gün', 'Daha eski'] as const;
 
@@ -97,6 +100,7 @@ function Chat({ active = true }: ChatProps) {
   const [pendingDelete, setPendingDelete] = useState<number | null>(null);
   const [lastRequest, setLastRequest] = useState<{ body: ChatSendRequest; shownText: string } | null>(null);
   const [atBottom, setAtBottom] = useState(true);
+  const [pickedModel, setPickedModel] = useState(() => localStorage.getItem(MODEL_STORAGE_KEY) ?? '');
   const threadRef = useRef<HTMLDivElement | null>(null);
   const threadEndRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -106,11 +110,18 @@ function Chat({ active = true }: ChatProps) {
   const { data: conversations, isLoading: listLoading } = useChatConversations();
   const { data: conversation, isLoading: conversationLoading } = useChatConversation(selectedId);
   const { data: tools } = useChatTools();
+  const { data: settings, isLoading: settingsLoading } = useSettings();
   const { mutateAsync: createConversation, isPending: creating } = useCreateChatConversation();
   const { mutate: deleteConversation } = useDeleteChatConversation();
   const stream = useChatStream();
 
-  const busy = stream.streaming || creating;
+  const models = settings?.available_models ?? [];
+  // Only a model the list confirms is sent: one no longer offered (or no list, /settings failing)
+  // falls back to the server default instead of failing every message. While the list loads, a
+  // stored choice waits for it rather than being dropped.
+  const model = models.some((m) => m.id === pickedModel) ? pickedModel : '';
+  const modelPending = settingsLoading && !!pickedModel;
+  const busy = stream.streaming || creating || modelPending;
   const activeTools = (tools ?? []).filter((t) => t.active);
   const messages = conversation?.messages ?? [];
   const liveStored = stream.doneMessageId !== null && messages.some((m) => m.id === stream.doneMessageId);
@@ -166,8 +177,16 @@ function Chat({ active = true }: ChatProps) {
 
   const focusComposer = () => requestAnimationFrame(() => inputRef.current?.focus());
 
-  const send = async (body: ChatSendRequest, shownText: string) => {
+  const pickModel = (id: string) => {
+    setPickedModel(id);
+    if (id) localStorage.setItem(MODEL_STORAGE_KEY, id);
+    else localStorage.removeItem(MODEL_STORAGE_KEY);
+  };
+
+  const send = async (request: ChatSendRequest, shownText: string) => {
     if (busy) return;
+    // Every send (also a retry, a plan approval or an answer) runs on the model picked now.
+    const body: ChatSendRequest = { ...request, model: model || undefined };
     setLastRequest({ body, shownText });
     stickRef.current = true;
     let id = selectedId;
@@ -281,6 +300,18 @@ function Chat({ active = true }: ChatProps) {
             </div>
           )}
           <div className="chat-composer-actions">
+            {settings && models.length > 0 && (
+              <select
+                className="chat-model"
+                aria-label="Model"
+                title="Planı, analiz adımlarını ve raporu yazan model"
+                value={model}
+                onChange={(e) => pickModel(e.target.value)}
+              >
+                <option value="">Varsayılan ({settings.default_models.chat})</option>
+                {models.map((m) => <option key={m.id} value={m.id}>{m.id}</option>)}
+              </select>
+            )}
             {remaining <= 500 && (
               <span className={remaining <= 100 ? 'chat-composer-count chat-composer-count--low' : 'chat-composer-count'}>
                 {remaining} karakter kaldı

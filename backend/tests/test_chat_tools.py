@@ -358,6 +358,13 @@ def test_normalize_enabled_tools_orders_canonically():
     assert tools.normalize_enabled_tools("chart, sql") == "sql,chart"
 
 
+def test_tool_schemas_keep_optional_arguments_optional():
+    # The Responses API treats a function as strict unless told otherwise, which turns every optional
+    # argument (semantic_search's k, dates, topics…) into a required one the model has to invent.
+    schemas = tools.openai_tools(["time", "sql", "semantic_search", "chart"])
+    assert len(schemas) == 4 and all(schema["strict"] is False for schema in schemas)
+
+
 # ---------------------------------------------------------------------------
 # summary_service.run_agent_llm — cost booking
 # ---------------------------------------------------------------------------
@@ -365,11 +372,11 @@ def test_normalize_enabled_tools_orders_canonically():
 def test_run_agent_llm_books_usage_and_returns_tool_calls(agent_db, db_session, monkeypatch):
     from app.services import summary_service
 
-    call = SimpleNamespace(id="c1", function=SimpleNamespace(name="run_sql", arguments='{"query": "SELECT 1"}'))
-    response = SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content=None, tool_calls=[call]),
-                                 finish_reason="tool_calls")],
-        usage=SimpleNamespace(prompt_tokens=1000, completion_tokens=100),
+    from tests.conftest import fake_response
+
+    response = fake_response(
+        [{"type": "function_call", "call_id": "c1", "name": "run_sql", "arguments": '{"query": "SELECT 1"}'}],
+        input_tokens=1000, output_tokens=100,
     )
     sent = {}
 
@@ -378,14 +385,15 @@ def test_run_agent_llm_books_usage_and_returns_tool_calls(agent_db, db_session, 
         return response
 
     monkeypatch.setattr(summary_service, "get_openai_client",
-                        lambda: SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
+                        lambda: SimpleNamespace(responses=SimpleNamespace(create=create)))
     result = asyncio.run(summary_service.run_agent_llm(
         [{"role": "user", "content": "x"}], "gpt-4o-mini", 500, purpose="execute",
-        tools=[{"type": "function", "function": {"name": "run_sql"}}],
+        tools=tools.openai_tools(["sql"]),
     ))
 
     assert result["tool_calls"] == [{"id": "c1", "name": "run_sql", "arguments": '{"query": "SELECT 1"}'}]
-    assert sent["tools"][0]["function"]["name"] == "run_sql"
+    assert result["finish_reason"] == "tool_calls"
+    assert sent["tools"][0]["name"] == "run_sql" and sent["store"] is False
     usage = db_session.query(models.LlmUsage).one()
     assert (usage.kind, usage.input_tokens, usage.output_tokens) == ("chat", 1000, 100)
     assert usage.cost == pytest.approx(result["cost"]) and result["cost"] > 0

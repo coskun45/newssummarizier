@@ -75,8 +75,14 @@ def _new_run_state(db, question: str, history: List[Dict[str, str]]) -> Dict[str
     }
 
 
-def build_turn_state(db, stored: Dict[str, Any], previous_status: str, content: str, action: str) -> Dict[str, Any]:
-    """The graph input for this turn: an answer resumes the waiting run, anything else starts a new one."""
+def build_turn_state(db, stored: Dict[str, Any], previous_status: str, content: str, action: str,
+                     model: Optional[str] = None) -> Dict[str, Any]:
+    """The graph input for this turn: an answer resumes the waiting run, anything else starts a new one.
+    `model` (picked on the Asistan page; None = CHAT_MODEL) applies to this turn, also to a resumed run."""
+    return {**_turn_state(db, stored, previous_status, content, action), "chat_model": model}
+
+
+def _turn_state(db, stored: Dict[str, Any], previous_status: str, content: str, action: str) -> Dict[str, Any]:
     if previous_status == "awaiting_clarification" and stored.get("pending"):
         return {**stored, "resume": {"kind": "clarification", "answer": content}}
     if previous_status == "awaiting_plan_approval" and stored.get("pending"):
@@ -139,13 +145,14 @@ def _free(conversation_id: int) -> None:
         db.close()
 
 
-async def stream_turn(conversation_id: int, previous_status: str, content: str, action: str) -> AsyncIterator[str]:
+async def stream_turn(conversation_id: int, previous_status: str, content: str, action: str,
+                      model: Optional[str] = None) -> AsyncIterator[str]:
     """SSE stream of one turn. The conversation is already claimed (`running`) by the route."""
     db = SessionLocal()
     try:
         conversation = crud.get_chat_conversation(db, conversation_id)
         stored = load_state(conversation.agent_state if conversation else None)
-        state = build_turn_state(db, stored, previous_status, content, action)
+        state = build_turn_state(db, stored, previous_status, content, action, model)
     finally:
         db.close()
 

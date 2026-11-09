@@ -8,6 +8,7 @@ so `init_db()`/`seed_database()`/the APScheduler never touch the real
 PostgreSQL DB or start background jobs during tests.
 """
 import itertools
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import create_engine, event
@@ -288,24 +289,45 @@ class FakeAgentLLM:
 
     async def run(self, messages, model, max_tokens, *, purpose, json_mode=False, tools=None, temperature=0.2):
         import json
-        self.calls.append({"purpose": purpose, "messages": messages, "tools": tools})
+        self.calls.append({"purpose": purpose, "model": model, "messages": messages, "tools": tools})
         queue = self.answers.get(purpose) or []
         answer = queue.pop(0) if queue else self._DEFAULTS[purpose]
         if isinstance(answer, dict) and "tool_calls" in answer:
-            return {"content": "", "tool_calls": answer["tool_calls"], "finish_reason": "tool_calls",
-                    "cost": self.cost_per_call, "purpose": purpose}
+            items = [{"type": "function_call", "call_id": c["id"], "name": c["name"], "arguments": c["arguments"]}
+                     for c in answer["tool_calls"]]
+            return {"content": "", "tool_calls": answer["tool_calls"], "output_items": items,
+                    "finish_reason": "tool_calls", "cost": self.cost_per_call, "purpose": purpose}
         content = json.dumps(answer, ensure_ascii=False) if isinstance(answer, dict) else answer
-        return {"content": content, "tool_calls": [], "finish_reason": "stop", "cost": self.cost_per_call,
-                "purpose": purpose}
+        return {"content": content, "tool_calls": [], "output_items": [], "finish_reason": "stop",
+                "cost": self.cost_per_call, "purpose": purpose}
 
     async def stream(self, messages, model, max_tokens, *, purpose, temperature=0.3):
-        self.calls.append({"purpose": purpose, "messages": messages, "tools": None})
+        self.calls.append({"purpose": purpose, "model": model, "messages": messages, "tools": None})
         for piece in (self.report[: len(self.report) // 2], self.report[len(self.report) // 2:]):
             yield ("token", piece)
         yield ("cost", self.cost_per_call)
 
 
 _tool_call_ids = itertools.count(1)
+
+
+class _ResponseItem(SimpleNamespace):
+    """An output item of a fake Responses API answer (the SDK's items are pydantic models)."""
+
+    def model_dump(self, exclude_none=False):
+        return {k: v for k, v in vars(self).items() if not (exclude_none and v is None)}
+
+
+def fake_response(output=(), text="", input_tokens=10, output_tokens=5, incomplete=None, failed=None):
+    """A Responses API answer: `output` items as dicts, `incomplete` = incomplete_details.reason,
+    `failed` = the error message of a response with status "failed"."""
+    return SimpleNamespace(
+        output=[_ResponseItem(**item) for item in output], output_text=text,
+        usage=SimpleNamespace(input_tokens=input_tokens, output_tokens=output_tokens),
+        incomplete_details=SimpleNamespace(reason=incomplete) if incomplete else None,
+        status="failed" if failed else "completed",
+        error=SimpleNamespace(message=failed) if failed else None,
+    )
 
 
 @pytest.fixture()

@@ -471,6 +471,23 @@
   white-space: nowrap;
 }
 
+.chat-model {
+  max-width: 11rem;
+  padding: 2px var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.chat-model:hover,
+.chat-model:focus-visible {
+  border-color: var(--color-text-secondary);
+  color: var(--color-text-primary);
+}
+
 .chat-composer-actions {
   display: flex;
   align-items: center;

@@ -7,7 +7,7 @@
 # Alanlar (bkz. README.md):
 #   turns            çok turlu sorular; tek turlu sorularda question/expect doğrudan yazılır
 #   clarification_answers  ajan netleştirme sorarsa sırayla verilecek cevaplar
-#   expect.clarification   required | forbidden | optional (varsayılan optional)
+#   expect.clarification   required | once | forbidden | optional (varsayılan optional); once = tam bir kez
 #   expect.time_range      ajanın kullandığı dönem (understand veya zaman aracı) bu range'e eşit olmalı
 #   expect.tools_required / tools_forbidden / tools_any_of
 #   expect.gold[].match    scalar | rowset | top_ids | id_recall | chart | must_cite
@@ -98,6 +98,24 @@
           SELECT COUNT(*) FROM chat_articles WHERE is_analyzable AND priority = 'high'
           AND article_date BETWEEN '{t_from}' AND '{t_to}'
     rubric: "Sonuç 0 ise bunu açıkça söylemeli, haber uydurmamalı; isterse dönemdeki diğer önem seviyelerini veya en son yüksek önemli haberin tarihini belirtebilir."
+
+- id: cnt-06
+  # Holdout'tan taşındı (2026-10-31): çözücü bu ifadeyi okuyamıyor; modelin okuması (time_guess)
+  # netleştirmede ilk seçenek olmalı. Hazır cevap yok: koşucu ilk seçeneği seçer.
+  category: sayim
+  question: "Eylül'ün ilk yarısında kaç tane düşük öncelikli haber çıktı?"
+  ranges: {t: "1-15 Eylül"}
+  expect:
+    clarification: optional
+    time_range: t
+    tools_required: [sql]
+    gold:
+      - name: low_count
+        match: scalar
+        sql: >
+          SELECT COUNT(*) FROM chat_articles WHERE is_analyzable AND priority = 'low'
+          AND article_date BETWEEN '{t_from}' AND '{t_to}'
+    rubric: "1-15 Eylül arasındaki düşük önemli haber sayısı verilmeli (sıfırsa açıkça söylenmeli)."
 
 # ---------------------------------------------------------------------------
 # 2. Dağılım
@@ -221,6 +239,24 @@
           WHERE is_analyzable AND article_date BETWEEN '{t_from}' AND '{t_to}'
           GROUP BY 1, 2 ORDER BY 1, 2
     rubric: "Eylül ortası (11-20 Eylül) için kaynak başına günlük sayılar yığılmış grafikte; hangi kaynağın baskın olduğu söylenmeli."
+
+- id: trd-05
+  # Holdout'tan taşındı (2026-10-31): çözücü bu ifadeyi okuyamıyor; modelin okuması (time_guess)
+  # netleştirmede ilk seçenek olmalı. Hazır cevap yok: koşucu ilk seçeneği seçer.
+  category: trend
+  question: "Eylül boyunca her gün kaç yüksek öncelikli haber geldiğini çiz."
+  ranges: {t: "Eylül"}
+  expect:
+    time_range: t
+    tools_required: [sql, chart]
+    tools_forbidden: [semantic_search]
+    gold:
+      - name: daily_high
+        match: chart
+        sql: >
+          SELECT DATE(article_date), COUNT(*) FROM chat_articles WHERE is_analyzable AND priority = 'high'
+          AND article_date BETWEEN '{t_from}' AND '{t_to}' GROUP BY 1 ORDER BY 1
+    rubric: "Eylül'ün günlük yüksek önemli haber sayıları grafikte; en yoğun gün raporda."
 
 # ---------------------------------------------------------------------------
 # 4. Listeleme / sıralama
@@ -591,6 +627,26 @@
         match: scalar
         sql: "SELECT COUNT(*) FROM chat_articles WHERE is_analyzable AND article_date BETWEEN '{t_from}' AND '{t_to}'"
     rubric: "Net soru: netleştirme sormadan Eylül'deki önemli haber sayısı verilmeli."
+
+- id: clr-04
+  category: netlestirme
+  # Boş dönem → kullanıcı başka dönem seçer. Seçilen dönem sorudaki dönemin yerine geçer: yeniden
+  # sorulmamalı, plan sorudaki döneme geri çevrilmemeli, rapor sonuçları "sorulan dönem değil" diye reddetmemeli.
+  question: "Ocak 2020'nin en önemli 3 haberi hangileri?"
+  clarification_answers: ["Son 30 gün"]
+  ranges: {t: "son 30 gün"}
+  expect:
+    clarification: once
+    time_range: t
+    tools_required: [sql]
+    gold:
+      - name: top3
+        match: top_ids
+        sql: >
+          SELECT id FROM chat_articles WHERE is_analyzable AND article_date BETWEEN '{t_from}' AND '{t_to}'
+          ORDER BY CASE priority WHEN 'high' THEN 1 WHEN 'med' THEN 2 ELSE 3 END, article_date DESC LIMIT 3
+    report_must_match: ["30 gün"]
+    rubric: "Ocak 2020'de haber olmadığı için kullanıcı son 30 günü seçti: rapor son 30 günün önem sırasına göre ilk 3 haberini [#id] ile vermeli ve dönemin seçildiğini belirtmeli; sonuçları Ocak 2020 olmadığı için reddetmemeli, dönemi yeniden sormamalı."
 
 # ---------------------------------------------------------------------------
 # 10. Sınır / güvenlik / çok turlu

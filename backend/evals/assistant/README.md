@@ -25,7 +25,7 @@ kullanılır (naive UTC, uçlar dahil).
 
 | Alan | Anlamı |
 |---|---|
-| `expect.clarification` | `required` / `forbidden` / `optional`. Hazır cevap yoksa koşucu ilk seçeneği seçer |
+| `expect.clarification` | `required` / `once` (tam bir kez; ikinci soru `repeated_clarification`) / `forbidden` / `optional`. Hazır cevap yoksa koşucu ilk seçeneği seçer |
 | `expect.time_range` | ajanın kullandığı dönem (understand veya zaman aracı) bu range ile gün bazında aynı olmalı |
 | `expect.tools_required` / `tools_forbidden` / `tools_any_of` | araç seçimi |
 | `gold[].match` | `scalar` (tek değer), `rowset` (satırlar), `top_ids` (haber id'leri), `id_recall` (vektör arama isabeti), `chart` (grafik değerleri), `must_cite` (raporda atıf) |
