@@ -5,13 +5,18 @@ Tests for app/api/routes/rss.py (feed CRUD + manual refresh).
 refresh task are mocked so these tests never touch the network.
 """
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+import socket
+import threading
 import pytest
 from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException
 
+from app.agents import tools
 from app.agents.tools import fetch_rss_feed
+from app.core.exceptions import RSSFetchError
 from app.db import models
 from tests.conftest import _make_feed
 
@@ -378,6 +383,57 @@ def test_fetch_rss_feed_assumes_utc_for_naive_published_date():
     published_at = articles[0]["published_at"]
     assert published_at.tzinfo == timezone.utc
     assert published_at.hour == 12 and published_at.minute == 47
+
+
+# ==================== A stalled feed server must not lock up the backend ====================
+# A hung fetch used to keep its thread in asyncio's shared pool forever (`wait_for` only stops
+# waiting). Once the pool was full every `to_thread` waited for good: feed refresh, bulletin mails,
+# and the Asistan, whose synchronous LangGraph routers run on that same pool.
+
+def test_stalled_feed_server_releases_its_worker_thread(monkeypatch):
+    server = socket.create_server(("127.0.0.1", 0))  # accepts the connection, never answers
+    finished = threading.Event()
+    real_parse = tools.feedparser.parse
+
+    def tracked_parse(*args, **kwargs):
+        try:
+            return real_parse(*args, **kwargs)
+        finally:
+            finished.set()
+
+    monkeypatch.setattr(tools.feedparser, "parse", tracked_parse)
+    monkeypatch.setattr(tools, "assert_public_url", lambda url: None)
+    monkeypatch.setattr(tools, "NETWORK_CALL_TIMEOUT_SECONDS", 0.3)
+
+    async def scenario():
+        try:
+            try:
+                await tools._fetch_and_parse(f"http://127.0.0.1:{server.getsockname()[1]}/feed")
+            except RSSFetchError:
+                pass
+            return finished.wait(3)
+        finally:
+            server.close()  # also frees the thread when the test fails
+
+    assert asyncio.run(scenario()), "the fetch thread is still blocked on the silent server"
+
+
+def test_stuck_feed_fetch_does_not_starve_the_shared_thread_pool(monkeypatch):
+    release = threading.Event()
+    monkeypatch.setattr(tools.feedparser, "parse", lambda *a, **k: release.wait())
+    monkeypatch.setattr(tools, "assert_public_url", lambda url: None)
+    monkeypatch.setattr(tools, "NETWORK_CALL_TIMEOUT_SECONDS", 0.1)
+
+    async def scenario():
+        asyncio.get_running_loop().set_default_executor(ThreadPoolExecutor(1))
+        try:
+            with pytest.raises(RSSFetchError):
+                await tools._fetch_and_parse("https://example.com/feed")
+            return await asyncio.wait_for(asyncio.to_thread(lambda: "free"), 1)
+        finally:
+            release.set()
+
+    assert asyncio.run(scenario()) == "free"
 
 
 # ==================== Feed name is required (it is the articles' "Kaynak") ====================

@@ -93,6 +93,25 @@ def test_claude_severity_kept_when_checks_pass():
     assert report.analyze("log", "200", True, "k", "m", post=rec)["severity"] == "UYARI"
 
 
+def test_stale_news_raises_severity_even_if_claude_says_ok():
+    # 9 Kasım 2026: backend "healthy" görünürken haber işleme 3 gündür duruyordu.
+    rec = _Recorder(_claude_response(_analysis("OK")))
+    result = report.analyze("HABER_ISLEME_YASI_SAAT=70\n", "200", True, "k", "m", post=rec)
+    assert result["severity"] == "UYARI"
+
+
+def test_stale_news_is_reported_without_claude_too():
+    result = report.analyze("HABER_ISLEME_YASI_SAAT=70\n", "200", True, "", "m")
+    assert result["severity"] == "UYARI"
+    assert "70 saattir" in result["summary"]
+
+
+def test_recent_or_unknown_news_age_keeps_severity():
+    for bundle in ("HABER_ISLEME_YASI_SAAT=2\n", "HABER_ISLEME_YASI_SAAT=\n", "log"):
+        rec = _Recorder(_claude_response(_analysis("OK")))
+        assert report.analyze(bundle, "200", True, "k", "m", post=rec)["severity"] == "OK"
+
+
 def test_claude_http_error_falls_back_to_report():
     err = urllib.error.HTTPError(report.API_URL, 529, "Overloaded", {}, io.BytesIO(b'{"error":"overloaded"}'))
     result = report.analyze("log", "200", True, "k", "m", post=_Recorder(err))

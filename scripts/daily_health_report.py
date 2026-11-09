@@ -31,6 +31,10 @@ MAX_BUNDLE_CHARS = 60_000
 # GitHub issue/yorum gövdesi 65 536 karakterle sınırlı.
 MAX_ISSUE_CHARS = 60_000
 
+# Backend "healthy" görünürken arka plan işleri kilitlenebilir; bunu yalnızca işlenen haberin yaşı gösterir.
+STALE_NEWS_HOURS = 6
+_NEWS_AGE_LINE = re.compile(r"^HABER_ISLEME_YASI_SAAT=(\d+)\s*$", re.M)
+
 SEVERITIES = ("OK", "UYARI", "KRITIK")
 SEVERITY_LABEL = {"OK": "✅ OK", "UYARI": "⚠️ UYARI", "KRITIK": "🔴 KRİTİK"}
 
@@ -87,6 +91,7 @@ Sana her sabah son 24 saatin verisi gelir. Görevin:
 - Tekrarlayan hataları grupla; aynı hatayı tekrar tekrar listeleme, kaç kez görüldüğünü söyle.
 - Geçici/zararsız gürültüyü (tek seferlik ağ zaman aşımı, bot taramaları, 404'ler) ciddi hatalardan ayır.
 - Disk > %85, bellek baskısı, container restart'ları gibi kaynak sorunlarını da değerlendir.
+- `HABER_ISLEME_YASI_SAAT` yüksekse veya `ATLANAN_ZAMANLANMIS_IS_24S` çok sayıdaysa arka plan işleri kilitlenmiş olabilir; backend "healthy" görünse bile bildir.
 
 Önem derecesi:
 - OK: kullanıcıyı etkileyen sorun yok (zararsız gürültü olabilir).
@@ -121,6 +126,12 @@ def severity_floor(health_status: str, ssh_ok: bool) -> str:
 
 def max_severity(a: str, b: str) -> str:
     return a if SEVERITIES.index(a) >= SEVERITIES.index(b) else b
+
+
+def news_age_hours(bundle: str) -> Optional[int]:
+    """Son haberin kaç saat önce işlendiği (workflow'un yazdığı satırdan); bilinmiyorsa None."""
+    match = _NEWS_AGE_LINE.search(bundle)
+    return int(match.group(1)) if match else None
 
 
 def build_prompt(bundle: str, health_status: str, ssh_ok: bool, truncated: bool) -> str:
@@ -202,6 +213,10 @@ def analyze(bundle_raw: str, health_status: str, ssh_ok: bool, api_key: str, mod
     """Maskele → kırp → Claude → önem derecesini dış kontrollerle birleştir."""
     bundle, truncated = trim_bundle(redact(bundle_raw))
     floor = severity_floor(health_status, ssh_ok)
+    age = news_age_hours(bundle_raw)
+    stale = age is not None and age >= STALE_NEWS_HOURS
+    if stale:
+        floor = max_severity(floor, "UYARI")
     if not api_key:
         analysis = fallback_analysis(health_status, ssh_ok, "ANTHROPIC_API_KEY tanımlı değil")
     else:
@@ -210,6 +225,8 @@ def analyze(bundle_raw: str, health_status: str, ssh_ok: bool, api_key: str, mod
         except RuntimeError as exc:
             analysis = fallback_analysis(health_status, ssh_ok, redact(str(exc)))
     analysis["severity"] = max_severity(analysis["severity"], floor)
+    if stale:
+        analysis["summary"] = f"{age} saattir yeni haber işlenmedi. {analysis['summary']}"
     analysis["bundle"] = bundle
     analysis["truncated"] = truncated
     analysis["health_status"] = health_status

@@ -10,6 +10,8 @@ import logging
 import urllib.error
 import urllib.request
 import re
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from html import unescape
 from datetime import timezone
 from typing import List, Dict, Any, Optional, Tuple
@@ -23,12 +25,40 @@ from app.core.url_safety import assert_public_url, is_public_url
 
 logger = logging.getLogger(__name__)
 
-# Both feedparser and RobotFileParser do blocking, timeout-less network I/O under the hood.
-# Run them in a worker thread so a stalled remote server can't freeze the FastAPI event loop,
-# and bound them with an explicit timeout so a hang doesn't stall the caller indefinitely.
+# Feed and robots.txt fetches are blocking network I/O, so they run in a worker thread. Each socket
+# operation has a real timeout (the handlers below): `asyncio.wait_for` only stops waiting, the
+# thread would stay blocked. They get their own pool because asyncio's shared one also runs every
+# other `to_thread` and the Asistan's synchronous LangGraph routers: fetches hung on a dead server
+# filled it and locked up feed refresh, mails and the Asistan until a restart.
 NETWORK_CALL_TIMEOUT_SECONDS = 30
+_NETWORK_POOL = ThreadPoolExecutor(max_workers=8, thread_name_prefix="remote-fetch")
 MAX_REDIRECTS = 5
 _REDIRECT_STATUSES = (301, 302, 303, 307, 308)
+
+
+class _TimeoutHTTPHandler(urllib.request.HTTPHandler):
+    """Gives feedparser's connections a socket timeout; its parse() has no timeout argument."""
+
+    def http_open(self, req):
+        req.timeout = NETWORK_CALL_TIMEOUT_SECONDS
+        return super().http_open(req)
+
+
+class _TimeoutHTTPSHandler(urllib.request.HTTPSHandler):
+    """The same for https feeds."""
+
+    def https_open(self, req):
+        req.timeout = NETWORK_CALL_TIMEOUT_SECONDS
+        return super().https_open(req)
+
+
+async def _run_remote_fetch(func, *args, **kwargs):
+    """Run a blocking fetch on the dedicated pool, waiting at most the network timeout."""
+    loop = asyncio.get_running_loop()
+    return await asyncio.wait_for(
+        loop.run_in_executor(_NETWORK_POOL, partial(func, *args, **kwargs)),
+        timeout=NETWORK_CALL_TIMEOUT_SECONDS,
+    )
 
 
 class _PublicOnlyRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -127,11 +157,10 @@ async def _fetch_and_parse(feed_url: str):
         # point elsewhere now. Redirects are checked hop by hop by the handler.
         await asyncio.to_thread(assert_public_url, feed_url)
 
-        # feedparser.parse() is a blocking, timeout-less network call — run it off the event
-        # loop and bound it so a stalled feed server can't hang the whole app.
-        return await asyncio.wait_for(
-            asyncio.to_thread(feedparser.parse, feed_url, handlers=[_PublicOnlyRedirectHandler()]),
-            timeout=NETWORK_CALL_TIMEOUT_SECONDS,
+        return await _run_remote_fetch(
+            feedparser.parse,
+            feed_url,
+            handlers=[_PublicOnlyRedirectHandler(), _TimeoutHTTPHandler(), _TimeoutHTTPSHandler()],
         )
     except Exception as e:
         logger.error(f"Failed to fetch RSS feed: {e}")
@@ -245,12 +274,7 @@ async def check_robots_txt(url: str) -> bool:
         parsed = urlparse(url)
         robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
 
-        # RobotFileParser.read() is a blocking, timeout-less network call — run it off the
-        # event loop and bound it so a stalled/unreachable robots.txt host can't hang the app.
-        return await asyncio.wait_for(
-            asyncio.to_thread(_read_robots_txt, robots_url, url),
-            timeout=NETWORK_CALL_TIMEOUT_SECONDS,
-        )
+        return await _run_remote_fetch(_read_robots_txt, robots_url, url)
     except Exception as e:
         logger.warning(f"Error checking robots.txt: {e}. Proceeding with caution.")
         return True  # Default to allowed if robots.txt check fails
