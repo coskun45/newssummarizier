@@ -31,3 +31,5 @@ backend/bulletin_reports/
 
 # Asistan eval runs (traces + reports) — regenerate with python -m evals.assistant.run_eval
 backend/evals/assistant/results/
+eval_dataset.yaml
+eval_holdout.yaml
