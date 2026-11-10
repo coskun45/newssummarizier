@@ -12,6 +12,7 @@ import {
 import type { ChatChartSpec, ChatEvent, ChatPlanStep, ChatQuestion, ChatStepStatus } from '../../types';
 import ChatChart from './ChatChart';
 import ChatMarkdown from './ChatMarkdown';
+import { copyToClipboard } from '../../utils/exportArticles';
 
 /** Turkish names of the agent's tools, by catalog name and by function name. */
 const TOOL_LABELS: Record<string, string> = {
@@ -292,13 +293,10 @@ function ChatRun({ events, content = null, live = false, liveText = '', cost = n
   const [copied, setCopied] = useState(false);
 
   const copyReport = async () => {
-    try {
-      await navigator.clipboard.writeText(report);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setCopied(false);
-    }
+    // Not navigator.clipboard directly: it is undefined over plain http (the server), see copyToClipboard.
+    if (!(await copyToClipboard(report))) return;
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (

@@ -17,6 +17,8 @@ paths:
 - **Gate expensive fetches behind UI state** by passing `null`/conditional ids into hooks (`useSummary(expanded ? article.id : null, ...)`), relying on the hook's `enabled` guard.
 - **Render cached `data` before checking `isError`** — when a background refetch (`refetchInterval`) fails, React Query sets `isError` but keeps the last good `data`, so `isError || !data ? <error/> : …` swaps a working view for an error. Show the full error state only when there is no `data` (see `Analysis.tsx`).
 
+- **Copy to the clipboard only via `copyToClipboard` (`src/utils/exportArticles.ts`), never `navigator.clipboard` directly** — the server is served over plain http (not a secure context), where `navigator.clipboard` is undefined; the helper falls back to `execCommand('copy')`. A direct call made Asistan's "Raporu kopyala" silently do nothing in production while the localhost e2e test passed (2026-11).
+
 ## i18n / formatting
 - **UI text is Turkish** — match the existing language of labels and buttons.
 - **Format dates with `date-fns` using the `tr` locale** (`formatDistanceToNow(date, { addSuffix: true, locale: tr })`) as established in `ArticleCard`.

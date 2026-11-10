@@ -248,6 +248,31 @@ test('a finished run shows plan progress and its report can be copied', async ({
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('Kopyalanacak rapor.');
 });
 
+test('the report can be copied where the Clipboard API is missing (plain http on the server)', async ({ page }) => {
+  // Over http://<server-ip> the page is not a secure context and navigator.clipboard is undefined:
+  // the button called navigator.clipboard.writeText directly and silently did nothing.
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
+    (window as unknown as { copied: string[] }).copied = [];
+    document.execCommand = ((command: string) => {
+      const el = document.activeElement as HTMLTextAreaElement | null;
+      if (command === 'copy' && el?.value) (window as unknown as { copied: string[] }).copied.push(el.value);
+      return command === 'copy';
+    }) as typeof document.execCommand;
+  });
+  await loginAs(page);
+  await mockApi(page, { articles: [] });
+  await mockChat(page, [reportRun('Kopyalanacak rapor.')]);
+  await openAssistant(page);
+
+  await ask(page, 'Dağılım?');
+  await expect(page.getByText('Kopyalanacak rapor.')).toBeVisible();
+  await page.getByRole('button', { name: 'Raporu kopyala' }).click();
+
+  await expect(page.getByRole('button', { name: 'Kopyalandı' })).toBeVisible();
+  expect(await page.evaluate(() => (window as unknown as { copied: string[] }).copied)).toEqual(['Kopyalanacak rapor.']);
+});
+
 test('a running analysis keeps going while another tab is open', async ({ page }) => {
   await loginAs(page);
   await mockApi(page, { articles: [] });
