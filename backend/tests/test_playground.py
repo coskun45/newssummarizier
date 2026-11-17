@@ -469,6 +469,26 @@ def test_run_summarizes_an_unscraped_article_from_its_page_without_storing_it(
     assert art.cleaned_content is None
 
 
+def test_run_uses_the_feeds_full_text_when_the_page_is_blocked(
+    client, admin_headers, monkeypatch, db_session, fake_pages
+):
+    """Mirrors the pipeline: a page that 403s (Politico) falls back to the whole article the feed
+    shipped in <content:encoded>, not to the raw HTML."""
+    fake = _install(monkeypatch, db_session)
+    feed_html = "".join(f"<p>Tam metin paragraf {i}, " + "ayrıntı " * 10 + "</p>" for i in range(20))
+    art = _make_article(db_session, _make_feed(db_session, url="https://e.com/f6").id, title="Politico",
+                        status="filtered", raw_content=feed_html)
+    fake_pages.pages[art.url] = (None, None, None)
+
+    body = client.post("/api/playground/run",
+                       json={"article_id": art.id, "stages": ["summarization"], "summary_types": ["brief"]},
+                       headers=admin_headers).json()
+
+    assert body["content_used"]["source"] == "raw"  # the text came from the feed, not the page
+    sent = str(fake.calls[-1]["messages"])
+    assert "Tam metin paragraf 19" in sent and "<p>" not in sent
+
+
 def test_run_summarizes_a_page_even_when_the_rss_had_no_text(client, admin_headers, monkeypatch, db_session, fake_pages):
     _install(monkeypatch, db_session)
     art = _make_article(db_session, _make_feed(db_session, url="https://e.com/f5").id, title="Leer")

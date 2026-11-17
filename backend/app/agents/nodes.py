@@ -160,8 +160,9 @@ async def article_processor_node(state: NewsProcessingState) -> Dict[str, Any]:
     Process every new article of the feed, one after another, in a single graph step.
 
     Looping inside the node (instead of one graph step per article) keeps a large refresh from
-    hitting LangGraph's recursion limit. Only a small outcome per article is kept in state, not
-    its full text.
+    hitting LangGraph's recursion limit. The outcome kept per article in state is small, never the
+    page text; the feed entries themselves (`rss_articles`) carry their RSS text, which for
+    full-text feeds (Politico, WordPress) is the whole article.
     """
     articles = state.get("rss_articles", [])
     errors = list(state.get("errors", []))

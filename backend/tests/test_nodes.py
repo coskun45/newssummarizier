@@ -199,3 +199,96 @@ def test_new_article_count_only_counts_this_feeds_new_articles(pipeline_env, db_
     status = background.get_job_status(feed.id)
     assert status["status"] == "done"
     assert status["new_articles"] == 2
+
+
+_FEED_HTML = "".join(f"<p>Tam haber metni paragraf {i}, " + "ayrıntı " * 10 + "</p>" for i in range(20))
+
+
+def _run_with_page(pipeline_env, db_session, monkeypatch, page, raw_content):
+    """Run one important article through the pipeline with the page fetch answering `page`;
+    returns (article, scraped urls, contents handed to the summarizer)."""
+    from app.services import summary_service
+    from app.tasks import background
+
+    scraped, summarized = [], []
+
+    async def tracking_extract(url):
+        scraped.append(url)
+        return page
+
+    async def tracking_summary(title, content, summary_type="standard", source=None, author_hint=None):
+        summarized.append(content)
+        return {"summary_text": "s", "model_used": "m", "tokens_used": 1, "cost": 0.0,
+                "author": None, "structured": True}
+
+    monkeypatch.setattr(summary_service, "extract_article_content", tracking_extract)
+    monkeypatch.setattr(summary_service, "generate_summary", tracking_summary)
+    feed = _make_feed(db_session)
+    pipeline_env.rss_entries = [dict(_rss_entry(1), raw_content=raw_content)]
+
+    asyncio.run(background.process_feed_async(feed.id))
+
+    db_session.expire_all()
+    return crud.get_article_by_url(db_session, "https://example.com/news-1"), scraped, summarized
+
+
+def test_pipeline_falls_back_to_feed_full_text_when_the_page_is_blocked(pipeline_env, db_session, monkeypatch):
+    """Politico's pages 403 the scraper, but its feed carries the whole article in
+    <content:encoded> (kept as raw_content). That text becomes the article text and is summarized,
+    instead of the HTML being sent to the model or only a teaser being summarized."""
+    article, scraped, summarized = _run_with_page(
+        pipeline_env, db_session, monkeypatch, (None, None, None), _FEED_HTML)
+
+    assert scraped == ["https://example.com/news-1"]  # the page is still tried first
+    assert article.status == "summarized"
+    assert article.cleaned_content.startswith("Tam haber metni paragraf 0")
+    assert len(article.cleaned_content.split("\n")) == 20 and "<p>" not in article.cleaned_content
+    assert summarized and all(c.startswith("Tam haber metni paragraf 0") for c in summarized)
+
+
+def test_pipeline_prefers_feed_full_text_over_a_shorter_paywalled_page(pipeline_env, db_session, monkeypatch):
+    article, _, summarized = _run_with_page(
+        pipeline_env, db_session, monkeypatch, ("Abone olun. Kısa giriş.", None, "https://img/x.jpg"), _FEED_HTML)
+
+    assert article.cleaned_content.startswith("Tam haber metni paragraf 0")
+    assert article.image_url == "https://img/x.jpg"  # page metadata is still used
+    assert all(c.startswith("Tam haber metni") for c in summarized)
+
+
+def test_pipeline_keeps_the_page_and_its_metadata_when_it_has_the_article(pipeline_env, db_session, monkeypatch):
+    """Using the feed text up front skipped the page, and with it og:image and the page author.
+    The page wins whenever it has at least as much text as the feed."""
+    page_text = "Sayfadaki tam metin. " * 400
+    article, _, _ = _run_with_page(
+        pipeline_env, db_session, monkeypatch, (page_text, "Yazar Adı", "https://img/hero.jpg"), _FEED_HTML)
+
+    assert article.cleaned_content == page_text
+    assert article.image_url == "https://img/hero.jpg"
+
+
+def test_short_feed_text_is_not_taken_for_the_article(pipeline_env, db_session, monkeypatch):
+    # A teaser in the feed (NYT/Spiegel) must not be stored as the article text: a later fetch
+    # ("Orijinal İçerik", bulletin) should try the page again.
+    article, _, _ = _run_with_page(
+        pipeline_env, db_session, monkeypatch, (None, None, None), "<p>Kısa bir RSS girişi.</p>")
+
+    assert article.cleaned_content is None
+
+
+def test_fetch_article_content_falls_back_to_feed_full_text(db_session, monkeypatch):
+    """The "Orijinal İçerik" view and the bulletin get their text from fetch_article_content —
+    the same page-or-feed rule as the pipeline applies there."""
+    from app.services import summary_service
+
+    async def blocked(url):
+        return None, None, None
+
+    monkeypatch.setattr(summary_service, "extract_article_content", blocked)
+    feed = _make_feed(db_session)
+    article = _make_article(db_session, feed.id, status="filtered", raw_content=_FEED_HTML, cleaned_content=None)
+
+    text = asyncio.run(summary_service.fetch_article_content(db_session, article.id))
+
+    assert text.startswith("Tam haber metni paragraf 0")
+    db_session.expire_all()
+    assert crud.get_article(db_session, article.id).cleaned_content == text

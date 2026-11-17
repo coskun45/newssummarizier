@@ -2,6 +2,7 @@
 Tools for the news processing agents.
 """
 import asyncio
+import json
 import feedparser
 import trafilatura
 from trafilatura.metadata import extract_metadata
@@ -10,14 +11,15 @@ import logging
 import urllib.error
 import urllib.request
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from html import unescape
 from datetime import timezone
 from typing import List, Dict, Any, Optional, Tuple
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlencode, urljoin, urlparse
 from urllib.robotparser import RobotFileParser
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Comment
 from dateutil import parser as date_parser
 from app.core.config import settings
 from app.core.exceptions import RSSFetchError, ScrapingError
@@ -34,6 +36,23 @@ NETWORK_CALL_TIMEOUT_SECONDS = 30
 _NETWORK_POOL = ThreadPoolExecutor(max_workers=8, thread_name_prefix="remote-fetch")
 MAX_REDIRECTS = 5
 _REDIRECT_STATUSES = (301, 302, 303, 307, 308)
+
+# One identity for every request we make (feed, robots.txt, article page). Bot protection on news
+# sites 403s library defaults ("feedparser/…", "Python-urllib/…"): Le Figaro's feed could not be
+# added, and robots.txt 403s blocked Foreign Policy, Kisa Dalga, Politico EU and NZZ from scraping.
+ROBOTS_USER_AGENT = "NewsSummarizer/1.0"
+USER_AGENT = f"{ROBOTS_USER_AGENT} (+https://github.com/yourusername/news-summary)"
+
+# The feed's own text (raw_content, e.g. Politico's whole article in <content:encoded>) replaces a
+# missing or shorter page text only from this length on: NYT and Spiegel ship just a 100-250 char
+# teaser there, which must not be stored as the article text (see summary_service.page_or_feed_text).
+FEED_FULL_TEXT_MIN_CHARS = 1000
+# Page answers that mean "you may not" rather than "no such page" (404) or "slow down / down for
+# now" (429/503, where more requests would only add load): only these try the WordPress REST API.
+_BLOCKED_STATUSES = (401, 403)
+# robots.txt per host, reused by every article (and the WordPress API check) of that site.
+_ROBOTS_CACHE: Dict[str, Tuple[float, RobotFileParser]] = {}
+ROBOTS_CACHE_SECONDS = 600
 
 
 class _TimeoutHTTPHandler(urllib.request.HTTPHandler):
@@ -140,6 +159,17 @@ def _extract_image_url(entry) -> Optional[str]:
     return None
 
 
+def _entry_text(entry) -> str:
+    """The entry's own text, as shipped: <content:encoded> (feedparser: `entry.content`) when it is
+    longer than the <description> — Politico, Fox News and WordPress feeds put the whole article
+    there. Not parsed here: every refresh lists mostly known entries, and only an important
+    article whose page fetch comes up short ever needs it as text."""
+    description = entry.get("description", "") or entry.get("summary", "") or ""
+    blocks = [b.get("value") or "" for b in (entry.get("content") or []) if isinstance(b, dict)]
+    longest = max(blocks, key=len, default="")
+    return longest if len(longest) > len(description) else description
+
+
 async def _fetch_and_parse(feed_url: str):
     """
     Fetch and parse a feed URL with feedparser, off the event loop and bounded by a timeout.
@@ -160,6 +190,7 @@ async def _fetch_and_parse(feed_url: str):
         return await _run_remote_fetch(
             feedparser.parse,
             feed_url,
+            agent=USER_AGENT,
             handlers=[_PublicOnlyRedirectHandler(), _TimeoutHTTPHandler(), _TimeoutHTTPSHandler()],
         )
     except Exception as e:
@@ -216,7 +247,7 @@ async def fetch_rss_feed(feed_url: str) -> List[Dict[str, Any]]:
                 "title": entry.get("title", ""),
                 "author": _extract_author(entry),
                 "published_at": None,
-                "raw_content": entry.get("description", "") or entry.get("summary", ""),
+                "raw_content": _entry_text(entry),
                 "image_url": _extract_image_url(entry),
             }
 
@@ -241,28 +272,30 @@ async def fetch_rss_feed(feed_url: str) -> List[Dict[str, Any]]:
     return articles
 
 
-def _read_robots_txt(robots_url: str, url: str) -> bool:
-    """Blocking robots.txt fetch + check — always run via asyncio.to_thread, never directly."""
+def _read_robots_txt(robots_url: str) -> RobotFileParser:
+    """Blocking robots.txt fetch — always run via `_run_remote_fetch`, never directly."""
     rp = RobotFileParser()
     rp.set_url(robots_url)
     opener = urllib.request.build_opener(_PublicOnlyRedirectHandler())
+    request = urllib.request.Request(robots_url, headers={"User-Agent": USER_AGENT})
     try:
-        with opener.open(robots_url, timeout=NETWORK_CALL_TIMEOUT_SECONDS) as response:
+        with opener.open(request, timeout=NETWORK_CALL_TIMEOUT_SECONDS) as response:
             rp.parse(response.read().decode("utf-8", errors="replace").splitlines())
     except urllib.error.HTTPError as e:
-        # Same semantics as RobotFileParser.read(): 401/403 = disallow all, other 4xx = allow all
-        if e.code in (401, 403):
-            rp.disallow_all = True
-        elif 400 <= e.code < 500:
+        # RFC 9309 §2.3.1.3: any 4xx means robots.txt is unavailable and crawling is allowed.
+        # Not RobotFileParser.read()'s "401/403 = disallow all": bot protection 403s the robots.txt
+        # request itself, which says nothing about the site's rules. 5xx keeps the default
+        # (can_fetch stays False until a robots.txt was read).
+        if 400 <= e.code < 500:
             rp.allow_all = True
-
-    user_agent = "NewsSummarizer/1.0"
-    return rp.can_fetch(user_agent, url)
+    return rp
 
 
 async def check_robots_txt(url: str) -> bool:
     """
-    Check if URL is allowed by robots.txt.
+    Check if URL is allowed by robots.txt. The file is fetched once per host and reused for
+    `ROBOTS_CACHE_SECONDS` (every article of a feed shares a host, and the WordPress API check
+    follows a page check on the same host seconds later).
 
     Args:
         url: URL to check
@@ -274,7 +307,14 @@ async def check_robots_txt(url: str) -> bool:
         parsed = urlparse(url)
         robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
 
-        return await _run_remote_fetch(_read_robots_txt, robots_url, url)
+        cached = _ROBOTS_CACHE.get(robots_url)
+        if cached and cached[0] > time.monotonic():
+            rp = cached[1]
+        else:
+            rp = await _run_remote_fetch(_read_robots_txt, robots_url)
+            if rp.allow_all or rp.mtime():  # a 5xx answer is not cached: it may be gone next time
+                _ROBOTS_CACHE[robots_url] = (time.monotonic() + ROBOTS_CACHE_SECONDS, rp)
+        return rp.can_fetch(ROBOTS_USER_AGENT, url)
     except Exception as e:
         logger.warning(f"Error checking robots.txt: {e}. Proceeding with caution.")
         return True  # Default to allowed if robots.txt check fails
@@ -299,9 +339,11 @@ def _extract_page_metadata(html: str) -> Tuple[Optional[str], Optional[str]]:
     return author, image
 
 
-async def _get_public_page(session, url: str, headers: Dict[str, str]) -> Optional[str]:
-    """GET `url`, following redirects one hop at a time and only to public hosts. Returns the page
-    text, or None on a non-200 answer, a refused redirect, or too many redirects."""
+async def _get_public_page(session, url: str, headers: Dict[str, str]
+                           ) -> Tuple[Optional[int], Optional[str], str]:
+    """GET `url`, following redirects one hop at a time and only to public hosts. Returns
+    (status, page text, final URL); the text is None on a non-200 answer, and the status too on a
+    refused redirect or too many redirects."""
     current = url
     for _ in range(MAX_REDIRECTS + 1):
         async with session.get(current, headers=headers, allow_redirects=False,
@@ -310,19 +352,49 @@ async def _get_public_page(session, url: str, headers: Dict[str, str]) -> Option
                 location = response.headers.get("Location")
                 if not location:
                     logger.warning(f"HTTP {response.status} without Location for URL: {current}")
-                    return None
+                    return None, None, current
                 target = urljoin(current, location)
                 if not await asyncio.to_thread(is_public_url, target):
                     logger.warning(f"Refusing redirect from {current} to a non-public address: {target}")
-                    return None
+                    return None, None, current
                 current = target
                 continue
             if response.status != 200:
                 logger.warning(f"HTTP {response.status} for URL: {current}")
-                return None
-            return await response.text()
+                return response.status, None, current
+            return response.status, await response.text(), current
     logger.warning(f"Too many redirects for URL: {url}")
-    return None
+    return None, None, current
+
+
+async def _wordpress_post_text(url: str) -> Optional[str]:
+    """The article text from the site's WordPress REST API (`/wp-json/wp/v2/posts?slug=…`), for
+    WordPress sites whose pages are behind bot protection while the API is not (Medyascope).
+    `url` is the page that refused us (after redirects), so short links resolve to the real slug.
+    None when the site isn't WordPress, has no post with that slug, or blocks the API too."""
+    parsed = urlparse(url)
+    slug = parsed.path.rstrip("/").rsplit("/", 1)[-1]
+    if not slug or "." in slug:
+        return None
+    api_url = f"{parsed.scheme}://{parsed.netloc}/wp-json/wp/v2/posts"
+    try:
+        if not await check_robots_txt(api_url):
+            return None
+        async with aiohttp.ClientSession() as session:
+            status, body, _ = await _get_public_page(
+                session, f"{api_url}?{urlencode({'slug': slug, '_fields': 'content'})}",
+                {"User-Agent": USER_AGENT})
+        if body is None:
+            return None
+        posts = json.loads(body)
+        rendered = posts[0]["content"]["rendered"] if posts else ""
+    except (ValueError, KeyError, IndexError, TypeError, aiohttp.ClientError, asyncio.TimeoutError) as e:
+        logger.info(f"No WordPress API text for {url}: {e}")
+        return None
+    text = html_to_text(rendered)
+    if text:
+        logger.info(f"Read {len(text)} characters for {url} from the WordPress API")
+    return text or None
 
 
 async def extract_article_content(url: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
@@ -359,17 +431,17 @@ async def extract_article_content(url: str) -> Tuple[Optional[str], Optional[str
             await asyncio.sleep(settings.scraping_delay)
 
         # Fetch the page with custom user agent
-        headers = {
-            "User-Agent": "NewsSummarizer/1.0 (+https://github.com/yourusername/news-summary)"
-        }
+        headers = {"User-Agent": USER_AGENT}
 
         html: Optional[str] = None
         attempts = max(1, settings.max_retries)
         for attempt in range(1, attempts + 1):
             try:
                 async with aiohttp.ClientSession() as session:
-                    html = await _get_public_page(session, url, headers)
+                    status, html, final_url = await _get_public_page(session, url, headers)
                 if html is None:
+                    if status in _BLOCKED_STATUSES:
+                        return await _wordpress_post_text(final_url), None, None
                     return None, None, None
                 break
             except (aiohttp.ClientError, asyncio.TimeoutError) as e:
@@ -422,6 +494,36 @@ def strip_html(text: str) -> str:
     isn't mistaken for a tag and deleted."""
     plain = BeautifulSoup(text, "html.parser").get_text(separator=" ")
     return _WHITESPACE_RE.sub(" ", unescape(plain)).strip()
+
+
+_BLOCK_TAGS = ("p", "div", "li", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "br", "tr",
+               "figcaption")
+
+
+# WordPress appends "The post <title> appeared first on <site>." to every feed item.
+_WP_FEED_FOOTER_RE = re.compile(r"^The post .+ appeared first on .+\.?$")
+
+
+def html_to_text(html: str) -> str:
+    """An article body's HTML (feed <content:encoded>, WordPress `content.rendered`) as plain text
+    with one paragraph per line — the shape trafilatura gives scraped pages, which the "Orijinal
+    İçerik" view splits into paragraphs. Unlike `strip_html`, which flattens to a single line.
+
+    Line breaks come only from block tags: whitespace (newlines included) inside the source HTML
+    is collapsed per text node first. The parser already decodes entities — no second unescape."""
+    soup = BeautifulSoup(html or "", "html.parser")
+    for tag in soup.find_all(["script", "style", "noscript"]):
+        tag.decompose()
+    for node in soup.find_all(string=True):
+        if isinstance(node, Comment):
+            node.extract()
+        else:
+            node.replace_with(_WHITESPACE_RE.sub(" ", str(node)))
+    for tag in soup.find_all(_BLOCK_TAGS):
+        tag.insert_before("\n")
+        tag.insert_after("\n")
+    lines = (line.strip() for line in soup.get_text().split("\n"))
+    return "\n".join(line for line in lines if line and not _WP_FEED_FOOTER_RE.match(line))
 
 
 def truncate_content(content: str, max_tokens: int = 4000) -> str:

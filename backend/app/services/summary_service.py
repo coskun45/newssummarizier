@@ -14,7 +14,8 @@ from app.core.config import settings
 from app.core.exceptions import SummarizationError, TopicCategorizationError, CostLimitExceededError
 from app.db.database import SessionLocal, release_connection
 from app.db import crud
-from app.agents.tools import extract_article_content, strip_html, truncate_content
+from app.agents.tools import (FEED_FULL_TEXT_MIN_CHARS, extract_article_content, html_to_text, strip_html,
+                              truncate_content)
 
 logger = logging.getLogger(__name__)
 
@@ -1083,7 +1084,7 @@ async def run_playground(
     """
     await check_cost_limits()
 
-    url = article.url
+    url, raw_content = article.url, article.raw_content
 
     async def fetch_page() -> Optional[str]:
         # Dry run: the page is used for this run only, never stored.
@@ -1096,11 +1097,20 @@ async def run_playground(
             return None
 
     def describe_content(page: Optional[str]) -> Tuple[str, Dict[str, Any]]:
-        content = article.cleaned_content or page or article.raw_content or ""
+        if article.cleaned_content:
+            content, source = article.cleaned_content, "cleaned"
+        else:
+            # Same page-or-feed rule as the pipeline (process_article): the feed's own full text
+            # (reported as "raw") wins over a missing or shorter page.
+            best = page_or_feed_text(page, raw_content)
+            if best and best == page:
+                content, source = page, "scraped"
+            else:
+                content = best or raw_content or ""
+                source = "raw" if content else "none"
         used = truncate_content(content) if content else ""
         return used, {
-            "source": ("cleaned" if article.cleaned_content else "scraped" if page
-                       else "raw" if article.raw_content else "none"),
+            "source": source,
             "chars": len(content),
             "used_chars": len(used),
             "truncated": used != content,
@@ -1212,6 +1222,19 @@ async def process_article_by_id(article_id: int) -> dict:
         db.close()
 
 
+def page_or_feed_text(page_text: Optional[str], raw_content: Optional[str]) -> Optional[str]:
+    """The article text after a page fetch: the page, unless the feed's own text (raw_content —
+    Politico, Fox News and WordPress feeds ship the whole article in <content:encoded>) is longer
+    and long enough to be the article rather than a teaser. Covers pages that 403 us (Politico)
+    and paywalled pages that return only the lead. The page is always tried first, so its
+    og:image/author and trafilatura's cleanup are kept whenever it has the article."""
+    if raw_content and len(raw_content) > len(page_text or ""):
+        feed_text = html_to_text(raw_content)
+        if len(feed_text) >= FEED_FULL_TEXT_MIN_CHARS and len(feed_text) > len(page_text or ""):
+            return feed_text
+    return page_text
+
+
 def store_page(db, article_id: int, extracted: Optional[str], page_author: Optional[str], page_image_url: Optional[str]) -> None:
     """Keep what a page fetch found. The text is written first and a failed author/image backfill
     is only rolled back and logged — losing an og:image must never lose the article body."""
@@ -1240,12 +1263,15 @@ async def fetch_article_content(db, article_id: int) -> Optional[str]:
     article = crud.get_article(db, article_id)
     if article.cleaned_content:
         return article.cleaned_content
-    url = article.url
+    url, raw_content = article.url, article.raw_content
     try:
         release_connection(db)  # don't hold a pooled connection while scraping
         extracted, page_author, page_image_url = await extract_article_content(url)
     except Exception as e:
         logger.warning(f"On-demand page fetch failed for article {article_id}: {e}")
+        extracted, page_author, page_image_url = None, None, None
+    extracted = page_or_feed_text(extracted, raw_content)
+    if not (extracted or page_author or page_image_url):
         return None
     try:
         store_page(db, article_id, extracted, page_author, page_image_url)
@@ -1332,9 +1358,18 @@ async def process_article(db, article_id: int) -> dict:
     # articles that end up filtered (or unlabelled) are never fetched.
     content = article.cleaned_content or article.raw_content or ""
     if is_important and not article.cleaned_content:
+        raw_content = article.raw_content
         try:
             release_connection(db)  # don't hold a pooled connection while scraping
-            extracted, page_author, page_image_url = await extract_article_content(url)
+            try:
+                extracted, page_author, page_image_url = await extract_article_content(url)
+            except Exception:
+                # A failed page fetch still has the feed's own full text to fall back on.
+                extracted = page_or_feed_text(None, raw_content)
+                if not extracted:
+                    raise
+                page_author = page_image_url = None
+            extracted = page_or_feed_text(extracted, raw_content)
             if extracted:
                 content = extracted
             store_page(db, article.id, extracted, page_author, page_image_url)
