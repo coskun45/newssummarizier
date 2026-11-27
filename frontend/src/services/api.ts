@@ -12,6 +12,8 @@ import type {
     ArticleFilters,
     ArchiveRange,
     ArticleCounts,
+    ManualArticleInput,
+    ManualArticlesResult,
     ReprocessRequest,
     ReprocessResponse,
     ReprocessStatus,
@@ -204,6 +206,10 @@ export const articlesApi = {
     },
     reprocess: async (payload: ReprocessRequest): Promise<ReprocessResponse> => {
         const response = await api.post('/articles/reprocess', payload);
+        return response.data;
+    },
+    createManual: async (articles: ManualArticleInput[]): Promise<ManualArticlesResult> => {
+        const response = await api.post('/articles/manual', { articles });
         return response.data;
     },
     getReprocessStatus: async (): Promise<ReprocessStatus> => {

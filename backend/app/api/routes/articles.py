@@ -4,9 +4,13 @@ Article endpoints.
 from anyio import from_thread
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
+import logging
+import uuid
 from typing import List, Literal, Optional
-from pydantic import BaseModel
-from datetime import datetime
+from urllib.parse import urlparse
+from pydantic import BaseModel, Field, field_validator, model_validator
+from sqlalchemy.exc import IntegrityError
+from datetime import datetime, timezone
 from app.db.database import get_db
 from app.db import crud, models
 from app.api.deps import require_admin
@@ -15,6 +19,7 @@ from app.services.summary_service import article_source_name
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _parse_comma_ids(raw: Optional[str], field_name: str) -> Optional[List[int]]:
@@ -33,6 +38,13 @@ VALID_PRIORITIES = {"high", "med", "low"}
 def _article_source(article: models.Article) -> Optional[str]:
     """The card's "Kaynak": the article's feed name (the same value the summary header uses)."""
     return article_source_name(article.feed.title if article.feed else None, article.url)
+
+
+def _free_match(article: models.Article) -> Optional[dict]:
+    match = article.free_match_article if article.content_access == "free_match" else None
+    if match is None:
+        return None
+    return {"id": match.id, "title": match.title, "url": match.url, "source": _article_source(match)}
 
 
 @router.delete("/{article_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -54,6 +66,14 @@ class TopicInfo(BaseModel):
     confidence: Optional[float] = None
 
 
+class FreeMatchInfo(BaseModel):
+    """The free-source article with the same story as a blocked/paywalled one."""
+    id: int
+    title: str
+    url: str
+    source: Optional[str] = None
+
+
 class ArticleResponse(BaseModel):
     """Article response model."""
     id: int
@@ -71,6 +91,10 @@ class ArticleResponse(BaseModel):
     has_summaries: bool = False
     is_read: bool = False
     is_starred: bool = False
+    # None = full text read; "free_match" (see free_match) | "unavailable" = the page gave no article
+    content_access: Optional[str] = None
+    free_match: Optional[FreeMatchInfo] = None
+    source_type: str = "rss"  # "rss" | "manual"
 
     class Config:
         from_attributes = True
@@ -92,6 +116,7 @@ class ArticleListResponse(BaseModel):
 
 def _to_article_response(article: models.Article, detail: bool = False):
     """Build the API shape of an article (list rows and the detail view share it)."""
+    free_match = _free_match(article)
     data = {
         "id": article.id,
         "url": article.url,
@@ -111,6 +136,11 @@ def _to_article_response(article: models.Article, detail: bool = False):
         "has_summaries": len(article.summaries) > 0,
         "is_read": article.is_read,
         "is_starred": article.is_starred,
+        # A "free_match" whose matched article was deleted has nothing to link to: no match.
+        "content_access": "unavailable" if article.content_access == "free_match" and free_match is None
+        else article.content_access,
+        "free_match": free_match,
+        "source_type": article.source_type or "rss",
     }
     if detail:
         return ArticleDetailResponse(**data, raw_content=article.raw_content, cleaned_content=article.cleaned_content)
@@ -389,6 +419,143 @@ def reprocess_articles(
         from_thread.run_sync(register_reprocess, len(ids))
         background_tasks.add_task(reprocess_articles_task, ids)
     return {"queued": len(ids), "article_ids": ids}
+
+
+MANUAL_MAX_ARTICLES = 50
+MANUAL_URL_SCHEME = "manual://"
+
+
+class ManualArticleIn(BaseModel):
+    """One user-supplied article. The feed is given by id or by its title; at least one of
+    content / url is needed (content skips the page fetch, a bare url gets it scraped)."""
+    title: str = Field(..., min_length=3, max_length=500)
+    feed_id: Optional[int] = None
+    feed: Optional[str] = Field(None, max_length=500)
+    content: Optional[str] = Field(None, max_length=100_000)
+    # Plain strings, kept as typed: HttpUrl would percent-encode / add a trailing "/", and the
+    # duplicate check compares with URLs stored exactly as their feed gave them.
+    url: Optional[str] = Field(None, max_length=2000)
+    author: Optional[str] = Field(None, max_length=200)
+    published_at: Optional[datetime] = None
+    image_url: Optional[str] = Field(None, max_length=2000)
+
+    @field_validator("title", "feed", "content", "author", "url", "image_url", mode="before")
+    @classmethod
+    def _strip(cls, v):
+        if isinstance(v, str):
+            v = v.strip()
+            return v or None
+        return v
+
+    @field_validator("url", "image_url")
+    @classmethod
+    def _http_only(cls, v):
+        if v is not None:
+            parsed = urlparse(v)
+            if parsed.scheme not in ("http", "https") or not parsed.netloc:
+                raise ValueError("http:// veya https:// ile başlayan geçerli bir adres olmalı")
+        return v
+
+    @model_validator(mode="after")
+    def _check_required(self):
+        if self.feed_id is None and not self.feed:
+            raise ValueError("feed_id veya feed (kaynak başlığı) gerekli")
+        if not self.content and self.url is None:
+            raise ValueError("content veya url alanlarından en az biri gerekli")
+        return self
+
+
+class ManualArticlesRequest(BaseModel):
+    articles: List[ManualArticleIn] = Field(..., min_length=1, max_length=MANUAL_MAX_ARTICLES)
+
+
+class ManualArticleCreated(BaseModel):
+    index: int
+    article_id: int
+    title: str
+
+
+class ManualArticleRejected(BaseModel):
+    index: int
+    title: str
+    reason: str
+
+
+class ManualArticlesResponse(BaseModel):
+    created: List[ManualArticleCreated]
+    skipped: List[ManualArticleRejected]
+    errors: List[ManualArticleRejected]
+    queued: int
+
+
+@router.post("/manual", response_model=ManualArticlesResponse)
+def create_manual_articles(
+    body: ManualArticlesRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_admin),
+):
+    """
+    Add user-supplied articles (form or JSON upload) and run them through the same pipeline as
+    feed articles (classify → topics → summaries). Admin only — it spends OpenAI budget.
+    An entry whose feed isn't found (or is inactive) lands in `errors`, one whose URL already exists in `skipped`;
+    the rest are created and queued. Progress: GET /reprocess-status.
+    """
+    created: List[ManualArticleCreated] = []
+    skipped: List[ManualArticleRejected] = []
+    errors: List[ManualArticleRejected] = []
+    seen_urls = set()
+    for index, item in enumerate(body.articles):
+        # Only active feeds, like the dialog's feed list and preview (useFeeds → active_only).
+        if item.feed_id is not None:
+            feed = crud.get_feed(db, item.feed_id)
+            feed = feed if feed is not None and feed.is_active else None
+        else:
+            feed = crud.get_feed_by_title(db, item.feed, active_only=True)
+        if feed is None:
+            errors.append(ManualArticleRejected(index=index, title=item.title, reason="Kaynak bulunamadı"))
+            continue
+        url = item.url or f"{MANUAL_URL_SCHEME}{uuid.uuid4()}"
+        duplicate = ManualArticleRejected(index=index, title=item.title, reason="Bu URL ile bir haber zaten var")
+        if url in seen_urls or crud.get_article_by_url(db, url):
+            skipped.append(duplicate)
+            continue
+        seen_urls.add(url)
+        # Each create commits on its own, so one failing entry must not abort the request: the
+        # ones already stored would stay "pending" (outside the Error tab) and never be queued.
+        try:
+            article = crud.create_article(
+                db,
+                feed_id=feed.id,
+                url=url,
+                title=item.title,
+                author=item.author,
+                published_at=item.published_at or datetime.now(timezone.utc),
+                raw_content=item.content,
+                cleaned_content=item.content,
+                image_url=item.image_url,
+                status="pending",
+                source_type="manual",
+            )
+        except IntegrityError:
+            # The same URL was stored meanwhile (feed refresh / another upload).
+            db.rollback()
+            skipped.append(duplicate)
+            continue
+        except Exception:
+            db.rollback()
+            logger.exception("Manual article %d could not be stored", index)
+            errors.append(ManualArticleRejected(index=index, title=item.title, reason="Haber kaydedilemedi"))
+            continue
+        created.append(ManualArticleCreated(index=index, article_id=article.id, title=article.title))
+
+    ids = [c.article_id for c in created]
+    if ids:
+        from app.tasks.background import register_reprocess, reprocess_articles_task
+        # Same queue as the Error re-process: one run at a time, progress on /reprocess-status.
+        from_thread.run_sync(register_reprocess, len(ids))
+        background_tasks.add_task(reprocess_articles_task, ids)
+    return ManualArticlesResponse(created=created, skipped=skipped, errors=errors, queued=len(ids))
 
 
 @router.get("/reprocess-status")

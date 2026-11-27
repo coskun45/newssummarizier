@@ -216,6 +216,12 @@
   border: 1px solid var(--color-border-strong);
 }
 
+.manual-badge {
+  background: var(--color-info-soft);
+  color: var(--color-info-solid);
+  border: 1px solid var(--color-info);
+}
+
 .error-badge {
   /* solid fill so it reads differently from the (soft red) Yüksek badge */
   background: var(--color-danger-solid);
@@ -226,6 +232,36 @@
 .error-badge svg {
   width: 0.9rem;
   height: 0.9rem;
+}
+
+.access-badge svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.free-match-badge {
+  background: var(--color-info-soft);
+  color: var(--color-info-solid);
+  border: 1px solid var(--color-info);
+}
+
+.unavailable-badge {
+  background: var(--color-surface-alt);
+  color: var(--color-text-muted);
+  border: 1px dashed var(--color-border-strong);
+}
+
+.free-match-link {
+  display: block;
+  margin: -0.5rem 0 1rem;
+  font-size: 0.85rem;
+  color: var(--color-info-solid);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.free-match-link:hover {
+  text-decoration: underline;
 }
 
 .priority-badge {
@@ -418,4 +454,10 @@
     width: 100%;
     text-align: center;
   }
+}
+
+/* --color-info-solid has no dark variant: on the dark surface the lighter info tone reads better. */
+:root[data-theme='dark'] .free-match-badge,
+:root[data-theme='dark'] .free-match-link {
+  color: var(--color-info);
 }

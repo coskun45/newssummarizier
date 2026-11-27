@@ -10,6 +10,7 @@ import PlaygroundArticlePicker from '../PlaygroundArticlePicker/PlaygroundArticl
 import PlaygroundResults from '../PlaygroundResults/PlaygroundResults';
 import PromptComposite from '../PromptComposite/PromptComposite';
 import { buildSummarizationLockedText } from '../../utils/summarizationLocked';
+import { hasArticleLink } from '../../utils/manualArticles';
 import './Playground.css';
 
 const CONTENT_PREVIEW_CHARS = 2000;
@@ -278,7 +279,9 @@ function Playground() {
             {article && (
               <>
                 <p className="playground-article-title">
-                  <a href={article.url} target="_blank" rel="noreferrer">{article.title}</a>
+                  {hasArticleLink(article)
+                    ? <a href={article.url} target="_blank" rel="noreferrer">{article.title}</a>
+                    : article.title}
                 </p>
                 <details>
                   <summary>Özete giden içerik ({content.length} karakter)</summary>

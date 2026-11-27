@@ -77,6 +77,25 @@ def test_init_db_rolls_back_after_failed_alter(tmp_path, monkeypatch):
     assert "image_url" in cols
 
 
+def test_init_db_indexes_content_access_on_a_legacy_articles_table(tmp_path, monkeypatch):
+    """Regression (review): the model declares content_access index=True, but an existing DB only
+    got the column via ALTER — the 21:00 re-check and the candidate query scanned the table."""
+    test_engine = create_engine(f"sqlite:///{tmp_path / 'legacy.db'}")
+    with test_engine.connect() as conn:
+        conn.execute(text("CREATE TABLE feeds (id INTEGER PRIMARY KEY, url VARCHAR, title VARCHAR)"))
+        conn.execute(text(
+            "CREATE TABLE articles (id INTEGER PRIMARY KEY, feed_id INTEGER, url VARCHAR, title VARCHAR)"))
+        conn.commit()
+    monkeypatch.setattr(db_module, "engine", test_engine)
+
+    db_module.init_db()
+
+    indexes = {ix["name"] for ix in inspect(test_engine).get_indexes("articles")}
+    assert "ix_articles_content_access" in indexes
+    # Regression (review): the self-FK's ON DELETE SET NULL scanned all articles per deleted row.
+    assert "ix_articles_free_match_article_id" in indexes
+
+
 def test_init_db_adds_group_id_to_legacy_feeds_and_topics(tmp_path, monkeypatch):
     """feeds/topics created before groups existed get a group_id column on startup."""
     test_engine = create_engine(f"sqlite:///{tmp_path / 'legacy.db'}")

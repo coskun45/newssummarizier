@@ -23,7 +23,10 @@ import type {
   DailyArticleStats,
   AnalysisRange,
   AnalysisStats,
+  ManualArticleInput,
+  ManualArticlesResult,
 } from '../../src/types';
+import { feedTitleKey } from '../../src/utils/manualArticles';
 
 let idSeq = 1000;
 function nextId(): number {
@@ -101,6 +104,9 @@ export function makeArticle(overrides: Partial<MockArticle> = {}): MockArticle {
     has_summaries: false,
     is_read: false,
     is_starred: false,
+    content_access: null,
+    free_match: null,
+    source_type: 'rss',
     feedId: 1,
     raw_content: null,
     cleaned_content: null,
@@ -376,6 +382,8 @@ export interface MockState {
   playgroundSettings: PlaygroundSettings;
   /** Every POST /playground/run body, in order — lets specs assert on what the UI sent. */
   playgroundRuns: PlaygroundRunRequest[];
+  /** The `articles` list of every POST /articles/manual, in order. */
+  manualArticleRequests: ManualArticleInput[][];
   dailyArticleStats: DailyArticleStats;
   /** `days` of every GET /stats/analysis request, in order. */
   analysisRequests: number[];
@@ -596,6 +604,7 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
     newsletterRequests: [],
     playgroundSettings: overrides.playgroundSettings ?? makePlaygroundSettings(),
     playgroundRuns: [],
+    manualArticleRequests: [],
     dailyArticleStats: overrides.dailyArticleStats ?? makeDailyArticleStats(),
     analysisRequests: [],
   };
@@ -729,6 +738,41 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
         a.is_read = false; // labelled now -> back to the unread list
       }
       return json({ queued: targets.length, article_ids: targets.map((a) => a.id) });
+    }
+    // ---- manual articles (Haber Ekle): created and "processed" instantly, like the re-process mock ----
+    if (method === 'POST' && path === '/articles/manual') {
+      const body = request.postDataJSON() as { articles: ManualArticleInput[] };
+      state.manualArticleRequests.push(body.articles);
+      const result: ManualArticlesResult = { created: [], skipped: [], errors: [], queued: 0 };
+      body.articles.forEach((item, index) => {
+        const feed = item.feed_id != null
+          ? state.feeds.find((f) => f.id === item.feed_id)
+          : state.feeds.find((f) => feedTitleKey(f.title) === feedTitleKey(item.feed));
+        if (!feed) {
+          result.errors.push({ index, title: item.title, reason: 'Kaynak bulunamadı' });
+          return;
+        }
+        const url = item.url ?? `manual://mock-${nextId()}`;
+        if (state.articles.some((a) => a.url === url)) {
+          result.skipped.push({ index, title: item.title, reason: 'Bu URL ile bir haber zaten var' });
+          return;
+        }
+        const article = makeArticle({
+          url,
+          title: item.title,
+          author: item.author ?? null,
+          source: feed.title,
+          published_at: item.published_at ?? new Date().toISOString(),
+          image_url: item.image_url ?? null,
+          cleaned_content: item.content ?? null,
+          feedId: feed.id,
+          source_type: 'manual',
+        });
+        state.articles.push(article);
+        result.created.push({ index, article_id: article.id, title: article.title });
+      });
+      result.queued = result.created.length;
+      return json(result);
     }
     if (method === 'GET' && path === '/articles/reprocess-status') {
       return json({ status: 'idle', total: 0, done: 0, failed: 0 });

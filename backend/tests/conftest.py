@@ -67,6 +67,26 @@ def fake_pages(monkeypatch):
     return pages
 
 
+class FreeMatchCalls(list):
+    """Article ids the pipeline handed to the free-source search (stubbed: no embedding/LLM)."""
+
+
+@pytest.fixture(autouse=True)
+def free_match_calls(monkeypatch):
+    """Tests never run the real free-source search (it calls OpenAI): blocked/paywalled pages
+    record their article id here instead. tests/test_free_match.py tests the real function."""
+    from app.services import summary_service
+
+    calls = FreeMatchCalls()
+
+    async def record(db, article_id):
+        calls.append(article_id)
+        return 0.0
+
+    monkeypatch.setattr(summary_service, "find_free_alternative", record)
+    return calls
+
+
 @pytest.fixture()
 def db_session():
     engine = create_engine(
@@ -234,6 +254,51 @@ def _make_bulletin_classification(db_session, article_id, *, category_set_hash="
     db_session.commit()
     db_session.refresh(row)
     return row
+
+
+# ---------------------------------------------------------------------------
+# Article pipeline (feed refresh, re-process, manual articles) with OpenAI/scraping stubbed
+# ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def pipeline_env(monkeypatch, db_session):
+    """Point the pipeline at the test DB and stub RSS, scraping and OpenAI. Stubs are set on both
+    the node module and summary_service, since either may own the per-article steps.
+    `env.extracted_urls` records every page fetch."""
+    from app.agents import nodes
+    from app.services import summary_service
+    from app.tasks import background
+
+    test_sessions = sessionmaker(bind=db_session.get_bind(), expire_on_commit=False)
+    for module in (nodes, summary_service, background):
+        monkeypatch.setattr(module, "SessionLocal", test_sessions)
+
+    env = SimpleNamespace(rss_entries=[], categorization={
+        "importance": "important", "priority": "high", "topics": [],
+    }, on_categorize=None, extracted_urls=[])
+
+    async def fake_fetch_rss_feed(feed_url):
+        return [dict(e) for e in env.rss_entries]
+
+    async def fake_extract(url):
+        env.extracted_urls.append(url)
+        return "page body", None, None
+
+    async def fake_categorize(title):
+        if env.on_categorize:
+            env.on_categorize()
+        return env.categorization
+
+    async def fake_summary(title, content, summary_type="standard", source=None, author_hint=None):
+        return {"summary_text": f"{summary_type} summary", "model_used": "m", "tokens_used": 1,
+                "cost": 0.0, "author": None, "structured": True}
+
+    monkeypatch.setattr(nodes, "fetch_rss_feed", fake_fetch_rss_feed)
+    for module in (nodes, summary_service):
+        monkeypatch.setattr(module, "extract_article_content", fake_extract, raising=False)
+        monkeypatch.setattr(module, "categorize_and_prioritize_article", fake_categorize, raising=False)
+        monkeypatch.setattr(module, "generate_summary", fake_summary, raising=False)
+    return env
 
 
 # ---------------------------------------------------------------------------

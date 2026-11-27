@@ -63,9 +63,18 @@ class Article(Base):
     priority = Column(String, nullable=True)    # "high" | "med" | "low"
     is_read = Column(Boolean, default=False, nullable=False)
     is_starred = Column(Boolean, default=False, nullable=False, index=True)  # User-curated "Önemli" group
+    # Set only when the page gave no article text (blocked / paywalled lead): "free_match" = the
+    # same story was found in a free source (free_match_article_id), "unavailable" = it was not.
+    # NULL = the full text was read. See summary_service.find_free_alternative.
+    content_access = Column(String, nullable=True, index=True)
+    free_match_article_id = Column(Integer, ForeignKey("articles.id", ondelete="SET NULL"), nullable=True, index=True)
+    free_match_checked_at = Column(UTCDateTime(), nullable=True)  # last free-source search (21:00 re-check)
+    # "rss" = ingested from a feed, "manual" = added by an admin (POST /articles/manual).
+    source_type = Column(String, nullable=False, default="rss", server_default="rss")
 
     # Relationships
     feed = relationship("Feed", back_populates="articles")
+    free_match_article = relationship("Article", remote_side=[id], foreign_keys=[free_match_article_id])
     summaries = relationship("Summary", back_populates="article", cascade="all, delete-orphan")
     topics = relationship("ArticleTopic", back_populates="article", cascade="all, delete-orphan")
     logs = relationship("ProcessingLog", back_populates="article", cascade="all, delete-orphan")

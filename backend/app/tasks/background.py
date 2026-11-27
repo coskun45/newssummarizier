@@ -247,3 +247,30 @@ async def embed_missing_articles_task() -> None:
     finally:
         db.close()
         _embedding_status["status"] = "done"
+
+
+async def recheck_free_alternatives_task() -> None:
+    """The 21:00 second look: articles of the last 24 hours whose story no free source had when
+    they came in are searched again — the free feeds often publish it hours later. Each article
+    is searched once here (the first search ran when it was processed)."""
+    from datetime import datetime, timedelta, timezone
+    from app.services import summary_service
+
+    db = SessionLocal()
+    try:
+        since = datetime.now(timezone.utc) - timedelta(hours=24)
+        article_ids = crud.get_articles_for_free_match_recheck(db, since)
+        found = 0
+        for article_id in article_ids:
+            try:
+                await summary_service.find_free_alternative(db, article_id)
+                if crud.get_article(db, article_id).content_access == "free_match":
+                    found += 1
+            except Exception as e:  # find_free_alternative never raises; a DB error might
+                db.rollback()
+                logger.error(f"Free-source re-check of article {article_id} failed: {e}")
+        logger.info(f"Free-source re-check: {found} of {len(article_ids)} articles now have a free source")
+    except Exception as e:
+        logger.error(f"Free-source re-check failed: {e}", exc_info=True)
+    finally:
+        db.close()

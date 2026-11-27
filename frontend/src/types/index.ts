@@ -53,6 +53,51 @@ export interface Article {
     has_summaries: boolean;
     is_read: boolean;
     is_starred: boolean;
+    /** Set when the page gave no article text (blocked / paywalled): "free_match" = the same story
+     *  is in a free source (`free_match`), "unavailable" = no free source has it. null = full text. */
+    content_access: ContentAccess | null;
+    free_match: FreeMatch | null;
+    /** "rss" = from a feed, "manual" = added by an admin (Haber Ekle). */
+    source_type: ArticleSourceType;
+}
+
+/** A manual article added without a link gets a `manual://<uuid>` url (not openable). */
+export type ArticleSourceType = 'rss' | 'manual';
+
+/** One article for POST /articles/manual. Feed by id or title; content or url is required. */
+export interface ManualArticleInput {
+    title: string;
+    feed_id?: number | null;
+    feed?: string | null;
+    content?: string | null;
+    url?: string | null;
+    author?: string | null;
+    /** ISO 8601; empty = now. */
+    published_at?: string | null;
+    image_url?: string | null;
+}
+
+export interface ManualArticleRejected {
+    index: number;
+    title: string;
+    reason: string;
+}
+
+export interface ManualArticlesResult {
+    created: { index: number; article_id: number; title: string }[];
+    skipped: ManualArticleRejected[];
+    errors: ManualArticleRejected[];
+    queued: number;
+}
+
+export type ContentAccess = 'free_match' | 'unavailable';
+
+/** The free-source article with the same story as a blocked / paywalled one. */
+export interface FreeMatch {
+    id: number;
+    title: string;
+    url: string;
+    source: string | null;
 }
 
 export interface ArticleDetail extends Article {

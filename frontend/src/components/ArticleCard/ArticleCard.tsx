@@ -5,7 +5,9 @@ import ContentModal from '../ContentModal/ContentModal';
 import { copyToClipboard } from '../../utils/exportArticles';
 import { withAlpha } from '../../utils/color';
 import { formatPublishedAt } from '../../utils/formatDate';
+import { hasArticleLink } from '../../utils/manualArticles';
 import {
+  PencilSquareIcon,
   TrashIcon,
   StarIcon as StarIconOutline,
   NoSymbolIcon,
@@ -17,6 +19,8 @@ import {
   EllipsisHorizontalIcon,
   ArrowUpIcon,
   ArrowDownIcon,
+  LockClosedIcon,
+  LinkIcon,
 } from '@heroicons/react/24/outline';
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid';
 import './ArticleCard.css';
@@ -202,6 +206,23 @@ function ArticleCard({ article, isSelected = false, onToggleSelect, onDeleted, i
         {isError && (
           <span className="badge error-badge"><ExclamationTriangleIcon /> Hata</span>
         )}
+        {article.source_type === 'manual' && (
+          <span className="badge manual-badge" title="Bu haber elle eklendi.">
+            <PencilSquareIcon /> Manuel
+          </span>
+        )}
+        {article.content_access === 'free_match' && article.free_match && (
+          <span className="badge access-badge free-match-badge"><LinkIcon /> Ücretsiz kaynakta var</span>
+        )}
+        {(article.content_access === 'unavailable' ||
+          (article.content_access === 'free_match' && !article.free_match)) && (
+          <span
+            className="badge access-badge unavailable-badge"
+            title="Kaynak ücretli veya erişimi engelliyor; aynı haber ücretsiz bir kaynakta bulunamadı."
+          >
+            <LockClosedIcon /> İçerik alınamadı
+          </span>
+        )}
         {article.priority && (
           <span className={`badge priority-badge priority-${article.priority}`}>
             <span className="priority-dot" />
@@ -224,6 +245,17 @@ function ArticleCard({ article, isSelected = false, onToggleSelect, onDeleted, i
         })}
       </div>
 
+      {article.content_access === 'free_match' && article.free_match && (
+        <a
+          className="free-match-link"
+          href={article.free_match.url}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          → {article.free_match.source ? `${article.free_match.source}: ` : ''}{article.free_match.title}
+        </a>
+      )}
+
       <div className="article-actions">
         {article.has_summaries && (
           <button
@@ -240,14 +272,16 @@ function ArticleCard({ article, isSelected = false, onToggleSelect, onDeleted, i
         >
           {contentLoading ? <><ArrowPathIcon className="spin-icon" /> Yükleniyor...</> : 'Orijinal İçerik'}
         </button>
-        <a
-          href={article.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="btn btn-outline"
-        >
-          Kaynağı aç →
-        </a>
+        {hasArticleLink(article) && (
+          <a
+            href={article.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-outline"
+          >
+            Kaynağı aç →
+          </a>
+        )}
         {!article.is_read && !isArchiveView && (
           <button
             className="btn btn-outline"

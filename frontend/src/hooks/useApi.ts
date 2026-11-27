@@ -13,6 +13,7 @@ import type {
     UserSettingsUpdate,
     BulletinGenerateRequest,
     ReprocessRequest,
+    ManualArticleInput,
     PlaygroundRunRequest,
     NewsletterSubscriptionInput,
     ChatEvent,
@@ -107,6 +108,20 @@ export const useReprocessArticles = () => {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: (payload: ReprocessRequest) => articlesApi.reprocess(payload),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['reprocessStatus'] });
+            queryClient.invalidateQueries({ queryKey: ['articles'] });
+            queryClient.invalidateQueries({ queryKey: ['articleCounts'] });
+        },
+    });
+};
+
+// Admin-added articles (form / JSON). They are queued on the re-process job, so its progress
+// (useReprocessStatus) shows them being classified and summarized.
+export const useCreateManualArticles = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (articles: ManualArticleInput[]) => articlesApi.createManual(articles),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['reprocessStatus'] });
             queryClient.invalidateQueries({ queryKey: ['articles'] });

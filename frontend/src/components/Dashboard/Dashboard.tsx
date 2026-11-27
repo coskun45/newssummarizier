@@ -20,6 +20,7 @@ import Playground from '../Playground/Playground';
 import Analysis from '../Analysis/Analysis';
 import Chat from '../Chat/Chat';
 import ConfirmDialog from '../ConfirmDialog/ConfirmDialog';
+import AddArticleModal from '../AddArticleModal/AddArticleModal';
 import logo from '../../assets/logo.svg';
 import {
   Cog6ToothIcon,
@@ -37,6 +38,7 @@ import {
   TrashIcon,
   ExclamationTriangleIcon,
   InformationCircleIcon,
+  PlusIcon,
 } from '@heroicons/react/24/outline';
 import { StarIcon } from '@heroicons/react/24/solid';
 import type { ArchiveDirection, Article, AuthUser, DateFilterState } from '../../types';
@@ -258,6 +260,12 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
   );
 
   const { data: articlesData, isLoading, error } = useArticles(queryFilters);
+  // "Haber Ekle" (admin): suggest the authors already in the loaded list.
+  const [addArticleOpen, setAddArticleOpen] = useState(false);
+  const authorSuggestions = useMemo(
+    () => [...new Set((articlesData?.articles ?? []).map((a) => a.author).filter((a): a is string => !!a))].sort(),
+    [articlesData],
+  );
 
   const totalPages = articlesData ? Math.max(1, Math.ceil(articlesData.total / PAGE_SIZE)) : 1;
 
@@ -669,6 +677,11 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                       >
                         <ArrowPathIcon className={refreshStatus === 'running' ? 'spin-icon' : undefined} />
                       </button>
+                      {isAdmin && (
+                        <button className="btn btn-primary" onClick={() => setAddArticleOpen(true)}>
+                          <PlusIcon /> Haber Ekle
+                        </button>
+                      )}
                       {refreshStatus === 'running' && (
                         <span className="refresh-message refresh-message--processing">
                           <ArrowPathIcon className="spin-icon" /> Makaleler işleniyor...
@@ -909,6 +922,14 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
           </div>
         </div>
       </div>
+
+      {isAdmin && (
+        <AddArticleModal
+          isOpen={addArticleOpen}
+          onClose={() => setAddArticleOpen(false)}
+          authorSuggestions={authorSuggestions}
+        />
+      )}
 
       <ConfirmDialog
         isOpen={pendingRange !== null}

@@ -55,6 +55,11 @@ Deutsche Welle (DW) RSS beslemelerinden haber toplayan, kategorize eden ve yapay
 - **Kaynak ve Yazar**: Haber kartında RSS beslemesinin adı "Kaynak" olarak, yazarın üstünde gösterilir (besleme
   adı bu yüzden zorunludur). Özetin 📌 başlığında da aynı kaynak kullanılır; yazarı ise özetle birlikte yapay zeka
   belirler — yalnızca gerçek bir kişi adıysa yazılır ("Sputnik Türkiye" gibi kurum adları yazar sayılmaz), yoksa boş kalır
+- **Manuel Haber Ekleme**: Admin, Haberler ekranındaki "Haber Ekle" ile kendi haberini formdan (kaynak mevcut
+  beslemelerden seçilir; başlık, içerik, URL, yazar, yayın tarihi, görsel) ya da toplu olarak JSON dosyasıyla
+  (en fazla 50 haber, satır satır önizleme) ekler. Haberler RSS haberleriyle aynı yoldan işlenir (sınıflandırma →
+  konular → özetler); içerik verildiyse sayfa çekilmez, yalnız URL verildiyse sayfa çekilir. Kartta "Manuel"
+  etiketiyle görünür. JSON formatı için bkz. [Manuel haber JSON formatı](#manuel-haber-json-formatı)
 
 ## 🏗️ Mimari
 
@@ -487,6 +492,38 @@ Bulten/
 - `POST /api/articles/unimportant/archive-all` - Tüm okunmamış önemsiz makaleleri arşive gönder
 - `POST /api/articles/reprocess` - Error haberleri (tek/toplu: `article_ids` veya `all_errors`) arka planda yeniden sınıflandır + özetle
 - `GET /api/articles/reprocess-status` - Yeniden işleme ilerlemesi (`idle`/`running`/`done`, `total`, `done`, `failed`)
+- `POST /api/articles/manual` - (admin) Kullanıcının kendi haberlerini ekler (`{"articles": [...]}`, 1–50 kayıt) ve
+  arka planda işleme kuyruğuna alır; yanıt `created` / `skipped` (URL zaten var) / `errors` (kaynak bulunamadı) /
+  `queued`. İlerleme `reprocess-status` ile izlenir
+
+#### Manuel haber JSON formatı
+
+```json
+{
+  "articles": [
+    {
+      "title": "Almanya'da yeni göç yasası kabul edildi",
+      "feed": "DW - Deutsche Welle",
+      "content": "Federal Meclis bugün ... (haberin tam metni)",
+      "url": "https://example.com/haber/123",
+      "author": "Ayşe Yılmaz",
+      "published_at": "2026-11-27T09:30:00Z",
+      "image_url": "https://example.com/gorsel.jpg"
+    },
+    {
+      "title": "Sadece URL ile eklenen haber",
+      "feed_id": 1,
+      "url": "https://example.com/haber/456"
+    }
+  ]
+}
+```
+
+- **Zorunlu**: `title` (3–500 karakter); `feed` (beslemenin adı, büyük/küçük harf duyarsız) veya `feed_id`;
+  `content` veya `url` alanlarından en az biri
+- **Opsiyonel**: `author`, `published_at` (ISO 8601; boşsa eklenme anı), `image_url` (http/https)
+- URL verilmezse haber `manual://<uuid>` adresiyle kaydedilir ("Kaynağı aç" bağlantısı gösterilmez). Arayüzde kök
+  olarak doğrudan bir dizi (`[...]`) de kabul edilir; "Örnek JSON indir" bu örneği indirir
 
 #### Özetler
 

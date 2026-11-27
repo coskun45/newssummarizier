@@ -64,6 +64,21 @@ test('articles can be filtered by RSS feed, and run buttons need a selection', a
   await expect(page.getByRole('button', { name: 'Tümünü çalıştır' })).toBeEnabled();
 });
 
+// Regression (review): a content-only manual article's manual://<uuid> placeholder was a dead link.
+test('a manual article without a link is shown as plain text', async ({ page }) => {
+  await loginAs(page, ADMIN_USER);
+  const manual = makeArticle({ id: 3, title: 'Elle eklenen haber', feedId: 1, url: 'manual://3f2c', source_type: 'manual', cleaned_content: 'Metin' });
+  await mockApi(page, { articles: [NATO, manual], feeds: FEEDS });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Playground', exact: true }).click();
+
+  await page.getByRole('button', { name: 'Elle eklenen haber' }).click();
+  await expect(page.locator('.playground-article-title')).toHaveText('Elle eklenen haber');
+  await expect(page.getByRole('link', { name: 'Elle eklenen haber' })).toHaveCount(0);
+
+  await selectArticle(page, 'NATO erweitert Präsenz');
+});
+
 test('running the pipeline shows classification and per-type summary details without overrides', async ({ page }) => {
   const state = await openPlayground(page);
   await selectArticle(page, 'NATO erweitert Präsenz');

@@ -12,6 +12,7 @@ ADMIN_ONLY = [
     ("post", "/api/articles/priority/high/delete-all", None),
     ("post", "/api/articles/unimportant/delete-all", None),
     ("post", "/api/articles/reprocess", {"article_ids": [1]}),
+    ("post", "/api/articles/manual", {"articles": [{"title": "Haber", "feed_id": 1, "content": "Metin"}]}),
     ("post", "/api/playground/run", {"article_id": 1, "stages": ["classification"]}),
     ("post", "/api/chat/embeddings/backfill", None),
     ("delete", "/api/bulletin/generated/1", None),

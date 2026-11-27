@@ -6,6 +6,7 @@
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import type { Article, Summary } from '../types';
+import { hasArticleLink as hasLink } from './manualArticles';
 
 /** An article paired with its fetched summaries, ready to export. */
 export interface ExportItem {
@@ -85,7 +86,7 @@ export function buildWhatsAppMessage(items: ExportItem[]): string {
     if (a.author) lines.push(`✍️ ${a.author}`);
     const topics = topicsOf(a);
     if (topics) lines.push(`📂 ${topics}`);
-    lines.push(`🔗 ${a.url}`);
+    if (hasLink(a)) lines.push(`🔗 ${a.url}`);
 
     const ordered = orderedSummaries(summaries);
     for (const s of ordered) {
@@ -112,7 +113,7 @@ function buildWordHtml(items: ExportItem[]): string {
         a.author ? `<tr><td><b>Yazar</b></td><td>${escapeHtml(a.author)}</td></tr>` : '',
         topics ? `<tr><td><b>Konular</b></td><td>${escapeHtml(topics)}</td></tr>` : '',
         prio ? `<tr><td><b>Öncelik</b></td><td>${escapeHtml(prio)}</td></tr>` : '',
-        `<tr><td><b>Link</b></td><td><a href="${escapeHtml(a.url)}">${escapeHtml(a.url)}</a></td></tr>`,
+        hasLink(a) ? `<tr><td><b>Link</b></td><td><a href="${escapeHtml(a.url)}">${escapeHtml(a.url)}</a></td></tr>` : '',
       ]
         .filter(Boolean)
         .join('');

@@ -3,7 +3,6 @@ Tests for app/agents/nodes.py (LangGraph pipeline nodes).
 """
 import asyncio
 from datetime import datetime, timedelta, timezone
-from types import SimpleNamespace
 
 import pytest
 from sqlalchemy.orm import sessionmaker
@@ -90,44 +89,8 @@ def test_rss_fetcher_node_max_age_follows_setting(monkeypatch, db_session):
 
 # ---------------------------------------------------------------------------
 # Full feed pipeline (rss_fetcher -> article processing) with OpenAI/scraping stubbed
+# (the `pipeline_env` fixture lives in conftest.py)
 # ---------------------------------------------------------------------------
-
-@pytest.fixture
-def pipeline_env(monkeypatch, db_session):
-    """Point the pipeline at the test DB and stub RSS, scraping and OpenAI. Stubs are set on both
-    the node module and summary_service, since either may own the per-article steps."""
-    from app.services import summary_service
-    from app.tasks import background
-
-    test_sessions = sessionmaker(bind=db_session.get_bind(), expire_on_commit=False)
-    for module in (nodes, summary_service, background):
-        monkeypatch.setattr(module, "SessionLocal", test_sessions)
-
-    env = SimpleNamespace(rss_entries=[], categorization={
-        "importance": "important", "priority": "high", "topics": [],
-    }, on_categorize=None)
-
-    async def fake_fetch_rss_feed(feed_url):
-        return [dict(e) for e in env.rss_entries]
-
-    async def fake_extract(url):
-        return "page body", None, None
-
-    async def fake_categorize(title):
-        if env.on_categorize:
-            env.on_categorize()
-        return env.categorization
-
-    async def fake_summary(title, content, summary_type="standard", source=None, author_hint=None):
-        return {"summary_text": f"{summary_type} summary", "model_used": "m", "tokens_used": 1,
-                "cost": 0.0, "author": None, "structured": True}
-
-    monkeypatch.setattr(nodes, "fetch_rss_feed", fake_fetch_rss_feed)
-    for module in (nodes, summary_service):
-        monkeypatch.setattr(module, "extract_article_content", fake_extract, raising=False)
-        monkeypatch.setattr(module, "categorize_and_prioritize_article", fake_categorize, raising=False)
-        monkeypatch.setattr(module, "generate_summary", fake_summary, raising=False)
-    return env
 
 
 def _rss_entry(n):
@@ -292,3 +255,136 @@ def test_fetch_article_content_falls_back_to_feed_full_text(db_session, monkeypa
     assert text.startswith("Tam haber metni paragraf 0")
     db_session.expire_all()
     assert crud.get_article(db_session, article.id).cleaned_content == text
+
+
+_LONG_PAGE = "\n".join(f"Tam metin paragraf {i} yeterince uzun bir cümle içerir." for i in range(40))
+
+
+@pytest.mark.parametrize("page, searched", [
+    ((None, None, None, False, True), True),         # blocked: 401/403/robots.txt — no page text
+    (("Kurzer Vorspann.", None, None, True, False), True),  # paywalled page: only the lead
+    ((_LONG_PAGE, None, None, False, False), False),  # the article was read
+    ((_LONG_PAGE, None, None, True, False), False),   # paywall flag but the whole text came through
+    # Regression (review): no text for a reason other than the source refusing us — scraping
+    # disabled, 404/5xx, an empty extraction — is not "paywalled or blocked".
+    ((None, None, None, False, False), False),
+    ((None, None, None), False),
+])
+def test_pipeline_searches_free_sources_only_when_the_page_gave_no_article(
+        pipeline_env, db_session, monkeypatch, free_match_calls, page, searched):
+    article, _, _ = _run_with_page(pipeline_env, db_session, monkeypatch, page, "<p>RSS girişi.</p>")
+
+    assert article.status == "summarized"
+    assert (free_match_calls == [article.id]) is searched
+
+
+def test_a_failed_page_fetch_does_not_label_the_article(pipeline_env, db_session, monkeypatch, free_match_calls):
+    """Regression (review): a timeout / ScrapingError left no_article_text True, so a transient
+    error got the permanent "İçerik alınamadı" label and a paid search."""
+    from app.services import summary_service
+
+    async def timeout(url):
+        raise summary_service.ScrapingError("HTTP error: timeout")
+
+    monkeypatch.setattr(summary_service, "extract_article_content", timeout)
+    feed = _make_feed(db_session)
+    article = _make_article(db_session, feed.id, status="pending", raw_content="<p>RSS girişi.</p>")
+
+    asyncio.run(summary_service.process_article(db_session, article.id))
+
+    db_session.expire_all()
+    assert crud.get_article(db_session, article.id).status == "summarized"
+    assert free_match_calls == []
+
+
+def test_reprocess_keeps_the_label_when_the_page_is_not_fetched_again(pipeline_env, db_session):
+    """Regression (review): an article whose stored cleaned_content is only the paywall lead isn't
+    fetched again on re-process — and its "unavailable" label was wiped anyway."""
+    from app.services import summary_service
+
+    feed = _make_feed(db_session)
+    article = _make_article(db_session, feed.id, status="failed", cleaned_content="Kurzer Vorspann.")
+    crud.set_article_content_access(db_session, article.id, "unavailable")
+
+    asyncio.run(summary_service.process_article(db_session, article.id))
+
+    db_session.expire_all()
+    assert pipeline_env.extracted_urls == []
+    assert crud.get_article(db_session, article.id).content_access == "unavailable"
+
+
+def test_a_paywalled_article_whose_summaries_fail_is_labelled_and_searched_on_reprocess(
+        pipeline_env, db_session, monkeypatch, free_match_calls):
+    """Regression (review): the label was only written after a successful summary. When all
+    summaries failed, the stored paywall lead made the re-process skip the page fetch, so the
+    article was summarized from the lead without any label or free-source search."""
+    from app.db import database
+    from app.services import summary_service
+
+    async def lead_only(url):
+        return "Kurzer Vorspann.", None, None, True, False
+
+    monkeypatch.setitem(database.vector_support, "available", True)
+
+    async def down(**kwargs):
+        raise RuntimeError("OpenAI down")
+
+    monkeypatch.setattr(summary_service, "extract_article_content", lead_only)
+    monkeypatch.setattr(summary_service, "generate_summary", down)
+    feed = _make_feed(db_session)
+    article = _make_article(db_session, feed.id, status="pending", raw_content="<p>RSS girişi.</p>")
+
+    asyncio.run(summary_service.process_article(db_session, article.id))
+
+    db_session.expire_all()
+    failed = crud.get_article(db_session, article.id)
+    assert failed.status == "failed"
+    assert failed.content_access == "unavailable"
+    assert free_match_calls == []
+
+    async def works(title, content, summary_type="standard", source=None, author_hint=None):
+        return {"summary_text": "s", "model_used": "m", "tokens_used": 1, "cost": 0.0,
+                "author": None, "structured": True}
+
+    monkeypatch.setattr(summary_service, "generate_summary", works)
+    asyncio.run(summary_service.process_article(db_session, article.id))
+
+    db_session.expire_all()
+    assert crud.get_article(db_session, article.id).status == "summarized"
+    assert free_match_calls == [article.id]
+
+
+def test_without_pgvector_a_paywalled_article_gets_no_early_label(pipeline_env, db_session, monkeypatch):
+    """No search can run without pgvector, so the early "unavailable" label isn't written either."""
+    from app.db import database
+    from app.services import summary_service
+
+    async def lead_only(url):
+        return "Kurzer Vorspann.", None, None, True, False
+
+    monkeypatch.setitem(database.vector_support, "available", False)
+    monkeypatch.setattr(summary_service, "extract_article_content", lead_only)
+    feed = _make_feed(db_session)
+    article = _make_article(db_session, feed.id, status="pending", raw_content="<p>RSS girişi.</p>")
+
+    asyncio.run(summary_service.process_article(db_session, article.id))
+
+    db_session.expire_all()
+    assert crud.get_article(db_session, article.id).content_access is None
+
+
+def test_reprocess_with_full_text_clears_an_old_access_label(pipeline_env, db_session, monkeypatch):
+    from app.services import summary_service
+
+    async def full_page(url):
+        return _LONG_PAGE, None, None, False
+
+    monkeypatch.setattr(summary_service, "extract_article_content", full_page)
+    feed = _make_feed(db_session)
+    article = _make_article(db_session, feed.id, status="failed", cleaned_content=None)
+    crud.set_article_content_access(db_session, article.id, "unavailable")
+
+    asyncio.run(summary_service.process_article(db_session, article.id))
+
+    db_session.expire_all()
+    assert crud.get_article(db_session, article.id).content_access is None

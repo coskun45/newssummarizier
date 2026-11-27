@@ -194,6 +194,16 @@
           "id": "assistant-settings",
           "title": "Asistan ayarları",
           "description": "Asistanın kullanabileceği araçlar (zaman tespiti, veritabanı, vektör arama, grafik…) tek tek açılıp kapatılır; analiz planının çalıştırılmadan önce onay beklemesi istenebilir."
+        },
+        {
+          "id": "free-source-match",
+          "title": "Ücretsiz kaynakta eşleşme",
+          "description": "Sayfası okunamayan (ücretli veya erişimi engelleyen) kaynakların haberleri, başlıklarından ücretsiz kaynaklardaki aynı haberle eşleştirilir: bulunursa kartta \"Ücretsiz kaynakta var\" etiketi ve habere bağlantı, bulunamazsa \"İçerik alınamadı\" etiketi görünür. Eşleşmeyenler aynı gün saat 21:00'de bir kez daha aranır."
+        },
+        {
+          "id": "manual-article-add",
+          "title": "Manuel haber ekleme",
+          "description": "Admin, Haberler ekranındaki \"Haber Ekle\" ile kendi haberini formdan (kaynak listeden seçilir) ya da toplu olarak JSON dosyasıyla ekleyebilir; örnek JSON indirilebilir. Eklenen haberler RSS haberleriyle aynı şekilde sınıflandırılır ve özetlenir, kartta \"Manuel\" etiketiyle görünür."
         }
       ]
     }

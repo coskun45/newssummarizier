@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 _scheduler: AsyncIOScheduler | None = None
 JOB_ID = "process_all_feeds"
 NEWSLETTER_JOB_ID = "send_due_newsletters"
+FREE_MATCH_JOB_ID = "recheck_free_alternatives"
+FREE_MATCH_RECHECK_HOUR = 21  # local time (NEWSLETTER_TIMEZONE)
 
 
 async def _process_all_feeds() -> None:
@@ -85,6 +87,19 @@ def start_scheduler() -> None:
         name="Bulletin subscription mails",
         replace_existing=True,
         misfire_grace_time=600,
+        max_instances=1,
+    )
+
+    from app.tasks.background import recheck_free_alternatives_task
+
+    _scheduler.add_job(
+        recheck_free_alternatives_task,
+        # Second search for blocked/paywalled stories (the first runs when the article comes in).
+        trigger=CronTrigger(hour=FREE_MATCH_RECHECK_HOUR, minute=0, timezone=settings.newsletter_timezone),
+        id=FREE_MATCH_JOB_ID,
+        name="Free-source re-check for blocked articles",
+        replace_existing=True,
+        misfire_grace_time=1800,
         max_instances=1,
     )
 

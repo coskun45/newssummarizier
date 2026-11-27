@@ -1332,3 +1332,41 @@ def test_get_articles_by_topic_named_content_is_not_shadowed_by_the_content_rout
     response = client.get("/api/articles/topic/content", headers=auth_headers)
 
     assert response.status_code == 200
+
+
+def test_article_responses_carry_the_access_label_and_free_match(client, auth_headers, db_session):
+    paid = _make_feed(db_session, "https://wsj.example/feed", title="WSJ")
+    free_feed = _make_feed(db_session, "https://dw.example/feed", title="DW")
+    free = _make_article(db_session, free_feed.id, title="Gazze'ye dönüş", url="https://dw.example/a",
+                         status="summarized", priority="high")
+    matched = _make_article(db_session, paid.id, title="Gaza return", status="summarized", priority="high")
+    unavailable = _make_article(db_session, paid.id, title="Other", status="summarized", priority="high")
+    crud.set_article_content_access(db_session, matched.id, "free_match", free.id)
+    crud.set_article_content_access(db_session, unavailable.id, "unavailable")
+
+    rows = {a["id"]: a for a in client.get("/api/articles", headers=auth_headers).json()["articles"]}
+    detail = client.get(f"/api/articles/{matched.id}", headers=auth_headers).json()
+
+    assert rows[matched.id]["content_access"] == "free_match"
+    assert rows[matched.id]["free_match"] == {"id": free.id, "title": "Gazze'ye dönüş",
+                                             "url": "https://dw.example/a", "source": "DW"}
+    assert detail["free_match"]["id"] == free.id
+    assert rows[unavailable.id]["content_access"] == "unavailable"
+    assert rows[unavailable.id]["free_match"] is None
+    assert rows[free.id]["content_access"] is None and rows[free.id]["free_match"] is None
+
+
+def test_a_free_match_whose_match_was_deleted_is_reported_unavailable(client, auth_headers, db_session):
+    """Regression (review): the FK NULLs the link on delete, but the card kept the
+    "Ücretsiz kaynakta var" badge (content_access "free_match") with nothing to link to."""
+    paid = _make_feed(db_session, "https://wsj.example/feed", title="WSJ")
+    free_feed = _make_feed(db_session, "https://dw.example/feed", title="DW")
+    free = _make_article(db_session, free_feed.id, title="Ücretsiz", status="summarized", priority="high")
+    matched = _make_article(db_session, paid.id, title="Gaza return", status="summarized", priority="high")
+    crud.set_article_content_access(db_session, matched.id, "free_match", free.id)
+
+    assert client.delete(f"/api/articles/{free.id}", headers=auth_headers).status_code in (200, 204)
+
+    detail = client.get(f"/api/articles/{matched.id}", headers=auth_headers).json()
+    assert detail["content_access"] == "unavailable"
+    assert detail["free_match"] is None

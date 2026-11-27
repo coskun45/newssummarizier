@@ -320,6 +320,67 @@ async def check_robots_txt(url: str) -> bool:
         return True  # Default to allowed if robots.txt check fails
 
 
+_FREE_FLAG_RE = re.compile(r'"isAccessibleForFree"\s*:\s*"?(true|false)"?', re.IGNORECASE)
+
+
+_JSON_LD_RE = re.compile(
+    r'<script[^>]*type\s*=\s*["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _free_flag(value) -> Optional[bool]:
+    """schema.org isAccessibleForFree as a bool (publishers write true/false or "True"/"False")."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.strip().lower() in ("true", "false"):
+        return value.strip().lower() == "true"
+    return None
+
+
+def _is_article_type(item: dict) -> bool:
+    types = item.get("@type")
+    types = types if isinstance(types, list) else [types]
+    return any(isinstance(t, str) and t.endswith("Article") for t in types)
+
+
+def is_paywalled(html: str) -> bool:
+    """Whether the page says its own article is behind a paywall: the schema.org
+    `"isAccessibleForFree": false` publishers put in their JSON-LD (Bloomberg, Haaretz, Spiegel+,
+    Tages-Anzeiger, Le Monde…). Such a page gives us only the lead. No flag means not paywalled.
+
+    Only the page's top-level JSON-LD objects count (directly, in a list or in `@graph`) — never a
+    nested `hasPart` / related item, which may describe another (premium) article. The first
+    top-level *Article object with a flag decides; without one, a top-level `true` wins over a
+    `false` (a free page listing a premium teaser). JSON-LD that doesn't parse falls back to a
+    plain search for the flag."""
+    html = html or ""
+    top_level: list = []
+    unparsed = False
+    for block in _JSON_LD_RE.findall(html):
+        try:
+            data = json.loads(block)
+        except ValueError:
+            unparsed = True
+            continue
+        for item in data if isinstance(data, list) else [data]:
+            if isinstance(item, dict):
+                top_level.append(item)
+                top_level.extend(i for i in item.get("@graph", []) if isinstance(i, dict))
+
+    flagged = [(item, _free_flag(item.get("isAccessibleForFree"))) for item in top_level]
+    flagged = [(item, flag) for item, flag in flagged if flag is not None]
+    for item, flag in flagged:
+        if _is_article_type(item):
+            return flag is False
+    if flagged:
+        flags = {flag for _, flag in flagged}
+        return flags == {False}
+    if unparsed or not top_level:
+        return any(flag.lower() == "false" for flag in _FREE_FLAG_RE.findall(html))
+    return False
+
+
 def _extract_page_metadata(html: str) -> Tuple[Optional[str], Optional[str]]:
     """Pull the author and hero image (og:image / twitter:image) from a page's
     metadata (meta tags / JSON-LD) via trafilatura."""
@@ -397,7 +458,9 @@ async def _wordpress_post_text(url: str) -> Optional[str]:
     return text or None
 
 
-async def extract_article_content(url: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+async def extract_article_content(
+    url: str,
+) -> Tuple[Optional[str], Optional[str], Optional[str], bool, bool]:
     """
     Extract main content, author, and hero image from an article URL using trafilatura.
 
@@ -405,24 +468,28 @@ async def extract_article_content(url: str) -> Tuple[Optional[str], Optional[str
         url: URL of the article
 
     Returns:
-        (content, author, image_url) — any element may be None if unavailable.
+        (content, author, image_url, paywalled, blocked) — any of the first three may be None if
+        unavailable; `paywalled` is True when the page marks itself as paywalled (`is_paywalled`);
+        `blocked` is True when the source refused us (robots.txt disallows the page, or a 401/403
+        the WordPress API couldn't get around). Scraping being off, a non-public address, a
+        404/5xx or an empty extraction is not "blocked": the source didn't say we may not read it.
 
     Raises:
-        ScrapingError: If scraping fails
+        ScrapingError: If scraping fails (timeouts and connection errors included — not "blocked")
     """
     if not settings.scraping_enabled:
         logger.info("Scraping is disabled in settings")
-        return None, None, None
+        return None, None, None, False, False
 
     if not await asyncio.to_thread(is_public_url, url):
         logger.warning(f"Refusing to fetch article on a non-public address: {url}")
-        return None, None, None
+        return None, None, None, False, False
 
     try:
         # Check robots.txt
         if not await check_robots_txt(url):
             logger.warning(f"URL not allowed by robots.txt: {url}")
-            return None, None, None
+            return None, None, None, False, True
 
         logger.info(f"Extracting content from: {url}")
 
@@ -441,8 +508,9 @@ async def extract_article_content(url: str) -> Tuple[Optional[str], Optional[str
                     status, html, final_url = await _get_public_page(session, url, headers)
                 if html is None:
                     if status in _BLOCKED_STATUSES:
-                        return await _wordpress_post_text(final_url), None, None
-                    return None, None, None
+                        api_text = await _wordpress_post_text(final_url)
+                        return api_text, None, None, False, not api_text
+                    return None, None, None, False, False
                 break
             except (aiohttp.ClientError, asyncio.TimeoutError) as e:
                 if attempt >= attempts:
@@ -466,7 +534,7 @@ async def extract_article_content(url: str) -> Tuple[Optional[str], Optional[str
         else:
             logger.warning(f"No content extracted from {url}")
 
-        return content, author, image_url
+        return content, author, image_url, is_paywalled(html), False
 
     except aiohttp.ClientError as e:
         logger.error(f"HTTP error while fetching {url}: {e}")

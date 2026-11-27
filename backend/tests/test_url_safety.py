@@ -100,7 +100,7 @@ def test_article_url_on_a_private_host_is_not_fetched(scraper):
     install, requested = scraper
     install({})
 
-    assert asyncio.run(tools.extract_article_content("http://10.1.2.3/secret")) == (None, None, None)
+    assert asyncio.run(tools.extract_article_content("http://10.1.2.3/secret")) == (None, None, None, False, False)
     assert requested == []
 
 
@@ -108,7 +108,7 @@ def test_article_redirect_to_a_private_host_is_not_followed(scraper):
     install, requested = scraper
     install({"https://news.example/a": _FakeResponse(302, {"Location": "http://metadata.internal/token"})})
 
-    assert asyncio.run(tools.extract_article_content("https://news.example/a")) == (None, None, None)
+    assert asyncio.run(tools.extract_article_content("https://news.example/a")) == (None, None, None, False, False)
     assert requested == ["https://news.example/a"]
 
 
@@ -120,7 +120,7 @@ def test_article_redirect_to_a_public_host_is_followed(scraper):
         "https://news.example/b": _FakeResponse(200, body=html),
     })
 
-    content, _, _ = asyncio.run(tools.extract_article_content("https://news.example/a"))
+    content, *_ = asyncio.run(tools.extract_article_content("https://news.example/a"))
 
     assert requested == ["https://news.example/a", "https://news.example/b"]
     assert content and "Haber metni." in content

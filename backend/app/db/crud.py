@@ -2,7 +2,7 @@
 CRUD (Create, Read, Update, Delete) operations for database models.
 """
 from sqlalchemy.orm import Session, selectinload
-from sqlalchemy import desc, func, inspect, or_, case, select
+from sqlalchemy import and_, desc, func, inspect, or_, case, select
 from sqlalchemy.exc import IntegrityError
 from typing import List, Optional, Dict, Any, Set
 from datetime import datetime, timezone, timedelta
@@ -152,6 +152,29 @@ def get_feed_by_url(db: Session, url: str) -> Optional[models.Feed]:
     return db.query(models.Feed).filter(models.Feed.url == url).first()
 
 
+def feed_title_key(title: Optional[str]) -> str:
+    """Comparable form of a feed title: trimmed, lowercased, with the Turkish dotted/dotless i
+    folded to "i". Compared in Python, not with SQL lower() (that follows the DB collation), and
+    mirrored by `feedTitleKey` in frontend/src/utils/manualArticles.ts so the upload preview
+    resolves a feed exactly when the backend does."""
+    return (title or "").strip().lower().replace("̇", "").replace("ı", "i")
+
+
+def get_feed_by_title(db: Session, title: str, active_only: bool = False) -> Optional[models.Feed]:
+    """Get a feed by its title, ignoring case (Turkish İ/I included) and surrounding whitespace.
+    `active_only`: inactive feeds don't count (the lowest-id active match wins)."""
+    wanted = feed_title_key(title)
+    if not wanted:
+        return None
+    query = db.query(models.Feed)
+    if active_only:
+        query = query.filter(models.Feed.is_active.is_(True))
+    for feed in query.order_by(models.Feed.id).all():
+        if feed_title_key(feed.title) == wanted:
+            return feed
+    return None
+
+
 def get_feeds(db: Session, active_only: bool = True) -> List[models.Feed]:
     """Get all feeds."""
     query = db.query(models.Feed)
@@ -225,9 +248,10 @@ def create_article(
     raw_content: str = None,
     cleaned_content: str = None,
     image_url: str = None,
-    status: str = "pending"
+    status: str = "pending",
+    source_type: str = "rss",
 ) -> models.Article:
-    """Create a new article."""
+    """Create a new article. source_type: "rss" (feed ingest) | "manual" (added by an admin)."""
     article = models.Article(
         feed_id=feed_id,
         url=url,
@@ -238,7 +262,8 @@ def create_article(
         raw_content=raw_content,
         cleaned_content=cleaned_content,
         image_url=image_url,
-        status=status
+        status=status,
+        source_type=source_type,
     )
     db.add(article)
     db.commit()
@@ -251,7 +276,8 @@ def get_article(db: Session, article_id: int) -> Optional[models.Article]:
     return db.query(models.Article).options(
         selectinload(models.Article.summaries),
         selectinload(models.Article.feed),
-        selectinload(models.Article.topics).selectinload(models.ArticleTopic.topic)
+        selectinload(models.Article.topics).selectinload(models.ArticleTopic.topic),
+        selectinload(models.Article.free_match_article).selectinload(models.Article.feed),
     ).filter(models.Article.id == article_id).first()
 
 
@@ -423,7 +449,8 @@ def get_articles(db: Session, skip: int = 0, limit: int = 100, **filters) -> Lis
     query = db.query(models.Article).options(
         selectinload(models.Article.summaries),
         selectinload(models.Article.feed),
-        selectinload(models.Article.topics).selectinload(models.ArticleTopic.topic)
+        selectinload(models.Article.topics).selectinload(models.ArticleTopic.topic),
+        selectinload(models.Article.free_match_article).selectinload(models.Article.feed),
     )
     query = _apply_article_filters(db, query, **filters)
     # id breaks published_at ties and NULLS LAST pins undated articles to the bottom on both
@@ -2161,6 +2188,68 @@ def _keyword_chunks(db: Session, query_text: str, scope, limit: int) -> list:
     rows = db.execute(select(chunk.article_id, chunk.id, chunk.text).where(chunk.article_id.in_(scope))).all()
     scored = [(*row, sum(row[2].lower().count(w) for w in words)) for row in rows]
     return sorted([r for r in scored if r[-1] > 0], key=lambda r: -r[-1])[:limit]
+
+
+# ==================== Free-source match (blocked / paywalled articles) ====================
+
+def set_article_content_access(db: Session, article_id: int, access: Optional[str],
+                               match_id: Optional[int] = None) -> None:
+    """Record whether an article's text could be read: None (full text), "free_match" (the same
+    story is in a free source: `match_id`) or "unavailable". Stamps the search time."""
+    article = db.query(models.Article).filter(models.Article.id == article_id).first()
+    if article is None:
+        return
+    article.content_access = access
+    article.free_match_article_id = match_id if access == "free_match" else None
+    article.free_match_checked_at = datetime.now(timezone.utc) if access else None
+    db.commit()
+
+
+def free_match_candidates(db: Session, article_id: int, query_vector: List[float],
+                          window_hours: int, limit: int) -> List[tuple]:
+    """Free-source articles nearest to `query_vector` (the blocked article's title), as
+    [(Article, distance)] best first, one entry per article. A candidate is summarized, has its
+    full text (content_access NULL), comes from another feed and was published within
+    `window_hours` of the blocked article."""
+    article = db.query(models.Article).filter(models.Article.id == article_id).first()
+    if article is None:
+        return []
+    reference = article.published_at or article.fetched_at or datetime.now(timezone.utc)
+    article_date = func.coalesce(models.Article.published_at, models.Article.fetched_at)
+    scope = select(models.Article.id).where(
+        models.Article.status == "summarized",
+        models.Article.content_access.is_(None),
+        models.Article.feed_id != article.feed_id,
+        models.Article.id != article_id,
+        # A manual article added without a link has nothing to send the reader to.
+        ~models.Article.url.startswith("manual://"),
+        article_date >= reference - timedelta(hours=window_hours),
+        article_date <= reference + timedelta(hours=window_hours),
+    )
+    chunk = models.ArticleChunkEmbedding
+    # Several chunks per article: fetch more than `limit` so `limit` distinct articles remain.
+    rows = _nearest(db, chunk, [chunk.article_id], query_vector, scope, limit * 6)
+    best: Dict[int, float] = {}
+    for candidate_id, distance in rows:
+        if candidate_id not in best or distance < best[candidate_id]:
+            best[candidate_id] = distance
+    ranked = sorted(best.items(), key=lambda item: item[1])[:limit]
+    articles = {a.id: a for a in db.query(models.Article).options(selectinload(models.Article.feed))
+                .filter(models.Article.id.in_([i for i, _ in ranked])).all()}
+    return [(articles[i], d) for i, d in ranked if i in articles]
+
+
+def get_articles_for_free_match_recheck(db: Session, since: datetime) -> List[int]:
+    """Ids of articles fetched since `since` whose story no free source had yet — the 21:00
+    re-check's work list. A "free_match" whose matched article was deleted (the FK NULLed the
+    link) counts as no match and is searched again too."""
+    rows = db.query(models.Article.id).filter(
+        models.Article.fetched_at >= since,
+        or_(models.Article.content_access == "unavailable",
+            and_(models.Article.content_access == "free_match",
+                 models.Article.free_match_article_id.is_(None))),
+    ).order_by(models.Article.id).all()
+    return [row.id for row in rows]
 
 
 def get_articles_for_search(db: Session, article_ids: List[int]) -> Dict[int, models.Article]:

@@ -258,7 +258,7 @@ def test_blocked_wordpress_page_is_read_from_the_rest_api(fake_web):
         _WP_API: _Resp(200, json.dumps([{"content": {"rendered": _LONG_HTML}}])),
     })
 
-    content, _, _ = asyncio.run(tools.extract_article_content(_WP_URL))
+    content, *_ = asyncio.run(tools.extract_article_content(_WP_URL))
 
     assert content and content.startswith("Paragraf 0: uzun haber metni")
     assert len(content.split("\n")) == 12
@@ -272,7 +272,8 @@ def test_blocked_wordpress_page_is_read_from_the_rest_api(fake_web):
 def test_blocked_page_without_a_usable_wordpress_api_still_yields_nothing(fake_web, api):
     fake_web.routes.update({_WP_URL: _Resp(403, "blocked"), _WP_API: api})
 
-    assert asyncio.run(tools.extract_article_content(_WP_URL)) == (None, None, None)
+    # The source refused us: reported as blocked (the free-source search may run).
+    assert asyncio.run(tools.extract_article_content(_WP_URL)) == (None, None, None, False, True)
 
 
 @pytest.mark.parametrize("status", [404, 429, 503])
@@ -281,7 +282,7 @@ def test_wordpress_api_is_not_tried_unless_the_page_was_refused(fake_web, status
     # add load to a host that just asked for less.
     fake_web.routes[_WP_URL] = _Resp(status, "nope")
 
-    assert asyncio.run(tools.extract_article_content(_WP_URL)) == (None, None, None)
+    assert asyncio.run(tools.extract_article_content(_WP_URL)) == (None, None, None, False, False)
     assert fake_web.requested == [_WP_URL]
 
 
@@ -293,7 +294,7 @@ def test_wordpress_api_redirect_is_followed(fake_web):
         www_api: _Resp(200, json.dumps([{"content": {"rendered": _LONG_HTML}}])),
     })
 
-    content, _, _ = asyncio.run(tools.extract_article_content(_WP_URL))
+    content, *_ = asyncio.run(tools.extract_article_content(_WP_URL))
 
     assert content and content.startswith("Paragraf 0")
 
@@ -306,7 +307,7 @@ def test_wordpress_slug_comes_from_the_page_that_refused(fake_web):
         _WP_API: _Resp(200, json.dumps([{"content": {"rendered": _LONG_HTML}}])),
     })
 
-    content, _, _ = asyncio.run(tools.extract_article_content(short))
+    content, *_ = asyncio.run(tools.extract_article_content(short))
 
     assert content and content.startswith("Paragraf 0")
 
@@ -321,3 +322,83 @@ def test_robots_txt_is_fetched_once_per_host(local_fetch):
 
     assert (first, api, private) == (True, True, False)
     assert [path for path, _ in seen] == ["/robots.txt"]
+
+
+@pytest.mark.parametrize("html, expected", [
+    ('<script type="application/ld+json">{"isAccessibleForFree": false}</script>', True),
+    ('<script type="application/ld+json">{"isAccessibleForFree":"False"}</script>', True),
+    ('<script type="application/ld+json">{"isAccessibleForFree": "true"}</script>', False),
+    ("<html><p>no structured data</p></html>", False),
+    ("", False),
+])
+def test_is_paywalled_reads_the_schema_org_flag(html, expected):
+    assert tools.is_paywalled(html) is expected
+
+
+def _ld(*objects):
+    return "".join(f'<script type="application/ld+json">{json.dumps(o)}</script>' for o in objects)
+
+
+@pytest.mark.parametrize("html, expected", [
+    # A free article that embeds a related premium piece (hasPart / related) is not paywalled.
+    (_ld({"@type": "NewsArticle", "isAccessibleForFree": True,
+          "hasPart": {"@type": "WebPageElement", "isAccessibleForFree": False}}), False),
+    (_ld({"@type": "NewsArticle", "headline": "Frei",
+          "relatedLink": [{"@type": "NewsArticle", "isAccessibleForFree": False}]}), False),
+    # A teaser object for another article next to the page's own (free) article.
+    (_ld({"@type": "NewsArticle", "headline": "Frei", "isAccessibleForFree": "true"},
+         {"@type": "NewsArticle", "headline": "Premium-Teaser", "isAccessibleForFree": False}), False),
+    (_ld({"@graph": [{"@type": "WebSite"},
+                     {"@type": "NewsArticle", "headline": "Frei", "isAccessibleForFree": True},
+                     {"@type": "NewsArticle", "headline": "Teaser", "isAccessibleForFree": False}]}), False),
+    # The page's own article marked paywalled — directly, inside @graph, or in a list.
+    (_ld({"@graph": [{"@type": "WebSite"},
+                     {"@type": "NewsArticle", "isAccessibleForFree": False,
+                      "hasPart": {"@type": "WebPageElement", "isAccessibleForFree": False}}]}), True),
+    (_ld([{"@type": ["NewsArticle", "ReportageNewsArticle"], "isAccessibleForFree": "False"}]), True),
+])
+def test_is_paywalled_only_reads_the_pages_own_article(html, expected):
+    """Regression (review): any `"isAccessibleForFree": false` anywhere in the HTML (a related
+    premium piece, a hasPart block) marked a short free article as a crawl failure."""
+    assert tools.is_paywalled(html) is expected
+
+
+def test_a_page_that_refuses_us_is_reported_as_blocked(fake_web):
+    url = "https://blocked.example/haber"
+    fake_web.routes[url] = _Resp(403, "blocked")
+
+    *_, paywalled, blocked = asyncio.run(tools.extract_article_content(url))
+
+    assert (paywalled, blocked) == (False, True)
+
+
+@pytest.mark.parametrize("status", [404, 500, 503])
+def test_a_missing_or_failing_page_is_not_reported_as_blocked(fake_web, status):
+    url = "https://down.example/haber"
+    fake_web.routes[url] = _Resp(status, "error")
+
+    content, *_, blocked = asyncio.run(tools.extract_article_content(url))
+
+    assert content is None and blocked is False
+
+
+def test_disabled_scraping_is_not_reported_as_blocked(monkeypatch):
+    monkeypatch.setattr(tools.settings, "scraping_enabled", False)
+
+    *_, blocked = asyncio.run(tools.extract_article_content("https://dw.example/haber"))
+
+    assert blocked is False
+
+
+def test_paywalled_page_is_reported_with_its_lead(fake_web):
+    url = "https://www.spiegel.de/politik/kommentar-a.html"
+    page = ('<html><head><script type="application/ld+json">{"@type":"NewsArticle",'
+            '"isAccessibleForFree":false}</script></head><body><article>'
+            + "".join(f"<p>Satz {i} des Vorspanns mit genug Text für trafilatura.</p>" for i in range(5))
+            + "</article></body></html>")
+    fake_web.routes[url] = _Resp(200, page)
+
+    content, _, _, paywalled, _ = asyncio.run(tools.extract_article_content(url))
+
+    assert paywalled is True
+    assert content

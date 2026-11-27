@@ -261,6 +261,10 @@ def init_db():
         ("is_starred", "BOOLEAN NOT NULL DEFAULT false"),
         ("image_url", "VARCHAR"),
         ("feed_author", "VARCHAR"),
+        ("content_access", "VARCHAR"),
+        ("free_match_article_id", "INTEGER REFERENCES articles(id) ON DELETE SET NULL"),
+        ("free_match_checked_at", "TIMESTAMP"),
+        ("source_type", "VARCHAR NOT NULL DEFAULT 'rss'"),
     ]
     # Same for the other tables — add the table here when one of its models gains a column.
     group_fk = "INTEGER REFERENCES item_groups(id) ON DELETE SET NULL"
@@ -294,6 +298,11 @@ def init_db():
                         conn.rollback()
         for index_ddl in (
             "CREATE INDEX IF NOT EXISTS ix_articles_is_starred ON articles (is_starred)",
+            # Model has index=True; a DB that only got the column via ALTER needs it here too.
+            "CREATE INDEX IF NOT EXISTS ix_articles_content_access ON articles (content_access)",
+            # The self-FK's ON DELETE SET NULL looks up referencing rows per deleted article;
+            # without this, a bulk delete scans the whole table once per row.
+            "CREATE INDEX IF NOT EXISTS ix_articles_free_match_article_id ON articles (free_match_article_id)",
             "CREATE INDEX IF NOT EXISTS ix_feeds_group_id ON feeds (group_id)",
             "CREATE INDEX IF NOT EXISTS ix_topics_group_id ON topics (group_id)",
             *(_VECTOR_INDEXES if vector_support["available"] and not _is_sqlite else ()),
