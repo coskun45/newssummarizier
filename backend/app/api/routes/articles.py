@@ -33,6 +33,8 @@ def _parse_comma_ids(raw: Optional[str], field_name: str) -> Optional[List[int]]
 
 
 VALID_PRIORITIES = {"high", "med", "low"}
+# Sidebar "Kaynak Türü" groups (crud.origin_clause).
+ArticleOrigin = Literal["free_match", "manual"]
 
 
 def _article_source(article: models.Article) -> Optional[str]:
@@ -164,6 +166,7 @@ def list_articles(
     is_read: Optional[bool] = Query(None, description="Filter by read status: true=read, false=unread"),
     is_starred: Optional[bool] = Query(None, description="Filter by the user-curated 'Önemli' group"),
     is_error: Optional[bool] = Query(None, description="true = only articles without a severity label (\"Error\" group), false = everything except them"),
+    origin: Optional[ArticleOrigin] = Query(None, description="Sidebar 'Kaynak Türü': free_match = a free source has the story, manual = added by an admin"),
     db: Session = Depends(get_db)
 ):
     """
@@ -190,6 +193,7 @@ def list_articles(
         is_read=is_read,
         is_starred=is_starred,
         is_error=is_error,
+        origin=origin,
     )
 
     # Get total count
@@ -208,6 +212,7 @@ def list_articles(
         is_read=is_read,
         is_starred=is_starred,
         is_error=is_error,
+        origin=origin,
     )
 
     articles_response = [_to_article_response(article) for article in articles]
@@ -252,6 +257,7 @@ class BulkReadRequest(BaseModel):
     fetched_to: Optional[datetime] = None
     is_starred: Optional[bool] = None
     is_error: Optional[bool] = None
+    origin: Optional[ArticleOrigin] = None
     # "Bu ve üstündekileri/altındakileri arşive gönder": with mark_all, limit the filtered set to
     # the articles at/above or at/below this one in the list's order (anchor included).
     anchor_id: Optional[int] = None
@@ -300,6 +306,7 @@ def mark_articles_read_bulk(
             fetched_to=body.fetched_to,
             is_starred=body.is_starred,
             is_error=body.is_error,
+            origin=body.origin,
         )
     return {"marked_count": count}
 

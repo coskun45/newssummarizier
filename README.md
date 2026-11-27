@@ -60,6 +60,9 @@ Deutsche Welle (DW) RSS beslemelerinden haber toplayan, kategorize eden ve yapay
   (en fazla 50 haber, satır satır önizleme) ekler. Haberler RSS haberleriyle aynı yoldan işlenir (sınıflandırma →
   konular → özetler); içerik verildiyse sayfa çekilmez, yalnız URL verildiyse sayfa çekilir. Kartta "Manuel"
   etiketiyle görünür. JSON formatı için bkz. [Manuel haber JSON formatı](#manuel-haber-json-formatı)
+- **Kaynak Türü Filtresi**: Haberler ekranının sol menüsündeki "Kaynak Türü" bölümüyle yalnızca ücretsiz kaynakta
+  eşleşmesi bulunan ("Ücretsiz kaynaktan") ya da manuel eklenen ("Manuel eklenen") haberler listelenir; yanlarında
+  okunmamış sayıları görünür. Bu bir filtredir: haberler normal listelerde de kalır, diğer filtrelerle birlikte çalışır
 
 ## 🏗️ Mimari
 
@@ -480,10 +483,10 @@ Bulten/
 
 #### Makaleler
 
-- `GET /api/articles` - Makaleleri listele (filtrelerle; `is_error=true` sadece önem etiketi olmayan "Error" haberleri döner)
-  - Query params: `skip`, `limit`, `topic_ids`, `search`, `status`
+- `GET /api/articles` - Makaleleri listele (filtrelerle; `is_error=true` sadece önem etiketi olmayan "Error" haberleri döner; `origin=free_match|manual` "Kaynak Türü" grubuna göre süzer)
+  - Query params: `skip`, `limit`, `topic_ids`, `search`, `status`, `origin`
   - Her makalede `source` (besleme adı; adı olmayan eski beslemelerde alan adı) ve `author` (özetin belirlediği kişi, yoksa `null`) döner
-- `POST /api/articles/mark-read-bulk` - Toplu arşive gönder: `article_ids` ya da `mark_all=true` + liste filtreleri; `mark_all` ile `anchor_id` + `direction` (`above`/`below`) verilirse yalnızca o haber ve listede üstündekiler/altındakiler arşivlenir
+- `POST /api/articles/mark-read-bulk` - Toplu arşive gönder: `article_ids` ya da `mark_all=true` + liste filtreleri (`origin` dahil); `mark_all` ile `anchor_id` + `direction` (`above`/`below`) verilirse yalnızca o haber ve listede üstündekiler/altındakiler arşivlenir
 - `GET /api/articles/{id}` - Tek bir makale
 - `GET /api/articles/topic/{topic_name}` - Konuya göre makaleler
 - `POST /api/articles/topic/{topic_id}/delete-all` - Konudaki tüm okunmamış makaleleri sil

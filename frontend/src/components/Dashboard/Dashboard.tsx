@@ -41,7 +41,7 @@ import {
   PlusIcon,
 } from '@heroicons/react/24/outline';
 import { StarIcon } from '@heroicons/react/24/solid';
-import type { ArchiveDirection, Article, AuthUser, DateFilterState } from '../../types';
+import type { ArchiveDirection, Article, ArticleOrigin, AuthUser, DateFilterState } from '../../types';
 import { showToast } from '../../lib/toast';
 import './Dashboard.css';
 
@@ -69,6 +69,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
   const [selectedTopics, setSelectedTopics] = useState<number[]>([]);
   const [importanceMode, setImportanceMode] = useState<'important' | 'unimportant' | null>(null);
   const [selectedPriority, setSelectedPriority] = useState<string | null>(null);
+  const [selectedOrigin, setSelectedOrigin] = useState<ArticleOrigin | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedFeedIds, setSelectedFeedIds] = useState<number[]>([]);
@@ -195,6 +196,7 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
     selectedTopics.length > 0 ||
     importanceMode !== null ||
     selectedPriority !== null ||
+    selectedOrigin !== null ||
     publishedFilter.preset !== null ||
     fetchedFilter.preset !== null;
 
@@ -246,8 +248,9 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
       // "Error" = articles that never received a severity label. They are listed only in the
       // Error tab and kept out of the unread list/counts until a re-run gives them a label.
       is_error: activeSection === 'error' ? true : activeSection === 'unread' ? false : undefined,
+      origin: selectedOrigin ?? undefined,
     };
-  }, [selectedTopics, debouncedSearch, selectedFeedIds, importanceMode, selectedPriority, publishedFilter, fetchedFilter, activeSection]);
+  }, [selectedTopics, debouncedSearch, selectedFeedIds, importanceMode, selectedPriority, selectedOrigin, publishedFilter, fetchedFilter, activeSection]);
 
   // Reset to the first page whenever the active filters change
   useEffect(() => {
@@ -595,6 +598,10 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                     setSelectedTopics([]);
                     setSelectedPriority(null);
                     setSelectedFeedIds([]);
+                    // Only important articles are scraped, so an unimportant one never has a free
+                    // match: keeping that pick would always show an empty list. Manual ones can be
+                    // unimportant, so "Manuel eklenen" stays.
+                    if (selectedOrigin === 'free_match') setSelectedOrigin(null);
                   }
                 }}
                 selectedPriority={selectedPriority}
@@ -608,6 +615,9 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                 }}
                 priorityCounts={articleCounts?.by_priority ?? {}}
                 unimportantCount={articleCounts?.unimportant_count}
+                selectedOrigin={selectedOrigin}
+                onOriginChange={setSelectedOrigin}
+                originCounts={articleCounts ? { free_match: articleCounts.free_match_count, manual: articleCounts.manual_count } : undefined}
               />
               <DateFilter
                 publishedFilter={publishedFilter}
@@ -799,7 +809,10 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                     </div>
                   )}
 
-                  {activeSection === 'unread' && (
+                  {/* These act on every unread article of a priority (feed-scoped only), not on the
+                      filtered list, so they are hidden while a Kaynak Türü filter narrows it — the
+                      filter-aware "Tümünü Arşive Gönder" above covers that list. */}
+                  {activeSection === 'unread' && !selectedOrigin && (
                     <CategoryBulkActions
                       priorityCounts={articleCounts?.by_priority ?? {}}
                       unimportantCount={articleCounts?.unimportant_count ?? 0}

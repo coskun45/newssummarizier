@@ -204,6 +204,11 @@
           "id": "manual-article-add",
           "title": "Manuel haber ekleme",
           "description": "Admin, Haberler ekranındaki \"Haber Ekle\" ile kendi haberini formdan (kaynak listeden seçilir) ya da toplu olarak JSON dosyasıyla ekleyebilir; örnek JSON indirilebilir. Eklenen haberler RSS haberleriyle aynı şekilde sınıflandırılır ve özetlenir, kartta \"Manuel\" etiketiyle görünür."
+        },
+        {
+          "id": "origin-filter",
+          "title": "Kaynak türü filtresi",
+          "description": "Haberler ekranının sol menüsündeki \"Kaynak Türü\" bölümüyle yalnızca ücretsiz kaynakta eşleşmesi bulunan haberler ya da manuel eklenen haberler listelenebilir; yanlarında okunmamış sayıları görünür. Haberler normal listelerde de kalır, filtre diğer filtrelerle birlikte çalışır."
         }
       ]
     }

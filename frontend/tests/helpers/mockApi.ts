@@ -420,10 +420,19 @@ export function isErrorArticle(a: MockArticle): boolean {
   return (!a.priority && a.importance !== 'unimportant') || a.status === 'failed';
 }
 
+/** Mirrors crud.origin_clause: the sidebar "Kaynak Türü" groups. */
+export function matchesOrigin(a: MockArticle, origin: string): boolean {
+  if (origin === 'free_match') return a.content_access === 'free_match' && a.free_match !== null;
+  if (origin === 'manual') return a.source_type === 'manual';
+  return false;
+}
+
 function computeCounts(articles: MockArticle[]) {
   const by_priority: Record<string, number> = {};
   const by_feed: Record<string, number> = {};
   let unimportant_count = 0;
+  let free_match_count = 0;
+  let manual_count = 0;
   let unread_count = 0;
   let read_count = 0;
   let starred_count = 0;
@@ -438,6 +447,8 @@ function computeCounts(articles: MockArticle[]) {
       unread_count += 1;
       if (a.priority) by_priority[a.priority] = (by_priority[a.priority] ?? 0) + 1;
       if (a.importance === 'unimportant') unimportant_count += 1;
+      if (matchesOrigin(a, 'free_match')) free_match_count += 1;
+      if (matchesOrigin(a, 'manual')) manual_count += 1;
     } else if (a.is_read) {
       read_count += 1;
     }
@@ -445,7 +456,7 @@ function computeCounts(articles: MockArticle[]) {
     if (isErrorArticle(a)) error_count += 1;
   }
 
-  return { by_priority, by_feed, unimportant_count, unread_count, read_count, starred_count, error_count };
+  return { by_priority, by_feed, unimportant_count, free_match_count, manual_count, unread_count, read_count, starred_count, error_count };
 }
 
 function computeTopicsWithCounts(topics: Topic[], articles: MockArticle[], feedId: number | null): Topic[] {
@@ -496,6 +507,9 @@ function matchesArticleFilters(a: MockArticle, params: URLSearchParams): boolean
 
   const isError = params.get('is_error');
   if (isError !== null && isErrorArticle(a) !== (isError === 'true')) return false;
+
+  const origin = params.get('origin');
+  if (origin && !matchesOrigin(a, origin)) return false;
 
   const topicIds = parseIdList(params.get('topic_ids'));
   if (topicIds && !a.topics.some((t) => topicIds.includes(t.id))) return false;

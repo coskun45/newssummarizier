@@ -370,6 +370,17 @@ def error_clause():
     )
 
 
+def origin_clause(origin: str):
+    """SQL clause for a sidebar "Kaynak Türü" group: "free_match" = the same story was found in a
+    free source and that article still exists (a deleted match is reported as "unavailable"),
+    "manual" = added by an admin (POST /articles/manual)."""
+    if origin == "free_match":
+        return (models.Article.content_access == "free_match") & models.Article.free_match_article_id.isnot(None)
+    if origin == "manual":
+        return models.Article.source_type == "manual"
+    raise ValueError(f"Unknown article origin: {origin!r}")
+
+
 def _apply_article_filters(
     db: Session,
     query,
@@ -387,9 +398,14 @@ def _apply_article_filters(
     is_read: bool = None,
     is_starred: bool = None,
     is_error: bool = None,
+    origin: str = None,
 ):
     """The article browser's filters, shared by list, count and mark-all-read so the three can
     never disagree about which articles a filter selects."""
+    # Filter by origin ("Kaynak Türü": free_match | manual)
+    if origin:
+        query = query.filter(origin_clause(origin))
+
     # Filter by feed(s)
     if feed_ids:
         query = query.filter(models.Article.feed_id.in_(feed_ids))
@@ -483,6 +499,8 @@ def get_article_counts(db: Session) -> Dict[str, Any]:
         "by_priority": {p: c for p, c in priority_rows},
         "by_feed": {str(f): c for f, c in feed_rows},
         "unimportant_count": count(models.Article.importance == "unimportant", *unread_work),
+        "free_match_count": count(origin_clause("free_match"), *unread_work),
+        "manual_count": count(origin_clause("manual"), *unread_work),
         "unread_count": count(*unread_work),
         "read_count": count(models.Article.is_read.is_(True)),
         "starred_count": count(models.Article.is_starred.is_(True)),

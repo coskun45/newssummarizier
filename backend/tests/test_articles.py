@@ -1263,6 +1263,8 @@ def test_counts_endpoint_values(client, auth_headers, db_session):
         "by_priority": {"high": 1},
         "by_feed": {str(feed.id): 2},
         "unimportant_count": 1,
+        "free_match_count": 0,
+        "manual_count": 0,
         "unread_count": 2,
         "read_count": 1,
         "starred_count": 1,
@@ -1370,3 +1372,85 @@ def test_a_free_match_whose_match_was_deleted_is_reported_unavailable(client, au
     detail = client.get(f"/api/articles/{matched.id}", headers=auth_headers).json()
     assert detail["content_access"] == "unavailable"
     assert detail["free_match"] is None
+
+
+# ==================== origin filter ("Kaynak Türü": free_match | manual) ====================
+
+def _origin_fixture(db_session):
+    """One article of each origin kind (plus a deleted-match and an unavailable one)."""
+    feed = _make_feed(db_session)
+    other_feed = _make_feed(db_session, url="https://other.example.com/rss")
+    labelled = dict(status="summarized", importance="important", priority="high")
+    free_source = _make_article(db_session, other_feed.id, **labelled)
+    free_match = _make_article(db_session, feed.id, **labelled)
+    crud.set_article_content_access(db_session, free_match.id, "free_match", free_source.id)
+    # The matched article was deleted (FK SET NULL): reported as "unavailable", not a free match.
+    lost_match = _make_article(db_session, feed.id, **labelled)
+    crud.set_article_content_access(db_session, lost_match.id, "free_match", None)
+    unavailable = _make_article(db_session, feed.id, **labelled)
+    crud.set_article_content_access(db_session, unavailable.id, "unavailable")
+    manual = _make_article(db_session, feed.id, **labelled)
+    manual.source_type = "manual"
+    db_session.commit()
+    return {"free_source": free_source.id, "free_match": free_match.id, "lost_match": lost_match.id,
+            "unavailable": unavailable.id, "manual": manual.id}
+
+
+@pytest.mark.parametrize("origin", ["free_match", "manual"])
+def test_list_articles_filters_by_origin(client, auth_headers, db_session, origin):
+    ids = _origin_fixture(db_session)
+
+    response = client.get("/api/articles/", params={"origin": origin}, headers=auth_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [a["id"] for a in body["articles"]] == [ids[origin]]
+    assert body["total"] == 1
+
+
+def test_list_articles_without_origin_keeps_every_article(client, auth_headers, db_session):
+    ids = _origin_fixture(db_session)
+
+    response = client.get("/api/articles/", headers=auth_headers)
+
+    assert {a["id"] for a in response.json()["articles"]} == set(ids.values())
+
+
+def test_list_articles_rejects_unknown_origin(client, auth_headers):
+    response = client.get("/api/articles/", params={"origin": "rss"}, headers=auth_headers)
+    assert response.status_code == 422
+
+
+def test_article_counts_include_origin_groups_scoped_to_unread(client, auth_headers, db_session):
+    ids = _origin_fixture(db_session)
+    crud.mark_articles_read_bulk(db_session, [ids["manual"]])
+    _make_article(db_session, _make_feed(db_session, url="https://third.example.com/rss").id,
+                  status="summarized", importance="important", priority="low").source_type = "manual"
+    db_session.commit()
+
+    body = client.get("/api/articles/counts", headers=auth_headers).json()
+
+    assert body["free_match_count"] == 1  # the deleted match doesn't count
+    assert body["manual_count"] == 1  # the archived manual article doesn't count
+
+
+def test_mark_read_bulk_mark_all_respects_origin(client, auth_headers, db_session):
+    ids = _origin_fixture(db_session)
+
+    response = client.post("/api/articles/mark-read-bulk",
+                           json={"mark_all": True, "origin": "manual"}, headers=auth_headers)
+
+    assert response.status_code == 200
+    assert response.json() == {"marked_count": 1}
+    read = {a.id for a in db_session.query(models.Article).filter(models.Article.is_read.is_(True))}
+    assert read == {ids["manual"]}
+
+
+def test_mark_read_bulk_rejects_unknown_origin(client, auth_headers):
+    response = client.post("/api/articles/mark-read-bulk",
+                           json={"mark_all": True, "origin": "rss"}, headers=auth_headers)
+    assert response.status_code == 422
+
+
+def test_list_articles_origin_requires_auth(client):
+    assert client.get("/api/articles/", params={"origin": "manual"}).status_code == 401

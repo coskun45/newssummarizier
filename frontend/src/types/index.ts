@@ -92,6 +92,10 @@ export interface ManualArticlesResult {
 
 export type ContentAccess = 'free_match' | 'unavailable';
 
+/** Sidebar "Kaynak Türü" groups: a free source has the story (free_match with its match still
+ *  present) / added by an admin (source_type "manual"). */
+export type ArticleOrigin = 'free_match' | 'manual';
+
 /** The free-source article with the same story as a blocked / paywalled one. */
 export interface FreeMatch {
     id: number;
@@ -154,6 +158,7 @@ export interface ArticleFilters {
     is_read?: boolean;
     is_starred?: boolean;
     is_error?: boolean;
+    origin?: ArticleOrigin;
 }
 
 /** A model selectable in Ayarlar, with its OpenAI list price (USD per 1M tokens). */
@@ -286,6 +291,8 @@ export interface ArticleCounts {
     by_priority: Record<string, number>;
     by_feed: Record<string, number>;
     unimportant_count: number;
+    free_match_count: number;
+    manual_count: number;
     unread_count: number;
     read_count: number;
     starred_count: number;
