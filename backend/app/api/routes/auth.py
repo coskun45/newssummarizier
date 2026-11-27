@@ -2,10 +2,10 @@
 Authentication and user management routes.
 """
 from datetime import datetime
-from typing import List
+from typing import List, Literal, Optional, get_args
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from app.db.database import get_db
 from app.db import models, crud
 from app.core.security import verify_password, hash_password, create_access_token
@@ -46,6 +46,23 @@ class CreateUserRequest(BaseModel):
     email: str
     password: str
     role: str = "user"
+
+
+# Haberler sidebar sections the user can reorder by drag and drop (frontend SIDEBAR_SECTIONS).
+SidebarSection = Literal["origin", "feeds", "priority", "topics", "published", "fetched"]
+
+
+class SidebarOrder(BaseModel):
+    """The user's sidebar section order: known ids, each at most once. A subset is fine (the
+    frontend appends sections it is missing); null on GET = the default order."""
+    order: Optional[List[SidebarSection]] = Field(..., max_length=len(get_args(SidebarSection)))
+
+    @field_validator("order")
+    @classmethod
+    def _unique(cls, order: Optional[List[str]]) -> Optional[List[str]]:
+        if order is not None and len(set(order)) != len(order):
+            raise ValueError("Each sidebar section may appear only once")
+        return order
 
 
 # ==================== Endpoints ====================
@@ -93,6 +110,22 @@ def dev_login(db: Session = Depends(get_db)):
 def get_me(current_user: models.User = Depends(get_current_user)):
     """Get the currently authenticated user."""
     return current_user
+
+
+@router.get("/me/sidebar-order", response_model=SidebarOrder)
+def get_sidebar_order(current_user: models.User = Depends(get_current_user)):
+    """The current user's Haberler sidebar section order (null = default)."""
+    return SidebarOrder(order=crud.get_user_sidebar_order(current_user))
+
+
+@router.put("/me/sidebar-order", response_model=SidebarOrder)
+def put_sidebar_order(
+    body: SidebarOrder,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Save the current user's sidebar section order (drag and drop in the sidebar)."""
+    return SidebarOrder(order=crud.set_user_sidebar_order(db, current_user.id, body.order or []))
 
 
 @router.get("/users", response_model=List[UserResponse])

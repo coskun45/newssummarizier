@@ -387,6 +387,10 @@ export interface MockState {
   dailyArticleStats: DailyArticleStats;
   /** `days` of every GET /stats/analysis request, in order. */
   analysisRequests: number[];
+  /** The logged-in user's sidebar section order (GET/PUT /auth/me/sidebar-order); null = default. */
+  sidebarOrder: string[] | null;
+  /** Every PUT /auth/me/sidebar-order body's order, in order. */
+  sidebarOrderRequests: string[][];
 }
 
 export interface MockApiOverrides {
@@ -411,6 +415,7 @@ export interface MockApiOverrides {
   dailyArticleStats?: DailyArticleStats;
   /** Fields merged over the zero-filled Analiz payload for every requested range. */
   analysisStats?: Partial<AnalysisStats>;
+  sidebarOrder?: string[] | null;
 }
 
 /** Mirrors the backend's "Error" group: no severity label (not even Önemsiz) or status `failed`,
@@ -423,6 +428,7 @@ export function isErrorArticle(a: MockArticle): boolean {
 /** Mirrors crud.origin_clause: the sidebar "Kaynak Türü" groups. */
 export function matchesOrigin(a: MockArticle, origin: string): boolean {
   if (origin === 'free_match') return a.content_access === 'free_match' && a.free_match !== null;
+  if (origin === 'unavailable') return a.content_access === 'unavailable' || (a.content_access === 'free_match' && a.free_match === null);
   if (origin === 'manual') return a.source_type === 'manual';
   return false;
 }
@@ -433,6 +439,7 @@ function computeCounts(articles: MockArticle[]) {
   let unimportant_count = 0;
   let free_match_count = 0;
   let manual_count = 0;
+  let unavailable_count = 0;
   let unread_count = 0;
   let read_count = 0;
   let starred_count = 0;
@@ -449,6 +456,7 @@ function computeCounts(articles: MockArticle[]) {
       if (a.importance === 'unimportant') unimportant_count += 1;
       if (matchesOrigin(a, 'free_match')) free_match_count += 1;
       if (matchesOrigin(a, 'manual')) manual_count += 1;
+      if (matchesOrigin(a, 'unavailable')) unavailable_count += 1;
     } else if (a.is_read) {
       read_count += 1;
     }
@@ -456,7 +464,7 @@ function computeCounts(articles: MockArticle[]) {
     if (isErrorArticle(a)) error_count += 1;
   }
 
-  return { by_priority, by_feed, unimportant_count, free_match_count, manual_count, unread_count, read_count, starred_count, error_count };
+  return { by_priority, by_feed, unimportant_count, free_match_count, manual_count, unavailable_count, unread_count, read_count, starred_count, error_count };
 }
 
 function computeTopicsWithCounts(topics: Topic[], articles: MockArticle[], feedId: number | null): Topic[] {
@@ -604,6 +612,8 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
     },
     prompts: overrides.prompts ?? new Map(),
     users: (overrides.users ?? []).map((u) => ({ ...u })),
+    sidebarOrder: overrides.sidebarOrder ?? null,
+    sidebarOrderRequests: [],
     bulletinCategories: (overrides.bulletinCategories ?? []).map((c) => ({ ...c })),
     generatedBulletins: (overrides.generatedBulletins ?? []).map((b) => ({ ...b })),
     newsletterSubscriptions: (overrides.newsletterSubscriptions ?? []).map((n) => ({ ...n })),
@@ -1028,6 +1038,20 @@ export async function mockApi(page: Page, overrides: MockApiOverrides = {}): Pro
     }
 
     // ---- users (admin) ----
+    if (path === '/auth/me/sidebar-order') {
+      if (method === 'GET') return json({ order: state.sidebarOrder });
+      if (method === 'PUT') {
+        // Mirrors auth.SidebarOrder: known section ids, each at most once.
+        const { order } = request.postDataJSON() as { order: string[] };
+        const known = ['origin', 'feeds', 'priority', 'topics', 'published', 'fetched'];
+        if (!order.every((id) => known.includes(id)) || new Set(order).size !== order.length) {
+          return json({ detail: 'Invalid sidebar order' }, 422);
+        }
+        state.sidebarOrderRequests.push(order);
+        state.sidebarOrder = order.length ? order : null;
+        return json({ order: state.sidebarOrder });
+      }
+    }
     if (method === 'GET' && path === '/auth/users') {
       return json(state.users);
     }

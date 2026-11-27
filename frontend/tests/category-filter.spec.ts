@@ -68,9 +68,9 @@ test('collapsing the accordion hides the checkboxes', async ({ page }) => {
 
   await expect(page.getByLabel('Politics')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Kategoriler' }).click();
+  await page.getByRole('button', { name: 'Kategoriler', exact: true }).click();
   await expect(page.getByLabel('Politics')).not.toBeVisible();
 
-  await page.getByRole('button', { name: 'Kategoriler' }).click();
+  await page.getByRole('button', { name: 'Kategoriler', exact: true }).click();
   await expect(page.getByLabel('Politics')).toBeVisible();
 });

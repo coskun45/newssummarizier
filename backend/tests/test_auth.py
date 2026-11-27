@@ -3,6 +3,7 @@ Example/reference tests for the auth flow — mirror this shape for new routes:
 one fixture-driven `client`, real DB rows via `crud`, and both the happy path
 and the 401/404 edges.
 """
+import pytest
 
 
 def test_health_check(client):
@@ -160,3 +161,54 @@ def test_login_finds_a_legacy_mixed_case_account(client, db_session):
 
     response = client.post("/api/auth/login", json={"email": "legacy@example.com", "password": "testpass123"})
     assert response.status_code == 200
+
+
+# ==================== /me/sidebar-order (per-user sidebar section order) ====================
+
+SIDEBAR_URL = "/api/auth/me/sidebar-order"
+
+
+def test_sidebar_order_defaults_to_null(client, auth_headers):
+    response = client.get(SIDEBAR_URL, headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json() == {"order": None}
+
+
+def test_sidebar_order_round_trips(client, auth_headers):
+    order = ["topics", "origin", "feeds", "priority", "fetched", "published"]
+
+    put = client.put(SIDEBAR_URL, json={"order": order}, headers=auth_headers)
+
+    assert put.status_code == 200
+    assert put.json() == {"order": order}
+    assert client.get(SIDEBAR_URL, headers=auth_headers).json() == {"order": order}
+
+
+def test_sidebar_order_accepts_a_subset(client, auth_headers):
+    # An older client may not know a section yet; the frontend appends the missing ones.
+    response = client.put(SIDEBAR_URL, json={"order": ["feeds", "origin"]}, headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json() == {"order": ["feeds", "origin"]}
+
+
+@pytest.mark.parametrize("order", [
+    ["origin", "bogus"],         # unknown section
+    ["origin", "origin"],        # duplicate
+    ["origin,feeds"],            # the stored separator is not a section id
+])
+def test_sidebar_order_rejects_invalid_orders(client, auth_headers, order):
+    response = client.put(SIDEBAR_URL, json={"order": order}, headers=auth_headers)
+    assert response.status_code == 422
+    assert client.get(SIDEBAR_URL, headers=auth_headers).json() == {"order": None}
+
+
+def test_sidebar_order_is_per_user(client, auth_headers, admin_headers):
+    client.put(SIDEBAR_URL, json={"order": ["topics", "origin"]}, headers=auth_headers)
+
+    assert client.get(SIDEBAR_URL, headers=admin_headers).json() == {"order": None}
+
+
+@pytest.mark.parametrize("method", ["get", "put"])
+def test_sidebar_order_requires_auth(client, method):
+    response = getattr(client, method)(SIDEBAR_URL, **({"json": {"order": []}} if method == "put" else {}))
+    assert response.status_code == 401

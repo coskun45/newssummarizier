@@ -3,7 +3,8 @@ import { loginAs } from './helpers/auth';
 import { mockApi, makeArticle } from './helpers/mockApi';
 
 // Blocked / paywalled sources: the card says whether a free source has the same story (and links
-// to it) or the content could not be read at all.
+// to it) or the content could not be read at all. Scoped to the list: the sidebar's "Kaynak Türü"
+// filter has an "İçerik alınamadı" option of its own.
 test('a blocked article links to the same story in a free source', async ({ page }) => {
   await loginAs(page);
   await mockApi(page, {
@@ -17,11 +18,11 @@ test('a blocked article links to the same story in a free source', async ({ page
   await page.goto('/');
   await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
-  await expect(page.getByText('Ücretsiz kaynakta var')).toBeVisible();
+  await expect(page.locator('.article-list').getByText('Ücretsiz kaynakta var')).toBeVisible();
   const link = page.getByRole('link', { name: /DW Türkçe: Filistinliler Gazze'nin kuzeyine dönüyor/ });
   await expect(link).toHaveAttribute('href', 'https://dw.example/gazze');
   await expect(link).toHaveAttribute('target', '_blank');
-  await expect(page.getByText('İçerik alınamadı')).toHaveCount(0);
+  await expect(page.locator('.article-list').getByText('İçerik alınamadı')).toHaveCount(0);
 });
 
 test('a blocked article without a free source is marked as unavailable', async ({ page }) => {
@@ -32,8 +33,8 @@ test('a blocked article without a free source is marked as unavailable', async (
   await page.goto('/');
   await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
-  await expect(page.getByText('İçerik alınamadı')).toBeVisible();
-  await expect(page.getByText('Ücretsiz kaynakta var')).toHaveCount(0);
+  await expect(page.locator('.article-list').getByText('İçerik alınamadı')).toBeVisible();
+  await expect(page.locator('.article-list').getByText('Ücretsiz kaynakta var')).toHaveCount(0);
 });
 
 // Regression (review): a free_match whose matched article is gone must not promise a link.
@@ -45,8 +46,8 @@ test('a free match without a linked article is shown as unavailable', async ({ p
   await page.goto('/');
   await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
-  await expect(page.getByText('İçerik alınamadı')).toBeVisible();
-  await expect(page.getByText('Ücretsiz kaynakta var')).toHaveCount(0);
+  await expect(page.locator('.article-list').getByText('İçerik alınamadı')).toBeVisible();
+  await expect(page.locator('.article-list').getByText('Ücretsiz kaynakta var')).toHaveCount(0);
 });
 
 test('a fully read article shows no access badge', async ({ page }) => {
@@ -56,6 +57,6 @@ test('a fully read article shows no access badge', async ({ page }) => {
   await page.getByRole('button', { name: 'Haberler', exact: true }).click();
 
   await expect(page.getByText('Normal haber')).toBeVisible();
-  await expect(page.getByText('Ücretsiz kaynakta var')).toHaveCount(0);
-  await expect(page.getByText('İçerik alınamadı')).toHaveCount(0);
+  await expect(page.locator('.article-list').getByText('Ücretsiz kaynakta var')).toHaveCount(0);
+  await expect(page.locator('.article-list').getByText('İçerik alınamadı')).toHaveCount(0);
 });

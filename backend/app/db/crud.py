@@ -372,10 +372,15 @@ def error_clause():
 
 def origin_clause(origin: str):
     """SQL clause for a sidebar "Kaynak Türü" group: "free_match" = the same story was found in a
-    free source and that article still exists (a deleted match is reported as "unavailable"),
-    "manual" = added by an admin (POST /articles/manual)."""
+    free source and that article still exists, "unavailable" ("İçerik alınamadı") = the source
+    refused us / showed only its paywall lead and no free source has it — a free match whose
+    article was deleted counts here, as the API reports it as "unavailable" — and "manual" =
+    added by an admin (POST /articles/manual)."""
+    lost_match = (models.Article.content_access == "free_match") & models.Article.free_match_article_id.is_(None)
     if origin == "free_match":
         return (models.Article.content_access == "free_match") & models.Article.free_match_article_id.isnot(None)
+    if origin == "unavailable":
+        return (models.Article.content_access == "unavailable") | lost_match
     if origin == "manual":
         return models.Article.source_type == "manual"
     raise ValueError(f"Unknown article origin: {origin!r}")
@@ -501,6 +506,7 @@ def get_article_counts(db: Session) -> Dict[str, Any]:
         "unimportant_count": count(models.Article.importance == "unimportant", *unread_work),
         "free_match_count": count(origin_clause("free_match"), *unread_work),
         "manual_count": count(origin_clause("manual"), *unread_work),
+        "unavailable_count": count(origin_clause("unavailable"), *unread_work),
         "unread_count": count(*unread_work),
         "read_count": count(models.Article.is_read.is_(True)),
         "starred_count": count(models.Article.is_starred.is_(True)),
@@ -1439,6 +1445,21 @@ def get_first_active_admin(db: Session, preferred_email: Optional[str] = None) -
         if preferred:
             return preferred
     return query.order_by(models.User.created_at, models.User.id).first()
+
+
+def get_user_sidebar_order(user: models.User) -> Optional[List[str]]:
+    """The user's Haberler sidebar section order, or None for the default order."""
+    return user.sidebar_order.split(",") if user.sidebar_order else None
+
+
+def set_user_sidebar_order(db: Session, user_id: int, order: List[str]) -> Optional[List[str]]:
+    """Store the user's sidebar section order (validated section ids, see auth.SIDEBAR_SECTIONS);
+    an empty list goes back to the default order. Returns the stored order."""
+    user = get_user(db, user_id)
+    user.sidebar_order = ",".join(order) or None
+    db.commit()
+    db.refresh(user)
+    return get_user_sidebar_order(user)
 
 
 def get_users(db: Session) -> List[models.User]:

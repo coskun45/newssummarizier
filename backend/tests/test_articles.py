@@ -1265,6 +1265,7 @@ def test_counts_endpoint_values(client, auth_headers, db_session):
         "unimportant_count": 1,
         "free_match_count": 0,
         "manual_count": 0,
+        "unavailable_count": 0,
         "unread_count": 2,
         "read_count": 1,
         "starred_count": 1,
@@ -1396,16 +1397,21 @@ def _origin_fixture(db_session):
             "unavailable": unavailable.id, "manual": manual.id}
 
 
-@pytest.mark.parametrize("origin", ["free_match", "manual"])
-def test_list_articles_filters_by_origin(client, auth_headers, db_session, origin):
+@pytest.mark.parametrize("origin, expected", [
+    ("free_match", ["free_match"]),
+    ("manual", ["manual"]),
+    # "İçerik alınamadı": no free source, or its match was deleted (reported as unavailable too).
+    ("unavailable", ["unavailable", "lost_match"]),
+])
+def test_list_articles_filters_by_origin(client, auth_headers, db_session, origin, expected):
     ids = _origin_fixture(db_session)
 
     response = client.get("/api/articles/", params={"origin": origin}, headers=auth_headers)
 
     assert response.status_code == 200
     body = response.json()
-    assert [a["id"] for a in body["articles"]] == [ids[origin]]
-    assert body["total"] == 1
+    assert {a["id"] for a in body["articles"]} == {ids[key] for key in expected}
+    assert body["total"] == len(expected)
 
 
 def test_list_articles_without_origin_keeps_every_article(client, auth_headers, db_session):
@@ -1432,6 +1438,7 @@ def test_article_counts_include_origin_groups_scoped_to_unread(client, auth_head
 
     assert body["free_match_count"] == 1  # the deleted match doesn't count
     assert body["manual_count"] == 1  # the archived manual article doesn't count
+    assert body["unavailable_count"] == 2  # incl. the article whose match was deleted
 
 
 def test_mark_read_bulk_mark_all_respects_origin(client, auth_headers, db_session):

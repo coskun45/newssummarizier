@@ -1,15 +1,10 @@
 import { useState } from 'react';
 import { ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
-import type { ArticleOrigin, ItemGroup, Topic } from '../../types';
+import type { ItemGroup, Topic } from '../../types';
 import GroupedChecklist from '../GroupedChecklist/GroupedChecklist';
 import { PRIORITIES } from '../../constants/priorities';
 import './TopicFilter.css';
 
-// Sidebar "Kaynak Türü" groups — a filter on top of the others, the articles stay in every list.
-const ORIGINS: { value: ArticleOrigin; label: string }[] = [
-  { value: 'free_match', label: 'Ücretsiz kaynaktan' },
-  { value: 'manual', label: 'Manuel eklenen' },
-];
 
 interface TopicFilterProps {
   topics: Topic[];
@@ -23,15 +18,13 @@ interface TopicFilterProps {
   onPriorityChange: (priority: string | null) => void;
   priorityCounts: Record<string, number>;
   unimportantCount?: number;
-  selectedOrigin?: ArticleOrigin | null;
-  onOriginChange?: (origin: ArticleOrigin | null) => void;
-  originCounts?: Record<ArticleOrigin, number>;
+  /** Which section to render: the sidebar shows them separately so each can be dragged on its own. */
+  part?: 'priority' | 'topics' | 'both';
 }
 
-function TopicFilter({ topics, topicGroups = [], selectedTopics, onTopicToggle, onTopicGroupToggle, importanceMode, onImportanceModeChange, selectedPriority, onPriorityChange, priorityCounts, unimportantCount, selectedOrigin = null, onOriginChange, originCounts }: TopicFilterProps) {
+function TopicFilter({ topics, topicGroups = [], selectedTopics, onTopicToggle, onTopicGroupToggle, importanceMode, onImportanceModeChange, selectedPriority, onPriorityChange, priorityCounts, unimportantCount, part = 'both' }: TopicFilterProps) {
   const [openCategories, setOpenCategories] = useState(true);
   const [openPriority, setOpenPriority] = useState(true);
-  const [openOrigin, setOpenOrigin] = useState(true);
 
   const handleUnimportantClick = () => {
     const next = importanceMode === 'unimportant' ? null : 'unimportant';
@@ -56,6 +49,7 @@ function TopicFilter({ topics, topicGroups = [], selectedTopics, onTopicToggle, 
   return (
     <div className="topic-filter">
       {/* Önem Seviyesi — accordion */}
+      {part !== 'topics' && (<>
       <button
         className={`importance-header ${isPriorityActive ? 'active' : ''}`}
         onClick={handlePriorityClick}
@@ -94,39 +88,10 @@ function TopicFilter({ topics, topicGroups = [], selectedTopics, onTopicToggle, 
           </label>
         </div>
       )}
-
-      {/* Kaynak Türü — accordion (only when the parent handles it) */}
-      {onOriginChange && (
-        <>
-          <button
-            className={`importance-header ${selectedOrigin ? 'active' : ''}`}
-            onClick={() => setOpenOrigin(!openOrigin)}
-          >
-            <span className="importance-label">Kaynak Türü</span>
-            <span className="importance-chevron">{openOrigin ? <ChevronUpIcon /> : <ChevronDownIcon />}</span>
-          </button>
-
-          {openOrigin && (
-            <div className="importance-topics">
-              {ORIGINS.map((o) => (
-                <label key={o.value} className="topic-item">
-                  <input
-                    type="checkbox"
-                    checked={selectedOrigin === o.value}
-                    onChange={() => onOriginChange(selectedOrigin === o.value ? null : o.value)}
-                  />
-                  <span className="topic-name">{o.label}</span>
-                  {originCounts && (
-                    <span className="topic-count">{originCounts[o.value]}</span>
-                  )}
-                </label>
-              ))}
-            </div>
-          )}
-        </>
-      )}
+      </>)}
 
       {/* Kategoriler — accordion */}
+      {part !== 'priority' && (<>
       <button
         className={`importance-header ${isCategoriesActive ? 'active' : ''}`}
         onClick={handleCategoriesClick}
@@ -151,6 +116,7 @@ function TopicFilter({ topics, topicGroups = [], selectedTopics, onTopicToggle, 
           />
         </div>
       )}
+      </>)}
     </div>
   );
 }

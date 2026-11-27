@@ -5,6 +5,8 @@ import axios from 'axios';
 import { filenameFromContentDisposition } from '../utils/downloadFile';
 import type {
     Feed,
+    SidebarOrder,
+    SidebarSectionId,
     GroupKind,
     ItemGroup,
     ArticleDetail,
@@ -126,6 +128,16 @@ export const authApi = {
 
     deleteUser: async (userId: number): Promise<void> => {
         await api.delete(`/auth/users/${userId}`);
+    },
+
+    getSidebarOrder: async (): Promise<SidebarOrder> => {
+        const response = await api.get('/auth/me/sidebar-order');
+        return response.data;
+    },
+
+    setSidebarOrder: async (order: SidebarSectionId[]): Promise<SidebarOrder> => {
+        const response = await api.put('/auth/me/sidebar-order', { order });
+        return response.data;
     },
 };
 

@@ -70,29 +70,3 @@ export function DateFilterSection({ title, value, onChange }: DateFilterSectionP
     </div>
   );
 }
-
-interface DateFilterProps {
-  publishedFilter: DateFilterState;
-  onPublishedChange: (val: DateFilterState) => void;
-  fetchedFilter: DateFilterState;
-  onFetchedChange: (val: DateFilterState) => void;
-}
-
-function DateFilter({ publishedFilter, onPublishedChange, fetchedFilter, onFetchedChange }: DateFilterProps) {
-  return (
-    <div className="date-filter">
-      <DateFilterSection
-        title="Yayın Tarihi"
-        value={publishedFilter}
-        onChange={onPublishedChange}
-      />
-      <DateFilterSection
-        title="İşlenme Tarihi"
-        value={fetchedFilter}
-        onChange={onFetchedChange}
-      />
-    </div>
-  );
-}
-
-export default DateFilter;

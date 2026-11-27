@@ -270,6 +270,9 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     role = Column(String, nullable=False, default="user")  # "admin" or "user"
     is_active = Column(Boolean, default=True)
+    # Haberler sidebar section order, comma-separated section ids (see auth.SIDEBAR_SECTIONS);
+    # NULL = the default order.
+    sidebar_order = Column(String, nullable=True)
     created_at = Column(UTCDateTime(), server_default=func.now())
 
     # Relationships

@@ -43,6 +43,23 @@ test('clicking Bülten in the header shows the bulletin panel and hides the news
   await expect(page.getByRole('button', { name: 'Favori' })).not.toBeVisible();
 });
 
+test('reloading the page keeps the current view instead of returning to Ana Sayfa', async ({ page }) => {
+  await loginAs(page);
+  await mockApi(page, { articles: [] });
+  await page.goto('/');
+
+  await page.getByRole('button', { name: 'Bülten' }).click();
+  await expect(page.locator('.bulletin-panel')).toBeVisible();
+  await page.reload();
+  await expect(page.locator('.bulletin-panel')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Haberler', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Okunmamışlar' })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Okunmamışlar' })).toBeVisible();
+  await expect(page.locator('.dashboard-sidebar')).toBeVisible();
+});
+
 test('clicking Haberler after Bülten restores the news tabs and sidebar', async ({ page }) => {
   await loginAs(page);
   await mockApi(page, { articles: [] });

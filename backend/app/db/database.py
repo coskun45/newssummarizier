@@ -273,6 +273,7 @@ def init_db():
         "feeds": [("group_id", group_fk)],
         "topics": [("group_id", group_fk)],
         "newsletter_subscriptions": [("summary_type", "VARCHAR NOT NULL DEFAULT 'stored'")],
+        "users": [("sidebar_order", "VARCHAR")],
     }
 
     inspector = inspect(engine)

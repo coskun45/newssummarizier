@@ -1,15 +1,18 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback, type ComponentProps } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useArticles, useArticleCounts, useTopics, useFeeds, useGroups, useRefreshFeed, useMarkArticlesBulkRead, useUnstarAll, useDeleteAllArticlesByPriority, useArchiveAllArticlesByPriority, useDeleteAllUnimportant, useArchiveAllUnimportant, useReprocessArticles, useReprocessStatus } from '../../hooks/useApi';
+import { useArticles, useArticleCounts, useTopics, useFeeds, useGroups, useRefreshFeed, useMarkArticlesBulkRead, useUnstarAll, useDeleteAllArticlesByPriority, useArchiveAllArticlesByPriority, useDeleteAllUnimportant, useArchiveAllUnimportant, useReprocessArticles, useReprocessStatus, useSidebarOrder, useUpdateSidebarOrder } from '../../hooks/useApi';
 import { feedsApi, articlesApi, summariesApi } from '../../services/api';
 import { downloadArticlesAsWord, buildWhatsAppMessage, copyToClipboard } from '../../utils/exportArticles';
 import ArticleList from '../ArticleList/ArticleList';
 import HomeHero from '../HomeHero/HomeHero';
 import StatsPanel from '../StatsPanel/StatsPanel';
 import TopicFilter from '../TopicFilter/TopicFilter';
+import OriginFilter from '../OriginFilter/OriginFilter';
 import CategoryBulkActions from '../CategoryBulkActions/CategoryBulkActions';
 import FeedSidebar from '../FeedSidebar/FeedSidebar';
-import DateFilter from '../DateFilter/DateFilter';
+import { DateFilterSection } from '../DateFilter/DateFilter';
+import SortableSections from '../SortableSections/SortableSections';
+import { normalizeSidebarOrder } from '../../utils/sidebarOrder';
 import SearchBar from '../SearchBar/SearchBar';
 import Pagination from '../Pagination/Pagination';
 import Settings, { type SettingsCategory } from '../Settings/Settings';
@@ -48,6 +51,21 @@ import './Dashboard.css';
 const PAGE_SIZE = 20;
 const SIDEBAR_COLLAPSED_KEY = 'bulten_filters_collapsed';
 
+type DashboardView = 'home' | 'news' | 'bulletin' | 'playground' | 'analysis' | 'assistant' | 'settings';
+const DASHBOARD_VIEWS: readonly DashboardView[] = ['home', 'news', 'bulletin', 'playground', 'analysis', 'assistant', 'settings'];
+// sessionStorage (not localStorage): a reload stays on the current view, a fresh tab opens Ana Sayfa.
+const ACTIVE_VIEW_KEY = 'bulten_active_view';
+
+function readActiveView(isAdmin: boolean): DashboardView {
+  try {
+    const stored = sessionStorage.getItem(ACTIVE_VIEW_KEY) as DashboardView | null;
+    if (stored && DASHBOARD_VIEWS.includes(stored) && (stored !== 'playground' || isAdmin)) return stored;
+  } catch {
+    // storage unavailable — fall back to the default view
+  }
+  return 'home';
+}
+
 function readSidebarCollapsed(): boolean {
   try {
     return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1';
@@ -77,7 +95,19 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
   const [publishedFilter, setPublishedFilter] = useState<DateFilterState>(emptyDate);
   const [fetchedFilter, setFetchedFilter] = useState<DateFilterState>(emptyDate);
   const [filtersCollapsed, setFiltersCollapsed] = useState(readSidebarCollapsed);
-  const [activeView, setActiveView] = useState<'home' | 'news' | 'bulletin' | 'playground' | 'analysis' | 'assistant' | 'settings'>('home');
+  // Sidebar section order (drag and drop), stored per user; the default order until it loads.
+  const { data: sidebarOrderData } = useSidebarOrder();
+  const updateSidebarOrder = useUpdateSidebarOrder();
+  const sidebarOrder = useMemo(() => normalizeSidebarOrder(sidebarOrderData?.order), [sidebarOrderData]);
+  const [activeView, setActiveViewState] = useState<DashboardView>(() => readActiveView(isAdmin));
+  const setActiveView = useCallback((view: DashboardView) => {
+    setActiveViewState(view);
+    try {
+      sessionStorage.setItem(ACTIVE_VIEW_KEY, view);
+    } catch {
+      // storage unavailable — the view just won't survive a reload
+    }
+  }, []);
   // Once opened, the Asistan stays mounted (only hidden): unmounting it would abort a running
   // analysis' stream, which the backend treats as "Durdur".
   const [assistantOpened, setAssistantOpened] = useState(false);
@@ -454,9 +484,47 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
     );
   };
 
+  // Shared by the "Önem Seviyesi" and "Kategoriler" sidebar sections (one TopicFilter each, so
+  // each can be dragged on its own).
+  const topicFilterProps: ComponentProps<typeof TopicFilter> = {
+    topics: topicsData || [],
+    topicGroups: topicGroups || [],
+    selectedTopics,
+    onTopicToggle: (topicId) =>
+      applyTopicSelection(
+        selectedTopics.includes(topicId)
+          ? selectedTopics.filter((id) => id !== topicId)
+          : [...selectedTopics, topicId]
+      ),
+    onTopicGroupToggle: (ids, select) => applyTopicSelection(toggleIdGroup(selectedTopics, ids, select)),
+    importanceMode,
+    onImportanceModeChange: (mode) => {
+      setImportanceMode(mode);
+      if (mode === 'unimportant') {
+        setSelectedTopics([]);
+        setSelectedPriority(null);
+        setSelectedFeedIds([]);
+        // Only important articles are scraped, so an unimportant one is never labelled
+        // free_match / unavailable: keeping that pick would always show an empty list.
+        // Manual ones can be unimportant, so "Manuel eklenen" stays.
+        if (selectedOrigin !== 'manual') setSelectedOrigin(null);
+      }
+    },
+    selectedPriority,
+    onPriorityChange: (p) => {
+      setSelectedPriority(p);
+      if (p) {
+        setImportanceMode('important');
+      } else if (selectedTopics.length === 0) {
+        setImportanceMode(null);
+      }
+    },
+    priorityCounts: articleCounts?.by_priority ?? {},
+    unimportantCount: articleCounts?.unimportant_count,
+  };
+
   return (
-    <div className="dashboard">
-      {/* Header */}
+    <div className="dashboard">      {/* Header */}
       <header className="dashboard-header">
         <div className="container dashboard-container">
           <div className="header-content">
@@ -564,66 +632,55 @@ function Dashboard({ currentUser, onLogout }: DashboardProps) {
                   <FunnelIcon className="sidebar-section-icon" /> Filtreleme
                 </h2>
               </div>
-              <FeedSidebar
-                feeds={feedsData || []}
-                groups={feedGroups || []}
-                selectedFeedIds={selectedFeedIds}
-                feedCounts={articleCounts?.by_feed ?? {}}
-                onFeedToggle={(id) =>
-                  setSelectedFeedIds(prev =>
-                    prev.includes(id) ? prev.filter(f => f !== id) : [...prev, id]
-                  )
-                }
-                onFeedGroupToggle={(ids, select) =>
-                  setSelectedFeedIds(prev => toggleIdGroup(prev, ids, select))
-                }
-                onClearFeeds={() => setSelectedFeedIds([])}
-              />
-              <TopicFilter
-                topics={topicsData || []}
-                topicGroups={topicGroups || []}
-                selectedTopics={selectedTopics}
-                onTopicToggle={(topicId) =>
-                  applyTopicSelection(
-                    selectedTopics.includes(topicId)
-                      ? selectedTopics.filter((id) => id !== topicId)
-                      : [...selectedTopics, topicId]
-                  )
-                }
-                onTopicGroupToggle={(ids, select) => applyTopicSelection(toggleIdGroup(selectedTopics, ids, select))}
-                importanceMode={importanceMode}
-                onImportanceModeChange={(mode) => {
-                  setImportanceMode(mode);
-                  if (mode === 'unimportant') {
-                    setSelectedTopics([]);
-                    setSelectedPriority(null);
-                    setSelectedFeedIds([]);
-                    // Only important articles are scraped, so an unimportant one never has a free
-                    // match: keeping that pick would always show an empty list. Manual ones can be
-                    // unimportant, so "Manuel eklenen" stays.
-                    if (selectedOrigin === 'free_match') setSelectedOrigin(null);
-                  }
-                }}
-                selectedPriority={selectedPriority}
-                onPriorityChange={(p) => {
-                  setSelectedPriority(p);
-                  if (p) {
-                    setImportanceMode('important');
-                  } else if (selectedTopics.length === 0) {
-                    setImportanceMode(null);
-                  }
-                }}
-                priorityCounts={articleCounts?.by_priority ?? {}}
-                unimportantCount={articleCounts?.unimportant_count}
-                selectedOrigin={selectedOrigin}
-                onOriginChange={setSelectedOrigin}
-                originCounts={articleCounts ? { free_match: articleCounts.free_match_count, manual: articleCounts.manual_count } : undefined}
-              />
-              <DateFilter
-                publishedFilter={publishedFilter}
-                onPublishedChange={setPublishedFilter}
-                fetchedFilter={fetchedFilter}
-                onFetchedChange={setFetchedFilter}
+              <SortableSections
+                order={sidebarOrder}
+                onReorder={(order) => updateSidebarOrder.mutate(order)}
+                sections={[
+                  {
+                    id: 'origin',
+                    label: 'Kaynak Türü',
+                    content: (
+                      <OriginFilter
+                        selectedOrigin={selectedOrigin}
+                        onOriginChange={setSelectedOrigin}
+                        originCounts={articleCounts ? { free_match: articleCounts.free_match_count, unavailable: articleCounts.unavailable_count, manual: articleCounts.manual_count } : undefined}
+                      />
+                    ),
+                  },
+                  {
+                    id: 'feeds',
+                    label: 'RSS Beslemeleri',
+                    content: (
+                      <FeedSidebar
+                        feeds={feedsData || []}
+                        groups={feedGroups || []}
+                        selectedFeedIds={selectedFeedIds}
+                        feedCounts={articleCounts?.by_feed ?? {}}
+                        onFeedToggle={(id) =>
+                          setSelectedFeedIds(prev =>
+                            prev.includes(id) ? prev.filter(f => f !== id) : [...prev, id]
+                          )
+                        }
+                        onFeedGroupToggle={(ids, select) =>
+                          setSelectedFeedIds(prev => toggleIdGroup(prev, ids, select))
+                        }
+                        onClearFeeds={() => setSelectedFeedIds([])}
+                      />
+                    ),
+                  },
+                  { id: 'priority', label: 'Önem Seviyesi', content: <TopicFilter {...topicFilterProps} part="priority" /> },
+                  { id: 'topics', label: 'Kategoriler', content: <TopicFilter {...topicFilterProps} part="topics" /> },
+                  {
+                    id: 'published',
+                    label: 'Yayın Tarihi',
+                    content: <DateFilterSection title="Yayın Tarihi" value={publishedFilter} onChange={setPublishedFilter} />,
+                  },
+                  {
+                    id: 'fetched',
+                    label: 'İşlenme Tarihi',
+                    content: <DateFilterSection title="İşlenme Tarihi" value={fetchedFilter} onChange={setFetchedFilter} />,
+                  },
+                ]}
               />
             </aside>
             )}

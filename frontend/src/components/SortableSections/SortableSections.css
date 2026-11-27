@@ -1,0 +1,71 @@
+.sortable-sections {
+  width: 100%;
+}
+
+.sortable-section {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.1rem;
+  border-radius: var(--radius-sm);
+}
+
+.sortable-section-content {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The ⠿ grip: only it starts a drag, so the section headers keep their click-to-toggle. */
+.sortable-section-handle {
+  flex: none;
+  margin-top: 0.45rem;
+  padding: 0 0.15rem;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-size: 0.95rem;
+  line-height: 1.2;
+  cursor: grab;
+  user-select: none;
+  opacity: 0.5;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.sortable-section:hover .sortable-section-handle,
+.sortable-section-handle:focus-visible {
+  opacity: 1;
+  color: var(--color-text-secondary);
+}
+
+.sortable-section-handle:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.sortable-section-handle:active {
+  cursor: grabbing;
+}
+
+.sortable-section--dragging {
+  opacity: 0.4;
+}
+
+/* Where the dragged section will land: a line above or below the hovered one. */
+.sortable-section--drop-before::before,
+.sortable-section--drop-after::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--color-primary);
+  border-radius: 1px;
+  pointer-events: none;
+}
+
+.sortable-section--drop-before::before {
+  top: -1px;
+}
+
+.sortable-section--drop-after::after {
+  bottom: -1px;
+}

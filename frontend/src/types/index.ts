@@ -93,8 +93,16 @@ export interface ManualArticlesResult {
 export type ContentAccess = 'free_match' | 'unavailable';
 
 /** Sidebar "Kaynak Türü" groups: a free source has the story (free_match with its match still
- *  present) / added by an admin (source_type "manual"). */
-export type ArticleOrigin = 'free_match' | 'manual';
+ *  present) / no article text and no free source ("İçerik alınamadı") / added by an admin (source_type "manual"). */
+export type ArticleOrigin = 'free_match' | 'unavailable' | 'manual';
+
+/** Haberler sidebar sections the user can reorder by drag and drop (backend auth.SidebarSection). */
+export type SidebarSectionId = 'origin' | 'feeds' | 'priority' | 'topics' | 'published' | 'fetched';
+
+/** GET/PUT /auth/me/sidebar-order — null = never reordered (default order). */
+export interface SidebarOrder {
+    order: SidebarSectionId[] | null;
+}
 
 /** The free-source article with the same story as a blocked / paywalled one. */
 export interface FreeMatch {
@@ -293,6 +301,7 @@ export interface ArticleCounts {
     unimportant_count: number;
     free_match_count: number;
     manual_count: number;
+    unavailable_count: number;
     unread_count: number;
     read_count: number;
     starred_count: number;

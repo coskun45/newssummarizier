@@ -208,7 +208,12 @@
         {
           "id": "origin-filter",
           "title": "Kaynak türü filtresi",
-          "description": "Haberler ekranının sol menüsündeki \"Kaynak Türü\" bölümüyle yalnızca ücretsiz kaynakta eşleşmesi bulunan haberler ya da manuel eklenen haberler listelenebilir; yanlarında okunmamış sayıları görünür. Haberler normal listelerde de kalır, filtre diğer filtrelerle birlikte çalışır."
+          "description": "Haberler ekranının sol menüsündeki \"Kaynak Türü\" bölümüyle yalnızca ücretsiz kaynakta eşleşmesi bulunan, içeriği alınamayan (kaynak erişimi engellediği veya ücretli olduğu ve ücretsiz kaynakta da bulunamadığı için) ya da manuel eklenen haberler listelenebilir; yanlarında okunmamış sayıları görünür. Haberler normal listelerde de kalır, filtre diğer filtrelerle birlikte çalışır."
+        },
+        {
+          "id": "sidebar-section-order",
+          "title": "Sürükle-bırak filtre sırası",
+          "description": "Haberler ekranının sol menüsündeki bölümler (Kaynak Türü, RSS Beslemeleri, Önem Seviyesi, Kategoriler, tarih filtreleri) yanlarındaki ⠿ tutamacından sürüklenerek ya da tutamaç seçiliyken ↑ / ↓ tuşlarıyla yeniden sıralanır. Sıra kullanıcı hesabına kaydedilir ve her cihazda aynı görünür."
         }
       ]
     }

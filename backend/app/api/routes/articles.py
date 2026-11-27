@@ -34,7 +34,7 @@ def _parse_comma_ids(raw: Optional[str], field_name: str) -> Optional[List[int]]
 
 VALID_PRIORITIES = {"high", "med", "low"}
 # Sidebar "Kaynak Türü" groups (crud.origin_clause).
-ArticleOrigin = Literal["free_match", "manual"]
+ArticleOrigin = Literal["free_match", "unavailable", "manual"]
 
 
 def _article_source(article: models.Article) -> Optional[str]:
@@ -166,7 +166,7 @@ def list_articles(
     is_read: Optional[bool] = Query(None, description="Filter by read status: true=read, false=unread"),
     is_starred: Optional[bool] = Query(None, description="Filter by the user-curated 'Önemli' group"),
     is_error: Optional[bool] = Query(None, description="true = only articles without a severity label (\"Error\" group), false = everything except them"),
-    origin: Optional[ArticleOrigin] = Query(None, description="Sidebar 'Kaynak Türü': free_match = a free source has the story, manual = added by an admin"),
+    origin: Optional[ArticleOrigin] = Query(None, description="Sidebar 'Kaynak Türü': free_match = a free source has the story, unavailable = no article text and no free source, manual = added by an admin"),
     db: Session = Depends(get_db)
 ):
     """

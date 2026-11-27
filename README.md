@@ -61,8 +61,12 @@ Deutsche Welle (DW) RSS beslemelerinden haber toplayan, kategorize eden ve yapay
   konular → özetler); içerik verildiyse sayfa çekilmez, yalnız URL verildiyse sayfa çekilir. Kartta "Manuel"
   etiketiyle görünür. JSON formatı için bkz. [Manuel haber JSON formatı](#manuel-haber-json-formatı)
 - **Kaynak Türü Filtresi**: Haberler ekranının sol menüsündeki "Kaynak Türü" bölümüyle yalnızca ücretsiz kaynakta
-  eşleşmesi bulunan ("Ücretsiz kaynaktan") ya da manuel eklenen ("Manuel eklenen") haberler listelenir; yanlarında
+  eşleşmesi bulunan ("Ücretsiz kaynaktan"), içeriği alınamayan ve ücretsiz kaynakta da bulunamayan ("İçerik alınamadı")
+  ya da manuel eklenen ("Manuel eklenen") haberler listelenir; yanlarında
   okunmamış sayıları görünür. Bu bir filtredir: haberler normal listelerde de kalır, diğer filtrelerle birlikte çalışır
+- **Sürükle-Bırak Filtre Sırası**: Sol paneldeki bölümler (Kaynak Türü, RSS Beslemeleri, Önem Seviyesi, Kategoriler,
+  Yayın/İşlenme Tarihi) yanlarındaki ⠿ tutamacından sürüklenerek ya da tutamaç seçiliyken ↑ / ↓ tuşlarıyla yeniden
+  sıralanır. Sıra kullanıcı hesabına kaydedilir, her cihazda aynı görünür
 
 ## 🏗️ Mimari
 
@@ -483,7 +487,7 @@ Bulten/
 
 #### Makaleler
 
-- `GET /api/articles` - Makaleleri listele (filtrelerle; `is_error=true` sadece önem etiketi olmayan "Error" haberleri döner; `origin=free_match|manual` "Kaynak Türü" grubuna göre süzer)
+- `GET /api/articles` - Makaleleri listele (filtrelerle; `is_error=true` sadece önem etiketi olmayan "Error" haberleri döner; `origin=free_match|unavailable|manual` "Kaynak Türü" grubuna göre süzer)
   - Query params: `skip`, `limit`, `topic_ids`, `search`, `status`, `origin`
   - Her makalede `source` (besleme adı; adı olmayan eski beslemelerde alan adı) ve `author` (özetin belirlediği kişi, yoksa `null`) döner
 - `POST /api/articles/mark-read-bulk` - Toplu arşive gönder: `article_ids` ya da `mark_all=true` + liste filtreleri (`origin` dahil); `mark_all` ile `anchor_id` + `direction` (`above`/`below`) verilirse yalnızca o haber ve listede üstündekiler/altındakiler arşivlenir
@@ -546,6 +550,9 @@ Bulten/
 - `POST /api/groups` - Grup ekle (`{kind, name}`; admin). Boş ad ya da ayrılmış "Diğer" adı 422, aynı türde aynı ad 400
 - `PUT /api/groups/{id}` - Grubu yeniden adlandır / sırala (admin)
 - `DELETE /api/groups/{id}` - Grubu sil; üyeleri "Diğer"e düşer (admin)
+- `GET /api/auth/me/sidebar-order` - Giriş yapan kullanıcının sol panel bölüm sırası (`{order: [...] | null}`; `null` = varsayılan)
+- `PUT /api/auth/me/sidebar-order` - Sırayı kaydet (`{order: ["origin", "feeds", "priority", "topics", "published", "fetched"]}`;
+  bilinmeyen ya da tekrarlanan bölüm 422, eksik bölümler arayüzde sona eklenir)
 
 #### Ayarlar
 

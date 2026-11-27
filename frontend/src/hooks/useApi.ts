@@ -6,6 +6,8 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tansta
 import { articlesApi, summariesApi, topicsApi, groupsApi, settingsApi, statsApi, appApi, feedsApi, authApi, bulletinApi, newsletterApi, playgroundApi, promptsApi, chatApi } from '../services/api';
 import type {
     AnalysisRange,
+    SidebarOrder,
+    SidebarSectionId,
     GroupKind,
     ItemGroup,
     ArticleFilters,
@@ -491,6 +493,35 @@ export const useDeleteUser = () => {
         mutationFn: (userId: number) => authApi.deleteUser(userId),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['users'] });
+        },
+    });
+};
+
+// Haberler sidebar section order (per user, drag and drop)
+export const useSidebarOrder = () => {
+    return useQuery({
+        queryKey: ['sidebarOrder'],
+        queryFn: authApi.getSidebarOrder,
+        staleTime: Infinity, // only this user changes it, through useUpdateSidebarOrder
+    });
+};
+
+/** Optimistic: the sidebar moves at once, and goes back to the previous order if saving fails. */
+export const useUpdateSidebarOrder = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (order: SidebarSectionId[]) => authApi.setSidebarOrder(order),
+        onMutate: async (order) => {
+            await queryClient.cancelQueries({ queryKey: ['sidebarOrder'] });
+            const previous = queryClient.getQueryData<SidebarOrder>(['sidebarOrder']);
+            queryClient.setQueryData<SidebarOrder>(['sidebarOrder'], { order });
+            return { previous };
+        },
+        onError: (_err, _order, context) => {
+            queryClient.setQueryData(['sidebarOrder'], context?.previous);
+        },
+        onSettled: () => {
+            queryClient.invalidateQueries({ queryKey: ['sidebarOrder'] });
         },
     });
 };

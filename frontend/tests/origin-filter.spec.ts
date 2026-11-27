@@ -19,6 +19,7 @@ function articles() {
     // Its match was deleted: the API reports it as "unavailable", so it is no free match.
     makeArticle({ ...labelled, title: 'Verlorene Quelle', content_access: 'free_match', free_match: null }),
     makeArticle({ ...labelled, title: 'Von Hand ergänzt', source_type: 'manual' }),
+    makeArticle({ ...labelled, title: 'Nicht lesbar', content_access: 'unavailable' }),
   ];
 }
 
@@ -34,10 +35,53 @@ test('the Kaynak Türü section shows both groups with their unread counts', asy
   await mockApi(page, { articles: articles() });
   await openNews(page);
 
-  await expect(page.getByRole('button', { name: 'Kaynak Türü' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Kaynak Türü', exact: true })).toBeVisible();
   // Exact counts: the article whose match was deleted must not make it 2.
   await expect(page.locator('label', { hasText: 'Ücretsiz kaynaktan' }).locator('.topic-count')).toHaveText('1');
   await expect(page.locator('label', { hasText: 'Manuel eklenen' }).locator('.topic-count')).toHaveText('1');
+  // "İçerik alınamadı": the unavailable one plus the one whose match was deleted.
+  await expect(page.locator('label', { hasText: 'İçerik alınamadı' }).locator('.topic-count')).toHaveText('2');
+});
+
+test('Kaynak Türü is the first section of the sidebar, above the feeds', async ({ page }) => {
+  await loginAs(page);
+  await mockApi(page, { articles: articles() });
+  await openNews(page);
+
+  const sidebar = page.locator('.dashboard-sidebar');
+  const origin = await sidebar.getByRole('button', { name: 'Kaynak Türü', exact: true }).boundingBox();
+  const feeds = await sidebar.getByText('RSS Beslemeleri').boundingBox();
+  const priority = await sidebar.getByRole('button', { name: 'Önem Seviyesi', exact: true }).boundingBox();
+  expect(origin!.y).toBeLessThan(feeds!.y);
+  expect(origin!.y).toBeLessThan(priority!.y);
+});
+
+test('"İçerik alınamadı" lists articles without text and without a free source', async ({ page }) => {
+  await loginAs(page);
+  await mockApi(page, { articles: articles() });
+  await openNews(page);
+
+  const req = page.waitForRequest((r) =>
+    r.url().includes('/articles/?') && new URL(r.url()).searchParams.get('origin') === 'unavailable');
+  await page.getByLabel('İçerik alınamadı').check();
+  await req;
+
+  await expect(list(page).getByText('Nicht lesbar')).toBeVisible();
+  await expect(list(page).getByText('Verlorene Quelle')).toBeVisible();
+  await expect(list(page).getByText('Bezahlschranke Bericht')).toHaveCount(0);
+  await expect(list(page).getByText('Gewöhnliche Meldung')).toHaveCount(0);
+});
+
+test('picking Önemsiz drops "İçerik alınamadı" (unimportant articles are never scraped)', async ({ page }) => {
+  await loginAs(page);
+  await mockApi(page, { articles: articles() });
+  await openNews(page);
+
+  const unavailable = page.getByLabel('İçerik alınamadı');
+  await unavailable.check();
+  await page.getByLabel('Önemsiz').check();
+
+  await expect(unavailable).not.toBeChecked();
 });
 
 test('picking Önemsiz drops "Ücretsiz kaynaktan" (unimportant articles never get a free match)', async ({ page }) => {
